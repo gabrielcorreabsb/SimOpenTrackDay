@@ -69,6 +69,8 @@ CarManager.cars_speedBuffer = {}
 CarManager.cars_speedBufferIndex = {}
 ---@type table<integer,number>
 CarManager.cars_speedBufferTotal = {}
+---@type table<integer,integer>
+CarManager.cars_speedSampleCount = {}
 ---@type table<integer,number>
 CarManager.cars_averageSpeedKmh = {}
 ---@type table<integer,number>
@@ -100,6 +102,21 @@ CarManager.cars_HALF_AABSIZE = {}
 CarManager.currentSortedCarsList = {}
 ---@type table<number,number>
 CarManager.sortedCarList_carIndexToSortedIndex = {} -- [carIndex] = sortedListIndex
+
+---Reusable list rebuilt (and sorted in place) every frame to avoid reallocating a new table each update
+---@type SortedCarsList
+CarManager.cars_currentReusableList = CarManager.cars_currentReusableList or {}
+
+---Cache of the last actual track lateral offset per car within the current frame
+---@type table<integer,{x:number, frameId:integer}>
+CarManager.cars_lateralOffsetCacheByCar = {}
+---Incremented once per MANIFEST__UPDATE so the lateral offset cache is invalidated every frame
+---@type integer
+CarManager._currentFrameId = 0
+
+---Cache of the last spline position per car, used to detect cars that moved between frames
+---@type table<integer,number>
+CarManager.cars_previousSplinePosition = {}
 
 -- -- evacuate state so we don’t re-trigger while a car is already evacuating
 -- local evacuating = {}
@@ -165,6 +182,7 @@ CarManager.setInitializedDefaults = function(carIndex)
   CarManager.cars_speedBuffer[carIndex] = {}
   CarManager.cars_speedBufferIndex[carIndex] = 0
   CarManager.cars_speedBufferTotal[carIndex] = 0
+  CarManager.cars_speedSampleCount[carIndex] = 0
   CarManager.cars_averageSpeedKmh[carIndex] = 0
   CarManager.cars_closingSpeed[carIndex] = 0
   CarManager.cars_timeToCollision[carIndex] = math.huge
@@ -236,11 +254,19 @@ end
     -- return 0
   -- end
 --- returns the actual spline offset of the car, which may be different from the one set via physics.setAISplineOffset due to physics corrections
+---@param carIndex integer
 ---@param carPosition vec3
 ---@return number
-function CarManager.getActualTrackLateralOffset(carPosition)
+function CarManager.getActualTrackLateralOffset(carIndex, carPosition)
+  local cachedLateralOffset = CarManager.cars_lateralOffsetCacheByCar[carIndex]
+  if cachedLateralOffset and cachedLateralOffset.frameId == CarManager._currentFrameId then
+    return cachedLateralOffset.x
+  end
+
   local carTrackCoordinates = ac.worldCoordinateToTrack(carPosition)
-  return carTrackCoordinates.x
+  local x = carTrackCoordinates.x
+  CarManager.cars_lateralOffsetCacheByCar[carIndex] = {x = x, frameId = CarManager._currentFrameId}
+  return x
 end
 
 CarManager.getDefaultAIAggression = function(carIndex)
@@ -274,7 +300,7 @@ function CarManager.isCarDrivingOnSide(carIndex, trackSide)
   end
 
   local carPosition = car.position
-  local actualLateralOffset = CarManager.getActualTrackLateralOffset(carPosition)
+  local actualLateralOffset = CarManager.getActualTrackLateralOffset(carIndex, carPosition)
 
   if trackSide == RaceTrackManager.TrackSide.LEFT then
     return actualLateralOffset <= -SIDE_DETERMINATION_THRESHOLD
@@ -307,11 +333,57 @@ end
   -- return sortedCarsList
 -- end
 
----Sorts the given car list by track position, with the car furthest ahead first
+---Sorts the given car list by track position, with the car furthest ahead first.
+---Because the list changes very little between frames, an incremental insertion sort is used
+---(O(n) when the list is already mostly ordered). If more than half of the cars moved, a full
+---table.sort is done instead as a fallback.
 ---@param carList SortedCarsList
 ---@return SortedCarsList carList 
 function CarManager.sortCarListByTrackPosition(carList)
-  table.sort(carList, isFirstCarSplinePositionGreater)
+  local totalCars = #carList
+
+  if totalCars <= 1 then
+    for i = 1, totalCars do
+      local car = carList[i]
+      CarManager.cars_previousSplinePosition[car.index] = car.splinePosition
+    end
+    return carList
+  end
+
+  -- count how many cars changed their spline position since the last frame
+  local previousSplinePosition = CarManager.cars_previousSplinePosition
+  local dirtyCarsCount = 0
+  for i = 1, totalCars do
+    local car = carList[i]
+    if previousSplinePosition[car.index] ~= car.splinePosition then
+      dirtyCarsCount = dirtyCarsCount + 1
+    end
+  end
+
+  local DIRTY_CARS_FALLBACK_RATIO = 0.5
+  if dirtyCarsCount > totalCars * DIRTY_CARS_FALLBACK_RATIO then
+    -- too many cars moved for the incremental approach to pay off, do a full sort
+    table.sort(carList, isFirstCarSplinePositionGreater)
+  else
+    -- incremental insertion sort: only repositions what is out of order, O(n) for few changes
+    for i = 2, totalCars do
+      local car = carList[i]
+      local carSplinePosition = car.splinePosition
+      local j = i - 1
+      while j >= 1 and carList[j].splinePosition < carSplinePosition do
+        carList[j + 1] = carList[j]
+        j = j - 1
+      end
+      carList[j + 1] = car
+    end
+  end
+
+  -- cache the current spline positions for the next frame
+  for i = 1, totalCars do
+    local car = carList[i]
+    previousSplinePosition[car.index] = car.splinePosition
+  end
+
   return carList
 end
 
@@ -416,10 +488,17 @@ function CarManager.saveCarSpeed(car)
   local speedBufferTotal = CarManager.cars_speedBufferTotal[carIndex]
   speedBufferTotal = speedBufferTotal - speedThatWillBeReplaced + currentSpeedKmh
 
+  -- count the sample the first time this buffer slot is filled (recorded speeds are always >= 1)
+  if speedThatWillBeReplaced == 0 then
+    CarManager.cars_speedSampleCount[carIndex] = (CarManager.cars_speedSampleCount[carIndex] or 0) + 1
+  end
+
+  local sampleCount = math.min(CarManager.cars_speedSampleCount[carIndex] or 0, CAR_SPEEDS_BUFFER_SIZE)
+
   CarManager.cars_speedBufferTotal[carIndex] = speedBufferTotal
   CarManager.cars_speedBuffer[carIndex][currentSpeedBufferIndex] = currentSpeedKmh
   CarManager.cars_speedBufferIndex[carIndex] = (currentSpeedBufferIndex + 1) % CAR_SPEEDS_BUFFER_SIZE
-  CarManager.cars_averageSpeedKmh[carIndex] = speedBufferTotal / CAR_SPEEDS_BUFFER_SIZE
+  CarManager.cars_averageSpeedKmh[carIndex] = sampleCount > 0 and speedBufferTotal / sampleCount or 0
 
   -- log the entire speed buffer
   -- Logger.log(string.format("Car %d speed buffer: %s, average: %.2f", carIndex, table.concat(CarManager.cars_speedBuffer[carIndex], ", "), CarManager.cars_averageSpeedKmh[carIndex] or 0))

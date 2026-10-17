@@ -65,7 +65,7 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
 
   local car = sortedCarsList[sortedCarsListIndex]
   -- set the current spline offset to our actual lateral offset so we start easing in from the correct position
-  CarManager_setCalculatedTrackLateralOffset(carIndex, CarManager_getActualTrackLateralOffset(car.position))
+  CarManager_setCalculatedTrackLateralOffset(carIndex, CarManager_getActualTrackLateralOffset(carIndex, car.position))
 
   local storage_Debugging = StorageManager_getStorage_Debugging()
   if storage_Debugging.debugLogCarOvertaking then
@@ -77,7 +77,7 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
       currentlyOvertakingCarIndex,
       RaceTrackManager_getYieldingSide(),
       carFrontPosition,
-      CarManager_getActualTrackLateralOffset(carFrontPosition)
+      CarManager_getActualTrackLateralOffset(currentlyOvertakingCarIndex, carFrontPosition)
       ))
     end
   end

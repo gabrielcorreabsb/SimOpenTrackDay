@@ -138,6 +138,42 @@ StorageManager.Options_PathFinding = {
     TimeToLeavePathBlockedAfterSampleHitSeconds = 9
 }
 
+---@enum StorageManager.Options_Behavior
+StorageManager.Options_Behavior = {
+    entryBlendTime = 1,
+    exitBlendTime = 2,
+    reactionDelay = 3,
+    reactionJitter = 4,
+    lookaheadWindow = 5,
+    lookaheadConfidenceThreshold = 6,
+    mode = 7,
+    pointBySpeedDeltaKmh = 8,
+    defenseDurationMin = 10,
+    defenseDurationMax = 11,
+    overtakeAggressiveness = 12,
+    humanErrorEnabled = 13,
+    humanLockupProbability = 14,
+    humanTractionMistakeProbability = 15,
+    ErrorCooldown_s = 16,
+}
+
+---@enum StorageManager.BehaviorMode
+StorageManager.BehaviorMode = {
+    TrackDay = 1,
+    Race = 2,
+    HybridAdaptive = 3,
+}
+
+---@enum StorageManager.HumanLatencyMode
+StorageManager.HumanLatencyMode = {
+    Casual = 1,
+    Realistic = 2,
+    Competitive = 3,
+}
+
+-- alias: the "Profile" concept is the human latency mode (Casual/Realistic/Competitive)
+StorageManager.Profile = StorageManager.HumanLatencyMode
+
 local optionsCollection_Debugging_beforeDoD = {
     { name = StorageManager.Options_Debugging.DebugShowCarStateOverheadText, default=false, min=nil, max=nil },
     { name = StorageManager.Options_Debugging.DebugCarGizmosDrawistance, default=125.0, min=10.0, max=500.0 },
@@ -261,6 +297,25 @@ local optionsCollection_PathFinding_beforeDoD = {
     { name = StorageManager.Options_PathFinding.TimeToLeavePathBlockedAfterSampleHitSeconds, default=0.5, min=0, max=5.0 },
 }
 
+-- defaults below mirror the "Realistic" behavior profile
+local optionsCollection_Behavior_beforeDoD = {
+    { name = StorageManager.Options_Behavior.entryBlendTime, default=1.5, min=0.0, max=5.0 },
+    { name = StorageManager.Options_Behavior.exitBlendTime, default=2.0, min=0.0, max=5.0 },
+    { name = StorageManager.Options_Behavior.reactionDelay, default=0.4, min=0.0, max=2.0 },
+    { name = StorageManager.Options_Behavior.reactionJitter, default=0.2, min=0.0, max=1.0 },
+    { name = StorageManager.Options_Behavior.lookaheadWindow, default=2.0, min=0.0, max=10.0 },
+    { name = StorageManager.Options_Behavior.lookaheadConfidenceThreshold, default=0.7, min=0.0, max=1.0 },
+    { name = StorageManager.Options_Behavior.mode, default=StorageManager.BehaviorMode.HybridAdaptive, min=nil, max=nil },
+    { name = StorageManager.Options_Behavior.pointBySpeedDeltaKmh, default=15, min=0, max=80 },
+    { name = StorageManager.Options_Behavior.defenseDurationMin, default=1.0, min=0.0, max=10.0 },
+    { name = StorageManager.Options_Behavior.defenseDurationMax, default=3.0, min=0.0, max=10.0 },
+    { name = StorageManager.Options_Behavior.overtakeAggressiveness, default=0.5, min=0.0, max=1.0 },
+    { name = StorageManager.Options_Behavior.humanErrorEnabled, default=true, min=nil, max=nil },
+    { name = StorageManager.Options_Behavior.humanLockupProbability, default=0.03, min=0.0, max=0.10 },
+    { name = StorageManager.Options_Behavior.humanTractionMistakeProbability, default=0.02, min=0.0, max=0.10 },
+    { name = StorageManager.Options_Behavior.ErrorCooldown_s, default=7.0, min=0.0, max=30.0 },
+}
+
 --[====[
 StorageManager.options_default = {}
 StorageManager.options_min = {}
@@ -333,6 +388,16 @@ StorageManager.options_PathFinding_max = fillInDoDTables(
     StorageManager.options_PathFinding_max
 )
 optionsCollection_PathFinding_beforeDoD = nil  -- free memory
+
+StorageManager.options_Behavior_default,
+StorageManager.options_Behavior_min,
+StorageManager.options_Behavior_max = fillInDoDTables(
+    optionsCollection_Behavior_beforeDoD,
+    StorageManager.options_Behavior_default,
+    StorageManager.options_Behavior_min,
+    StorageManager.options_Behavior_max
+)
+optionsCollection_Behavior_beforeDoD = nil  -- free memory
 
 
 ---@class StorageTable
@@ -534,6 +599,41 @@ local storageTable_PathFinding = {
     timeToLeavePathBlockedAfterSampleHitSeconds = StorageManager.options_PathFinding_default[StorageManager.Options_PathFinding.TimeToLeavePathBlockedAfterSampleHitSeconds],
 }
 
+---@class StorageTable_Behavior
+---@field entryBlendTime_s number
+---@field exitBlendTime_s number
+---@field aiReactionDelay_s number
+---@field aiReactionJitter_s number
+---@field aiLookaheadWindow_s number
+---@field aiLookaheadConfidenceThreshold number
+---@field mode integer
+---@field pointBySpeedDeltaKmh number
+---@field defenseDurationMin_s number
+---@field defenseDurationMax_s number
+---@field overtakeAggressiveness number
+---@field humanErrorEnabled boolean
+---@field humanLockupProbability number
+---@field humanTractionMistakeProbability number
+
+---@type StorageTable_Behavior
+local storageTable_Behavior = {
+    entryBlendTime_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.entryBlendTime],
+    exitBlendTime_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.exitBlendTime],
+    aiReactionDelay_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.reactionDelay],
+    aiReactionJitter_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.reactionJitter],
+    aiLookaheadWindow_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.lookaheadWindow],
+    aiLookaheadConfidenceThreshold = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.lookaheadConfidenceThreshold],
+    mode = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.mode],
+    pointBySpeedDeltaKmh = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.pointBySpeedDeltaKmh],
+    defenseDurationMin_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.defenseDurationMin],
+    defenseDurationMax_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.defenseDurationMax],
+    overtakeAggressiveness = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.overtakeAggressiveness],
+    humanErrorEnabled = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.humanErrorEnabled],
+    humanLockupProbability = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.humanLockupProbability],
+    errorCooldown_s = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.ErrorCooldown_s] or 7.0,
+    humanTractionMistakeProbability = StorageManager.options_Behavior_default[StorageManager.Options_Behavior.humanTractionMistakeProbability],
+}
+
 ---@class StorageTable_Global
 ---@field appRanFirstTime boolean
 
@@ -557,11 +657,9 @@ local storage_Yielding = ac.storage(storageTable_Yielding, getStorageKeyForTrack
 local storage_Overtaking = ac.storage(storageTable_Overtaking, getStorageKeyForTrackAndMode("overtaking", fullTrackID, raceSessionType))
 local storage_AICarValues = ac.storage(storageTable_AICarValues, getStorageKeyForTrackAndMode("aicarvalues", fullTrackID, raceSessionType))
 local storage_PathFinding = ac.storage(storageTable_PathFinding, getStorageKeyForTrackAndMode("pathfinding", fullTrackID, raceSessionType))
+local storage_Behavior = ac.storage(storageTable_Behavior, getStorageKeyForTrackAndMode("behavior", fullTrackID, raceSessionType))
 
---[===[
--- DISABLING ACCIDENTS FOR NOW SINCE IT'S STILL WIP
-storage_PerTrackPerMode.handleAccidents = Constants.ENABLE_ACCIDENT_HANDLING_IN_APP -- got this setting here for now since accidents are still wip
---]===]
+-- Accidents feature flag: user controls via per-track-per-mode handleAccidents slider; see SettingsWindow
 
 -- check if the app version has changed since last run
 local thisAppVersion = Constants.APP_VERSION
@@ -608,8 +706,73 @@ function StorageManager.getStorage_PathFinding()
     return storage_PathFinding
 end
 
+---@return StorageTable_Behavior storage_Behavior
+function StorageManager.getStorage_Behavior()
+    return storage_Behavior
+end
+
 function StorageManager.getPerTrackPerModeStorageKey()
     return perTrackPerModeStorageKey
+end
+
+-- aliases so the profile tables below read as specified
+local Profile = StorageManager.HumanLatencyMode
+local BehaviorMode = StorageManager.BehaviorMode
+
+-- Expose for the SettingsWindow dropdown auto-detect
+local BehaviorProfiles = {
+    [Profile.Casual] = {
+        mode = BehaviorMode.TrackDay,
+        entryBlendTime_s = 0.5, exitBlendTime_s = 0.5,
+        aiReactionDelay_s = 0.0, aiReactionJitter_s = 0.0,
+        aiLookaheadWindow_s = 0.0, aiLookaheadConfidenceThreshold = 1.0,
+        pointBySpeedDeltaKmh = 25,  -- cede bem mais rápido
+        defenseDurationMin_s = 0.0, defenseDurationMax_s = 0.0,
+        overtakeAggressiveness = 0.0,
+        humanErrorEnabled = false,
+        humanLockupProbability = 0.0, humanTractionMistakeProbability = 0.0,
+    },
+    [Profile.Realistic] = {
+        mode = BehaviorMode.TrackDay,
+        entryBlendTime_s = 1.5, exitBlendTime_s = 2.0,
+        aiReactionDelay_s = 0.4, aiReactionJitter_s = 0.2,
+        aiLookaheadWindow_s = 2.0, aiLookaheadConfidenceThreshold = 0.7,
+        pointBySpeedDeltaKmh = 15,
+        defenseDurationMin_s = 0.0, defenseDurationMax_s = 0.0,
+        overtakeAggressiveness = 0.5,
+        humanErrorEnabled = false,
+        humanLockupProbability = 0.0, humanTractionMistakeProbability = 0.0,
+    },
+    [Profile.Competitive] = {
+        mode = BehaviorMode.Race,
+        entryBlendTime_s = 0.8, exitBlendTime_s = 1.0,
+        aiReactionDelay_s = 0.2, aiReactionJitter_s = 0.15,
+        aiLookaheadWindow_s = 3.0, aiLookaheadConfidenceThreshold = 0.6,
+        pointBySpeedDeltaKmh = 10,  -- cede só se muito mais rápido
+        defenseDurationMin_s = 1.5, defenseDurationMax_s = 3.5,
+        overtakeAggressiveness = 0.85,
+        humanErrorEnabled = true,
+        humanLockupProbability = 0.03, humanTractionMistakeProbability = 0.02,
+    },
+}
+
+StorageManager.BehaviorProfiles = BehaviorProfiles
+
+---Overwrites the behavior storage fields with the values of the given profile.
+---Not called automatically: the UI/settings layer is responsible for invoking it.
+---@param profileIndex integer @one of StorageManager.HumanLatencyMode
+---@return boolean applied
+function StorageManager.applyBehaviorProfile(profileIndex)
+    local profile = BehaviorProfiles[profileIndex]
+    if profile == nil then
+        return false
+    end
+
+    for key, value in pairs(profile) do
+        storage_Behavior[key] = value
+    end
+
+    return true
 end
 
 return StorageManager

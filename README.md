@@ -1,5 +1,16 @@
-# Assetto Corsa Realistic Trackday
-<img width="128" height="128" align="right" alt="AssettoCorsaRealisticTrackday_Icon" src="https://github.com/user-attachments/assets/ad8cd56e-59d9-4f5e-9205-4c51013f69c4" />
+# SimOpenTrackDay
+
+**SimOpenTrackDay** is an independent, in-development Assetto Corsa app based on [Assetto Corsa Realistic Trackday](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), originally created by Andreas Grech and made available under the [MIT License](LICENSE). It aims to make AI cars yield and overtake more like track-day drivers. This project is not affiliated with or endorsed by the upstream author.
+
+The runtime/CSP integration and in-game visual behavior remain **pending validation**. This repository is source, not a published build or release; upstream releases are not SimOpenTrackDay releases. Installation is a manual copy of runtime files only—preserve existing installations and user configuration.
+
+Start here: [Installation](#development-fork-installation) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Testing](docs/TESTING.md).
+
+## Historical upstream README material
+
+The original product description, videos, screenshots, v0.9.8 feature notes, settings examples, troubleshooting, and known issues below are retained as upstream project history. Historical images and app labels may show upstream branding and are not claims that this fork has been runtime-tested.
+
+<img width="128" height="128" align="right" alt="Original Assetto Corsa Realistic Trackday upstream icon" src="https://github.com/user-attachments/assets/ad8cd56e-59d9-4f5e-9205-4c51013f69c4" />
 
 **Assetto Corsa Realistic Trackday** is an app for <a href="https://store.steampowered.com/app/244210/Assetto_Corsa/" target="_blank">Assetto Corsa</a> which alters the AI cars' behaviour to act like humans driving on a track day aware of other cars as opposed to bots with horse blinkers constantly driving the racing line.
 
@@ -168,29 +179,38 @@ The app requires <a href="https://acstuff.club/patch/" target="_blank">Custom Sh
 > The recommended Custom Shaders Patch version as of 07/11/25 is <a href="https://www.patreon.com/posts/quick-fix-for-142367147" target="_blank">CSP v0.3.0-preview140</a>.
 
 
-### Stable
-Download the zip file from the Releases page: https://github.com/dreasgrech/AssettoCorsaRealisticTrackday/releases
+### Development fork installation
 
-> [!WARNING]
-> When upgrading from an existing version of Realistic trackday, make sure to first delete the `RealisticTrackday` app directory before copying the new one.
+The repository root contains the app source. Manually copy only the runtime payload (root runtime `.lua` files, `manifest.ini`, the legacy PNG metadata asset, `LICENSE`, and the runtime folders `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/`) into:
 
-Copy the `AssettoCorsaRealisticTrackday` directory to `\steamapps\common\assettocorsa\apps\lua\`
+```text
+<Assetto Corsa>/apps/lua/SimOpenTrackDay/
+```
 
-### Cutting Edge
-If you want to install the app directly using the latest source code, you can download the entire repository and put all files in: `\steamapps\common\assettocorsa\apps\lua\AssettoCorsaRealisticTrackday\`
+The installed entry point is `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; in this repository, its source is `SimOpenTrackDay.lua` at the root. Do not copy Git metadata (`.git/` directories or `.git` files), `tools/`, `docs/`, `artifacts/`, or `*.bak` files; do not create an `apps/lua` hierarchy inside the repository or move the modules.
 
-> [!WARNING]
-> *There's no guarantee everything will work as expected when using the cutting edge "nightly" code here since I am constantly committing in untested code when I'm working on the app.*
+Keep any existing installation and user configuration as a backup. Prefer a separate app directory when testing this development fork. Do not delete an older app directory, broadly remove directories, or delete/reset user settings as part of installation or rollback.
 
-<br><br><br>
-You should end up with this file structure once the files are copied:
+### Clone for development
 
-<img width="768" height="789" alt="image" src="https://github.com/user-attachments/assets/1a4a5f7b-5445-458b-a599-de0d2eadcd6b" />
+Clone the repository recursively to fetch the compatibility submodule:
+
+```powershell
+git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git SimOpenTrackDay
+cd SimOpenTrackDay
+git submodule update --init --recursive
+```
+
+When configuring Git remotes locally, keep the original project as `upstream` and the user's fork as `origin`. No remote configuration is performed by these instructions.
+
+The original project remains at https://github.com/dreasgrech/AssettoCorsaRealisticTrackday. Its [Releases page](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday/releases) is for upstream releases only, not for this fork. The historical layout screenshot below belongs to the upstream installation documentation; it is not the directory structure or install instructions for this fork.
+
+<img width="768" height="789" alt="Historical upstream installation layout (not the fork layout)" src="https://github.com/user-attachments/assets/1a4a5f7b-5445-458b-a599-de0d2eadcd6b" />
 
 ## How To Use
 Once installed, the app will run automatically when Assetto Corsa is running.
 
-To view the car list table in the window, open the app from the side bar in the game listed as `Realistic Trackday`:
+To view the car list table in the window, open `SimOpenTrackDay` from the in-game sidebar:
 
 <img width="241" height="27" alt="image" src="https://github.com/user-attachments/assets/a315ab48-cd4d-434e-920a-4bf0c304aba1" />
 
@@ -309,7 +329,7 @@ When back on the **Easing Out Overtake** state, a car will drive laterally from 
   
   <img width="250" height="186" alt="image" src="https://github.com/user-attachments/assets/374bace7-6d85-41a3-9295-c8cf296caf2b" />
 
-  Enable the `Realistic Trackday` app:
+  Enable the `SimOpenTrackDay` app:
 
   <img width="921" height="95" alt="image" src="https://github.com/user-attachments/assets/3552f0e3-f622-437f-ab61-720a55ba5023" />
 
@@ -339,3 +359,22 @@ This app has taken many many hours of development work to get it in the state it
 <a href="https://buymeacoffee.com/dreasgrech" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/purple_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
 
 ![541071877_18289519078282595_5138839538470946793_n_](https://github.com/user-attachments/assets/97cc68b6-5942-465e-b3c1-4c170b929692) ![racetracker_39753918_619967__](https://github.com/user-attachments/assets/32a6c8c3-dccb-47a0-bb18-98d946f5b80f)
+
+## Development documentation
+
+- [Contributing](CONTRIBUTING.md)
+- [Agent onboarding](docs/AGENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Testing](docs/TESTING.md)
+- [UI redesign discovery](docs/UI_REDESIGN_DISCOVERY.md)
+
+The headless mocked-contract smoke tests can be run with `luajit tools/test_ui_smoke.lua` and `luajit tools/test_logo_smoke.lua`. They do not validate CSP rendering or in-game runtime behavior; see the testing guide for limits and manual checks.
+
+## Upstream project and attribution
+
+- [SimOpenTrackDay repository](https://github.com/gabrielcorreabsb/SimOpenTrackDay) and [issue tracker](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
+- The following links are for upstream project history and its original author:
+- [Upstream source and project history](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday)
+- [Upstream releases](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday/releases) (upstream only; not fork releases)
+- [Overtake.gg project page](https://www.overtake.gg/downloads/assetto-corsa-realistic-trackday.80212/)
+- [Original author funding link](https://buymeacoffee.com/dreasgrech)

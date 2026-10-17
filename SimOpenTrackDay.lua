@@ -1,6 +1,10 @@
+if ac and ac.log then ac.log("[RTD-DIAG-0] top of file before Constants require") end
 Constants = require("Constants")
+if ac and ac.log then ac.log("[RTD-DIAG-0a] Constants loaded") end
 Logger = require("Logger")
+if ac and ac.log then ac.log("[RTD-DIAG-0b] Logger loaded") end
 CSPCompatibilityManager = require("lib.AssettoCorsaCSPLuaCompatibilityManager.CSPCompatibilityManager")
+if ac and ac.log then ac.log("[RTD-DIAG-0c] CSPCompatibilityManager loaded") end
 
 CSPCompatibilityManager.addFunction(function() return ac.log end, "ac.log")
 CSPCompatibilityManager.addFunction(function() return ac.warn end, "ac.warn")
@@ -29,6 +33,12 @@ CSPCompatibilityManager.addFunction(function() return ui.button end, "ui.button"
 CSPCompatibilityManager.addFunction(function() return ui.newLine end, "ui.newLine")
 CSPCompatibilityManager.addFunction(function() return ui.text end, "ui.text")
 CSPCompatibilityManager.addFunction(function() return ui.drawRect end, "ui.drawRect")
+CSPCompatibilityManager.addFunction(function() return ui.drawRectFilled end, "ui.drawRectFilled")
+CSPCompatibilityManager.addFunction(function() return ui.availableSpaceX end, "ui.availableSpaceX")
+CSPCompatibilityManager.addFunction(function() return ui.availableSpaceY end, "ui.availableSpaceY")
+CSPCompatibilityManager.addFunction(function() return ui.beginGroup end, "ui.beginGroup")
+CSPCompatibilityManager.addFunction(function() return ui.endGroup end, "ui.endGroup")
+CSPCompatibilityManager.addFunction(function() return ui.dummy end, "ui.dummy")
 CSPCompatibilityManager.addFunction(function() return ui.drawLine end, "ui.drawLine")
 CSPCompatibilityManager.addFunction(function() return ui.getCursor end, "ui.getCursor")
 CSPCompatibilityManager.addFunction(function() return ui.drawTextClipped end, "ui.drawTextClipped")
@@ -47,6 +57,10 @@ CSPCompatibilityManager.addFunction(function() return ui.drawImage end, "ui.draw
 CSPCompatibilityManager.addFunction(function() return ui.pushDWriteFont end, "ui.pushDWriteFont")
 CSPCompatibilityManager.addFunction(function() return ui.pushStyleColor end, "ui.pushStyleColor")
 CSPCompatibilityManager.addFunction(function() return ui.popStyleColor end, "ui.popStyleColor")
+CSPCompatibilityManager.addFunction(function() return ui.styleColor end, "ui.styleColor")
+CSPCompatibilityManager.addFunction(function() return ui.StyleColor end, "ui.StyleColor")
+CSPCompatibilityManager.addFunction(function() return ui.combo end, "ui.combo")
+CSPCompatibilityManager.addFunction(function() return ui.ComboFlags end, "ui.ComboFlags")
 CSPCompatibilityManager.addFunction(function() return ui.textColored end, "ui.textColored")
 CSPCompatibilityManager.addFunction(function() return ui.setColumnWidth end, "ui.setColumnWidth")
 CSPCompatibilityManager.addFunction(function() return ui.popDWriteFont end, "ui.popDWriteFont")
@@ -61,6 +75,7 @@ CSPCompatibilityManager.addFunction(function() return ui.cursorScreenPos end, "u
 CSPCompatibilityManager.addFunction(function() return ui.setItemAllowOverlap end, "ui.setItemAllowOverlap")
 CSPCompatibilityManager.addFunction(function() return ui.setCursorScreenPos end, "ui.setCursorScreenPos")
 CSPCompatibilityManager.addFunction(function() return ui.windowPos end, "ui.windowPos")
+CSPCompatibilityManager.addFunction(function() return ui.windowWidth end, "ui.windowWidth")
 CSPCompatibilityManager.addFunction(function() return ui.columnSortingHeader end, "ui.columnSortingHeader")
 CSPCompatibilityManager.addFunction(function() return ui.pushColumnsBackground end, "ui.pushColumnsBackground")
 CSPCompatibilityManager.addFunction(function() return ui.popColumnsBackground end, "ui.popColumnsBackground")
@@ -83,6 +98,8 @@ CSPCompatibilityManager.addFunction(function() return physics.setAIThrottleLimit
 CSPCompatibilityManager.addFunction(function() return physics.setAITopSpeed end, "physics.setAITopSpeed")
 CSPCompatibilityManager.addFunction(function() return physics.setAICaution end, "physics.setAICaution")
 CSPCompatibilityManager.addFunction(function() return physics.setAIAggression end, "physics.setAIAggression")
+CSPCompatibilityManager.addFunction(function() return physics.setAIBrakeMistake end, "physics.setAIBrakeMistake")
+CSPCompatibilityManager.addFunction(function() return physics.setAITractionMistake end, "physics.setAITractionMistake")
 CSPCompatibilityManager.addFunction(function() return physics.setAIStopCounter end, "physics.setAIStopCounter")
 CSPCompatibilityManager.addFunction(function() return physics.setExtraAIGrip end, "physics.setExtraAIGrip")
 CSPCompatibilityManager.addFunction(function() return physics.disableCarCollisions end, "physics.disableCarCollisions")
@@ -99,8 +116,15 @@ CSPCompatibilityManager.addFunction(function() return ui.dwriteText end, "ui.dwr
 
 CSPCompatibilityManager.ErrorModalDialogTextColor = rgbm(0.961, 0.914, 0.132, 0.75)
 
+-- The modal dialog must NOT be shown during script load: `ui.modalDialog` is a draw-phase
+-- primitive and calling it before the window draw callbacks are wired aborts the chunk,
+-- leaving the manifest-declared windows as empty/gray overlays. We disable the auto-dialog
+-- here and re-check inside the draw callback, where the modal dialog is safe to use.
+CSPCompatibilityManager.ShowErrorModalDialog = false
+
 local everythingOK = CSPCompatibilityManager.checkForMissingElements(Constants.APP_NAME, Constants.APP_VERSION)
 local anyMissingCSPElements = not everythingOK
+local missingCSPElementsErrorMessage = CSPCompatibilityManager.getLastGeneratedErrorMessage()
 CSPCompatibilityManager.freeMemory()
 if not everythingOK then
     ac.error(string.format("%s v%s is missing required Custom Shaders Patch elements and will not run as expected.", Constants.APP_NAME, Constants.APP_VERSION))
@@ -165,6 +189,8 @@ if anyMissingCSPElements then
 end
 --]===]
 
+if ac and ac.log then ac.log("[RTD-DIAG-1] entering mass requires block") end
+
 VecPool = require("VecPool")
 
 DequeManager = require("DataStructures.DequeManager")
@@ -210,6 +236,7 @@ UILateralOffsetsImageWidget = require("UILateralOffsetsImageWidget")
 UIAppNameVersionWidget = require("UIAppNameVersionWidget")
 UIOperations = require("UIOperations")
 UIManager = require("UIManager")
+local Logo = require("lib/uilib/Logo")
 SessionDetails = require("SessionDetails")
 -- CarSpeedLimiter = require("CarSpeedLimiter")
 -- CustomAIFloodManager = require("CustomAIFloodManager")
@@ -217,6 +244,9 @@ SessionDetails = require("SessionDetails")
 -- FrenetAvoid = require("FrenetAvoid")
 -- Profiler = require("Profiler")
 Pathfinding = require("Pathfinding")
+
+BehaviorPolish = require("BehaviorPolish")
+HumanErrorManager = require("HumanErrorManager")
 
 SettingsWindow = require("SettingsWindow")
 
@@ -323,7 +353,12 @@ local function awake()
     -- Logger.log(string.format('Original #%d AI Difficulty Level: %.3f', i, originalCarAILevel))
   end
 end
-awake()
+if ac and ac.log then ac.log("[RTD-DIAG] entering awake() at top-level") end
+local awakeOk, awakeErr = xpcall(awake, function(err) return tostring(err) .. "\n" .. debug.traceback() end)
+if not awakeOk then
+  if ac and ac.error then ac.error("[RTD-DIAG] awake() failed: " .. tostring(awakeErr)) end
+end
+if ac and ac.log then ac.log("[RTD-DIAG] post-awake, defining MANIFEST callbacks") end
 
 local function shouldAppRun()
     -- local storage = StorageManager.getStorage()
@@ -410,13 +445,13 @@ end)
 -- wiki: function to be called each frame to draw window content
 ---
 function script.MANIFEST__FUNCTION_MAIN(dt)
-  ui_textColored("Realistic Trackday allows you to alter the AI cars' behavior to act more like humans driving during a track day event by yielding to faster cars and overtaking slower cars.", ColorManager.RGBM_Colors.WhiteSmoke)
+  local ok, err = xpcall(function()
+  ui_textColored("SimOpenTrackDay allows you to alter the AI cars' behavior to act more like humans driving during a track day event by yielding to faster cars and overtaking slower cars.", ColorManager.RGBM_Colors.WhiteSmoke)
   ui_newLine(1)
 
   -- Show the missing CSP elements error message if needed
-  if anyMissingCSPElements then
-    -- ui_textColored(missingCSPElementsErrorMessage, rgbm(1, 0, 0, 1))
-    ui_textColored(CSPCompatibilityManager.getLastGeneratedErrorMessage(), rgbm(1, 0, 0, 1))
+  if anyMissingCSPElements and missingCSPElementsErrorMessage and missingCSPElementsErrorMessage ~= '' then
+    ui_textColored(missingCSPElementsErrorMessage, rgbm(1, 0, 0, 1))
     ui_newLine(1)
     ui_separator()
     ui_newLine(1)
@@ -453,6 +488,25 @@ function script.MANIFEST__FUNCTION_MAIN(dt)
   -- Profiler.drawUI()
 
   -- Profiler.endFrame()
+  end, function(e) return tostring(e) .. "\n" .. debug.traceback() end)
+  if not ok and ac and ac.error then
+    ac.error("[RTD-DIAG] draw error: " .. tostring(err))
+  end
+end
+
+local iconInvalidBoundsLogged = false
+
+function script.MANIFEST__FUNCTION_ICON()
+  local p = ui.getCursor()
+  local size = math_min(20, ui.availableSpaceX(), ui.availableSpaceY())
+  if not (size > 0) then
+    if not iconInvalidBoundsLogged then
+      Logger.log('[SOTD-ICON] Invalid icon drawing bounds; skipping vector icon.')
+      iconInvalidBoundsLogged = true
+    end
+    return
+  end
+  Logo.draw(size, p)
 end
 
 -- local frenetOffsets = {}
@@ -469,19 +523,12 @@ function script.MANIFEST__UPDATE(dt)
 
   if sim.isPaused then return end
 
+  -- invalidate the per-frame caches (e.g. the actual track lateral offset cache)
+  CarManager._currentFrameId = (CarManager._currentFrameId or 0) + 1
+
   -------------------
   -- physics.setAITopSpeed(6,30)
     -- CarSpeedLimiter.limitTopSpeed(6, 30, dt)
-  --[====[
-  if true then
-    --CarSpeedLimiter.limitTopSpeed(0, 30, dt)
-    CarOperations.setPedalPosition(0, CarOperations.CarPedals.Gas, 0.1)
-    CarOperations.setPedalPosition(0, CarOperations.CarPedals.Brake, 0.01)
-    -- CarOperations.setPedalPosition(0, CarOperations.CarPedals.Clutch, 0.5)
-     -- physics.setAIBrakeHint(0, 1)
-    return
-  end
-  --]====]
   -------------------
 
   -- local storage = StorageManager.getStorage()
@@ -515,7 +562,8 @@ function script.MANIFEST__UPDATE(dt)
   -- build the sorted car list and do any per-car operations that doesn't require the sorted list
 
   ---@type SortedCarsList
-  local carList = {}
+  local carList = CarManager.cars_currentReusableList
+  table.clear(carList)
   for i, car in ac_iterateCars() do
     carList[i] = car
 
@@ -540,6 +588,11 @@ function script.MANIFEST__UPDATE(dt)
   -- handle any queued accidents before updating the car state machines
   OnCarEventManager.processQueuedEvents()
   CarStateMachine_handleQueuedAccidents() -- todo: check if this can be integrated with the processQueuedEvents() above
+
+  -- Human errors: simulate realistic mistakes (brake/traction) with cooldown
+  local storage_Behavior = StorageManager.getStorage_Behavior()
+  local gameTime_s = GameTimeManager.getPlayingGameTime()
+  HumanErrorManager.update(dt, sortedCars, storage_Behavior, gameTime_s)
 
   local globalTopSpeedLimitKmh = storage.globalTopSpeedLimitKmh
   if globalTopSpeedLimitKmh == 0 then
@@ -725,7 +778,7 @@ function script.MANIFEST__TRANSPARENT(dt)
   local carLeft     = car.side
   local carUp       = car.up
   local halfAABBSize = CarManager.cars_HALF_AABSIZE[carIndex]
-  local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize)  -- returns left/right dirs too
+  local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize, CarOperations._reusableSideAnchorTable)  -- returns left/right dirs too
   local pLeftDirection = p.leftDirection
   local pRightDirection = p.rightDirection
   local pRearLeft  = p.rearLeft

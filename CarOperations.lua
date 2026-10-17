@@ -54,6 +54,19 @@ local render_createRay = render.createRay
 local render_debugBox = render.debugBox
 local render_debugLine = render.debugLine
 local VecPool_getTempVec3 = VecPool.getTempVec3
+local table_clear = table.clear
+
+-- Reusable scratch objects for getSideAnchorPoints to avoid per-call allocations.
+-- NOTE: these are distinct vec3 instances (VecPool.getTempVec3 returns a single shared singleton).
+CarOperations._reusableSideAnchorTable = CarOperations._reusableSideAnchorTable or {}
+CarOperations._reusableVec3_center      = CarOperations._reusableVec3_center      or vec3(0, 0, 0)
+CarOperations._reusableVec3_frontLeft   = CarOperations._reusableVec3_frontLeft   or vec3(0, 0, 0)
+CarOperations._reusableVec3_centerLeft  = CarOperations._reusableVec3_centerLeft  or vec3(0, 0, 0)
+CarOperations._reusableVec3_rearLeft    = CarOperations._reusableVec3_rearLeft    or vec3(0, 0, 0)
+CarOperations._reusableVec3_frontRight  = CarOperations._reusableVec3_frontRight  or vec3(0, 0, 0)
+CarOperations._reusableVec3_centerRight = CarOperations._reusableVec3_centerRight or vec3(0, 0, 0)
+CarOperations._reusableVec3_rearRight   = CarOperations._reusableVec3_rearRight   or vec3(0, 0, 0)
+CarOperations._reusableVec3_right       = CarOperations._reusableVec3_right       or vec3(0, 0, 0)
 
 ---@enum CarOperations.CarDirections
 CarOperations.CarDirections = {
@@ -174,7 +187,7 @@ local ARRIVED_AT_TARGET_SPLINE_OFFSET_EPSILON = 0.1 -- in lateral spline offset 
 ---@return boolean
 CarOperations.hasArrivedAtTargetSplineOffset = function(carIndex, drivingToSide)
     -- local currentSplineOffset = CarManager.getCalculatedTrackLateralOffset(carIndex)
-    local currentSplineOffset = CarManager_getActualTrackLateralOffset(ac_getCar(carIndex).position)
+    local currentSplineOffset = CarManager_getActualTrackLateralOffset(carIndex, ac_getCar(carIndex).position)
     local targetSplineOffset = CarManager.cars_targetSplineOffset[carIndex]
       if drivingToSide == RaceTrackManager.TrackSide.LEFT then
         return currentSplineOffset - ARRIVED_AT_TARGET_SPLINE_OFFSET_EPSILON <= targetSplineOffset
@@ -217,6 +230,38 @@ end
 CarOperations.removeAITopSpeed = function(carIndex)
   CarOperations.setAITopSpeed(carIndex, math_huge)
 end
+
+---Anti-drag-race: enquanto um carro está em yielding, ele não pode acelerar deliberadamente
+---para segurar o carro que está ultrapassando. Força setAITopSpeed para 95% da velocidade
+---do carro que está ultrapassando. Idempotente: chamar várias vezes no mesmo frame é OK.
+---@param yieldingCarIndex integer
+---@param overtakingCarIndex integer
+CarOperations.applyAntiDragRaceLimit = function(yieldingCarIndex, overtakingCarIndex)
+  if not yieldingCarIndex or not overtakingCarIndex then return end
+  local overtakingCar = ac_getCar(overtakingCarIndex)
+  if not overtakingCar or overtakingCar.speedKmh < 5 then
+    CarOperations.removeAntiDragRaceLimit(yieldingCarIndex)
+    return
+  end
+  local safeOvertakingSpeedKmh = overtakingCar.speedKmh * 0.95
+  local currentTopSpeedLimit = CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex]
+  if currentTopSpeedLimit ~= safeOvertakingSpeedKmh then
+    physics_setAITopSpeed(yieldingCarIndex, safeOvertakingSpeedKmh)
+    CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] = safeOvertakingSpeedKmh
+  end
+end
+
+---Remove o top speed limit imposto pelo anti-drag-race.
+---@param yieldingCarIndex integer
+CarOperations.removeAntiDragRaceLimit = function(yieldingCarIndex)
+  if CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] then
+    CarOperations.removeAITopSpeed(yieldingCarIndex)
+    CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] = nil
+  end
+end
+
+---@type table<integer, number>
+CarOperations._currentAntiDragRaceTopSpeeds = CarOperations._currentAntiDragRaceTopSpeeds or {}
 
 ---Changes AI caution, altering the distance it keeps from the car in front of it. Default value: `1`. Experimental.
 ---@param carIndex integer @0-based car index.
@@ -486,7 +531,7 @@ end
 function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset, rampSpeed_mps, overrideAiAwareness, sideCheck, useIndicatorLights)
     -- calculate the side we're driving to based on the car's current lateral offset and the target lateral offset
     local carPosition = car.position
-    local currentActualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carPosition)
+    local currentActualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, carPosition)
     local side = targetLateralOffset < currentActualTrackLateralOffset and RaceTrackManager.TrackSide.LEFT or RaceTrackManager.TrackSide.RIGHT
 
     -- save a copy of the original side for indicator lights because we may change the side variable later
@@ -611,7 +656,7 @@ end
 ---@return number aiAggression 
 ---@return number aiDifficultyLevel
 CarOperations.calculateAICautionAggressionDifficultyWhileOvertaking = function(overtakingCar, yieldingCar)
-    local overtakingCarTrackLateralOffset = CarManager_getActualTrackLateralOffset(overtakingCar.position)
+    local overtakingCarTrackLateralOffset = CarManager_getActualTrackLateralOffset(overtakingCar.index, overtakingCar.position)
 
     -- by default we use the lowerered ai caution while overtaking so that the cars speed up a bit
     -- local aiCaution = CarManager.AICautionValues.OVERTAKING_WITH_OBSTACLE_INFRONT
@@ -622,7 +667,7 @@ CarOperations.calculateAICautionAggressionDifficultyWhileOvertaking = function(o
     -- Check if it's safe in front of us to drop the caution to 0 so that we can really step on it
     if yieldingCar then
         -- if the car in front of us is not in front of us, we can drop the caution to 0 to speed up overtaking
-        local yieldingCarTrackLateralOffset = CarManager_getActualTrackLateralOffset(yieldingCar.position)
+        local yieldingCarTrackLateralOffset = CarManager_getActualTrackLateralOffset(yieldingCar.index, yieldingCar.position)
         local lateralOffsetsDelta = math_abs(overtakingCarTrackLateralOffset - yieldingCarTrackLateralOffset)
         if lateralOffsetsDelta > 0.4 then -- if the lateral offset is more than half a lane apart, we can consider it safe
             -- aiCaution = CarManager.AICautionValues.OVERTAKING_WITH_NO_OBSTACLE_INFRONT
@@ -645,55 +690,87 @@ CarOperations.calculateAICautionAggressionDifficultyWhileOvertaking = function(o
 end
 
 -- Returns the six lateral anchor points plus some helpers
+---@param outTable table|nil Reusable output table (optional; falls back to module scratch table)
 ---@return table
 -- local getSideAnchorPoints = function(carPosition, carForward, carLeft, carUp, halfAABBSize)
-CarOperations.getSideAnchorPoints = function(carPosition, carForward, carLeft, carUp, halfAABBSize)
+CarOperations.getSideAnchorPoints = function(carPosition, carForward, carLeft, carUp, halfAABBSize, outTable)
   -- local carForward, carLeft, carUp = car.look, car.side, car.up  -- all normalized
 
-  -- Half-extents from AABB (x=width, y=height, z=length)
-  -- local carAABBSize = car.aabbSize
-  -- local carAABBSize = CarManager.cars_AABBSIZE[carIndex]
-  -- local carHalfWidth = carAABBSize.x * 0.5
-  -- local carHalfHeight = carAABBSize.y * 0.5
-  -- local carHalfLength = carAABBSize.z * 0.5
+  outTable = outTable or CarOperations._reusableSideAnchorTable
+  table_clear(outTable)
 
-  -- local halfAABBSize = CarManager.cars_HALF_AABSIZE[carIndex]
-  -- local halfAABBSize = car.aabbSize * 0.5
+  -- Half-extents from AABB (x=width, y=height, z=length)
   local carHalfWidth = halfAABBSize.x
   local carHalfHeight = halfAABBSize.y
   local carHalfLength = halfAABBSize.z
 
+  -- Reused scratch vec3s (no allocation per call)
+  local carCenterWorldPosition   = CarOperations._reusableVec3_center
+  local frontLeftWorldPosition   = CarOperations._reusableVec3_frontLeft
+  local centerLeftWorldPosition  = CarOperations._reusableVec3_centerLeft
+  local rearLeftWorldPosition    = CarOperations._reusableVec3_rearLeft
+  local frontRightWorldPosition  = CarOperations._reusableVec3_frontRight
+  local centerRightWorldPosition = CarOperations._reusableVec3_centerRight
+  local rearRightWorldPosition   = CarOperations._reusableVec3_rearRight
+  local carRight                 = CarOperations._reusableVec3_right
+
+  carRight:set(-carLeft.x, -carLeft.y, -carLeft.z)
+
   -- Center at mid-height
-  local carCenterWorldPosition = carPosition + carUp * carHalfHeight
+  local centerX = carPosition.x + carUp.x * carHalfHeight
+  local centerY = carPosition.y + carUp.y * carHalfHeight
+  local centerZ = carPosition.z + carUp.z * carHalfHeight
+  carCenterWorldPosition:set(centerX, centerY, centerZ)
 
-  local carRight = -carLeft
+  -- Half-length and half-width direction components
+  local forwardX = carForward.x * carHalfLength
+  local forwardY = carForward.y * carHalfLength
+  local forwardZ = carForward.z * carHalfLength
+  local leftX = carLeft.x * carHalfWidth
+  local leftY = carLeft.y * carHalfWidth
+  local leftZ = carLeft.z * carHalfWidth
+  local rightX = -leftX
+  local rightY = -leftY
+  local rightZ = -leftZ
 
-  -- todo: ideally I don't calculate everything here since we probably dont need all of them in the calculations
+  frontLeftWorldPosition:set(
+    centerX + forwardX + leftX,
+    centerY + forwardY + leftY,
+    centerZ + forwardZ + leftZ)
+  centerLeftWorldPosition:set(
+    centerX + leftX,
+    centerY + leftY,
+    centerZ + leftZ)
+  rearLeftWorldPosition:set(
+    centerX - forwardX + leftX,
+    centerY - forwardY + leftY,
+    centerZ - forwardZ + leftZ)
 
-  local carForwardHalfCarLengthDirection = carForward * carHalfLength
-  local carLeftHalfCarWidthDirection = carLeft * carHalfWidth
-  local frontLeftWorldPosition   = carCenterWorldPosition + carForwardHalfCarLengthDirection + carLeftHalfCarWidthDirection
-  local centerLeftWorldPosition  = carCenterWorldPosition + carLeftHalfCarWidthDirection
-  local rearLeftWorldPosition    = carCenterWorldPosition - carForwardHalfCarLengthDirection + carLeftHalfCarWidthDirection
+  frontRightWorldPosition:set(
+    centerX + forwardX + rightX,
+    centerY + forwardY + rightY,
+    centerZ + forwardZ + rightZ)
+  centerRightWorldPosition:set(
+    centerX + rightX,
+    centerY + rightY,
+    centerZ + rightZ)
+  rearRightWorldPosition:set(
+    centerX - forwardX + rightX,
+    centerY - forwardY + rightY,
+    centerZ - forwardZ + rightZ)
 
-  local carRightHalfCarWidthDirection = carRight * carHalfWidth
-  local frontRightWorldPosition  = carCenterWorldPosition + carForwardHalfCarLengthDirection + carRightHalfCarWidthDirection
-  local centerRightWorldPosition = carCenterWorldPosition + carRightHalfCarWidthDirection
-  local rearRightWorldPosition   = carCenterWorldPosition - carForwardHalfCarLengthDirection + carRightHalfCarWidthDirection
-
-  return {
-    frontLeft = frontLeftWorldPosition,
-    centerLeft = centerLeftWorldPosition,
-    rearLeft = rearLeftWorldPosition,
-    frontRight = frontRightWorldPosition,
-    centerRight = centerRightWorldPosition,
-    rearRight = rearRightWorldPosition,
-    center = carCenterWorldPosition,
-    forwardDirection = carForward,
-    leftDirection = carLeft,
-    rightDirection = carRight,
-    upDirection = carUp,
-  }
+  outTable.frontLeft = frontLeftWorldPosition
+  outTable.centerLeft = centerLeftWorldPosition
+  outTable.rearLeft = rearLeftWorldPosition
+  outTable.frontRight = frontRightWorldPosition
+  outTable.centerRight = centerRightWorldPosition
+  outTable.rearRight = rearRightWorldPosition
+  outTable.center = carCenterWorldPosition
+  outTable.forwardDirection = carForward
+  outTable.leftDirection = carLeft
+  outTable.rightDirection = carRight
+  outTable.upDirection = carUp
+  return outTable
 end
 
 local checkForOtherCars = function(carIndex, worldPosition, direction, distance)
@@ -831,7 +908,7 @@ CarOperations.checkIfCarIsBlockedByAnotherCarAndSaveSideBlockRays = function(car
     end
 
     -- TODO: remove use of CarOperations.getSideAnchorPoints here and only calculate what we need
-    local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeftDirection, carUp, halfAABBSize)  -- returns left/right dirs too
+    local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeftDirection, carUp, halfAABBSize, CarOperations._reusableSideAnchorTable)  -- returns left/right dirs too
     -- local pLeftDirection = p.leftDirection
     -- local pRightDirection = p.rightDirection
     local sideGap = 1
@@ -925,7 +1002,7 @@ CarOperations.checkIfCarIsBlockedByAnotherCarAndSaveAnchorPoints = function(carI
     local carUp = car.up
     local halfAABBSize = CarManager.cars_HALF_AABSIZE[carIndex]
 
-    local carAnchorPoints = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize)
+    local carAnchorPoints = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize, CarOperations._reusableSideAnchorTable)
     CarManager.cars_anchorPoints[carIndex] = carAnchorPoints
 
     local isCarOnSide, carOnSideDirection, carOnSideDistance = CarOperations.isTargetSideBlocked(carIndex)

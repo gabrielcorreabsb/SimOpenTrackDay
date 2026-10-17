@@ -252,7 +252,7 @@ UIManager.drawUICarList = function()
       local currentlyOvertakingCarIndex = CarManager.cars_currentlyOvertakingCarIndex[carIndex]
       local currentlyOvertaking = currentlyOvertakingCarIndex
       -- local actualTrackLateralOffset = CarManager.getActualTrackLateralOffset(carIndex)
-      local actualTrackLateralOffset = CarManager_getActualTrackLateralOffset(car.position)
+      local actualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, car.position)
 
       local culpritInAccidentIndex = AccidentManager.cars_culpritInAccidentIndex[carIndex]
       local victimInAccidentIndex = AccidentManager.cars_victimInAccidentIndex[carIndex]

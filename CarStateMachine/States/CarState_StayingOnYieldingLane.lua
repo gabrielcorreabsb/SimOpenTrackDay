@@ -167,10 +167,11 @@ CarStateMachine.states_transitionFunctions[STATE] = function (carIndex, dt, sort
         return newStateDueToYellowFlagZone
       end
 
+      -- NOTE: currentlyYieldingToCarIndex and carWeAreYieldingTo stay commented out (they are redefined further below) to avoid duplicate local definitions.
       -- local currentlyYieldingToCarIndex = CarManager.cars_currentlyYieldingCarToIndex[carIndex]
       -- local carWeAreYieldingTo = ac.getCar(currentlyYieldingToCarIndex)
-      -- local carBehind = sortedCarsList[sortedCarsListIndex + 1]
-      -- local carFront = sortedCarsList[sortedCarsListIndex - 1]
+      local carBehind = sortedCarsList[sortedCarsListIndex + 1]
+      local carFront = sortedCarsList[sortedCarsListIndex - 1]
 
       --[====[
       if carBehind then

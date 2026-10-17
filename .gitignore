@@ -422,3 +422,23 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 .idea/
+
+# Local backups and generated artifacts
+*.bak
+/artifacts/
+
+# LuaJIT bytecode
+*.luac
+
+# Local environment files; keep the shareable example template
+.env
+.env.*
+!.env.example
+
+# Operating system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini

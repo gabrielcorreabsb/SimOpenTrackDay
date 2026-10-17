@@ -43,7 +43,7 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
       local carPosition = car.position
 
       -- set the current spline offset to our actual lateral offset so we start easing in from the correct position
-      local actualLateralOffset = CarManager_getActualTrackLateralOffset(carPosition)
+      local actualLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, carPosition)
       CarManager_setCalculatedTrackLateralOffset(carIndex, actualLateralOffset)
 
       local targetOffset = storage.defaultLateralOffset

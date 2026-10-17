@@ -17,7 +17,9 @@ local ui_textColored = ui.textColored
 local ui_pushStyleColor = ui.pushStyleColor
 local ui_popStyleColor = ui.popStyleColor
 local ui_dwriteText = ui.dwriteText
-local ui_checkbox = ui.checkbox
+local Toggle = require('lib/uilib/Toggle')
+local ui_checkbox = Toggle.render
+local ui_combo = ui.combo
 local ui_pushDWriteFont = ui.pushDWriteFont
 local ui_popDWriteFont = ui.popDWriteFont
 local ui_StyleColor = ui.StyleColor
@@ -28,19 +30,25 @@ local RaceTrackManager_getTrackName = RaceTrackManager.getTrackName
 local RaceTrackManager_getSessionTypeName = RaceTrackManager.getSessionTypeName
 local RaceTrackManager_getOvertakingSide = RaceTrackManager.getOvertakingSide
 local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
-local AppIconRenderer = AppIconRenderer
-local AppIconRenderer_draw = AppIconRenderer.draw
 local ColorManager = ColorManager
+local Theme = require('lib/uilib/Theme')
+local Style = require('lib/uilib/Style')
+local Section = require('lib/uilib/Section')
+local Logo = require('lib/uilib/Logo')
+local Slider = require('lib/uilib/Slider')
+local UIOperations_renderSlider = Slider.render
 local UILateralOffsetsImageWidget = UILateralOffsetsImageWidget
 local UILateralOffsetsImageWidget_draw = UILateralOffsetsImageWidget.draw
 local UIAppNameVersionWidget = UIAppNameVersionWidget
 local UIAppNameVersionWidget_drawBottomRight = UIAppNameVersionWidget.drawBottomRight
 local UIOperations = UIOperations
 local UIOperations_createDisabledSection = UIOperations.createDisabledSection
-local UIOperations_renderSlider = UIOperations.renderSlider
 
 local StorageManager = StorageManager
 local StorageManager_getPerTrackPerModeStorageKey = StorageManager.getPerTrackPerModeStorageKey
+local StorageManager_Profile = StorageManager.Profile
+local StorageManager_BehaviorMode = StorageManager.BehaviorMode
+local StorageManager_applyBehaviorProfile = StorageManager.applyBehaviorProfile
 
 local StorageManager_options_default = StorageManager.options_default
 local StorageManager_options_min = StorageManager.options_min
@@ -80,8 +88,8 @@ local UI_HEADER_TEXT_FONT_SIZE = 15
 local DEFAULT_SLIDER_WIDTH = 200
 local DEFAULT_SLIDER_FORMAT = '%.2f'
 
-local DEFAULT_SLIDERGRAB_STYLECOLOR = ui.styleColor(ui_StyleColor.SliderGrab, 0)
-local AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO = ColorManager.RGBM_Colors.DarkKhaki
+local DEFAULT_SLIDERGRAB_STYLECOLOR = Theme.colors.accent
+local AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO = Theme.colors.accentSoft
 
 local storage = StorageManager.getStorage()
 local storage_Yielding = StorageManager.getStorage_Yielding()
@@ -89,13 +97,14 @@ local storage_Overtaking = StorageManager.getStorage_Overtaking()
 local storage_Debugging = StorageManager.getStorage_Debugging()
 local storage_AICarValues = StorageManager.getStorage_AICarValues()
 local storage_PathFinding = StorageManager.getStorage_PathFinding()
+local storage_Behavior = StorageManager.getStorage_Behavior()
 
 
 ---@param storage_Debugging StorageTable_Debugging
 local renderDebuggingSection = function(storage_Debugging)
     -- ui.text('Debugging')
     ui_newLine(1)
-    ui_dwriteText('Debugging', UI_HEADER_TEXT_FONT_SIZE)
+    Section.section('Debugging', function()
     ui_newLine(1)
 
     ui_columns(3, false, "debuggingSection")
@@ -152,6 +161,7 @@ local renderDebuggingSection = function(storage_Debugging)
 
     ui_newLine(1)
     ui_textColored('Warning: Enabling debugging options may impact performance.', ColorManager.RGBM_Colors.Yellow)
+    end)
 end
 
 local getSliderColorForAICautionWhenSetToZero = function(aiCautionValue)
@@ -160,13 +170,12 @@ end
 
 local drawAICarValuesSection = function()
     ui_columns(3, false, "aiCarValuesSection")
-    ui_setColumnWidth(0, 500)
-    ui_setColumnWidth(1, 530)
-    ui_setColumnWidth(2, 650)
+    ui_setColumnWidth(0, ui.windowWidth() * 0.32)
+    ui_setColumnWidth(1, ui.windowWidth() * 0.32)
+    ui_setColumnWidth(2, ui.windowWidth() * 0.32)
 
+    Section.section('Caution', function()
     ui_newLine(1)
-    ui_dwriteText('Caution', UI_HEADER_TEXT_FONT_SIZE)
-
     ui_text('Caution determines how much space cars keep from each other while driving.\nA higher caution means a larger gap between cars.')
     ui_newLine(1)
 
@@ -187,12 +196,11 @@ local drawAICarValuesSection = function()
     ui_pushStyleColor(ui_StyleColor.SliderGrab, getSliderColorForAICautionWhenSetToZero(storage_AICarValues.AICaution_Yielding))
     storage_AICarValues.AICaution_Yielding =  UIOperations_renderSlider('Caution while yielding', 'The caution level used when yielding (giving way to faster cars).\n\nThe higher this value is, the more cautious the cars will be while yielding.', storage_AICarValues.AICaution_Yielding, StorageManager_options_AICarValues_min[StorageManager_Options_AICarValues.AICaution_Yielding], StorageManager_options_AICarValues_max[StorageManager_Options_AICarValues.AICaution_Yielding], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_AICarValues_default[StorageManager_Options_AICarValues.AICaution_Yielding])
     ui_popStyleColor()
-
+    end)
     ui_nextColumn()
 
+    Section.section('Aggression', function()
     ui_newLine(1)
-    ui_dwriteText('Aggression', UI_HEADER_TEXT_FONT_SIZE)
-
     ui_text('Aggression determines how aggressively cars drive on the track.\nA higher aggression means the cars will try to go faster and take more risks.')
     ui_newLine(1)
 
@@ -221,12 +229,11 @@ local drawAICarValuesSection = function()
     UIOperations_createDisabledSection(not overrideOriginalAIAggression_yielding, function()
         storage_AICarValues.AIAggression_Yielding = UIOperations_renderSlider('Aggression while yielding', 'The aggression level used when yielding (giving way to faster cars).\n\nThe lower this value is, the more cautious the cars will be while yielding.', storage_AICarValues.AIAggression_Yielding, StorageManager_options_AICarValues_min[StorageManager_Options_AICarValues.AIAggression_Yielding], StorageManager_options_AICarValues_max[StorageManager_Options_AICarValues.AIAggression_Yielding], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_AICarValues_default[StorageManager_Options_AICarValues.AIAggression_Yielding])
     end)
-
+    end)
     ui_nextColumn()
 
+    Section.section('Difficulty', function()
     ui_newLine(1)
-    ui_dwriteText('Difficulty', UI_HEADER_TEXT_FONT_SIZE)
-
     ui_text('Difficulty Level affects how effective the cars are with the pedals and how fast they can handle corners.\nA higher difficulty level means the cars will be overall faster and more competitive.')
     ui_newLine(1)
 
@@ -255,17 +262,17 @@ local drawAICarValuesSection = function()
     UIOperations_createDisabledSection(not overrideOriginalAIDifficultyLevel_yielding, function()
         storage_AICarValues.AIDifficultyLevel_Yielding = UIOperations_renderSlider('Difficulty Level while yielding', 'The difficulty level used when yielding (giving way to faster cars).\n\nThe lower this value is, the less effective the cars will be with the pedals and how fast they can handle corners while yielding.', storage_AICarValues.AIDifficultyLevel_Yielding, StorageManager_options_AICarValues_min[StorageManager_Options_AICarValues.AIDifficultyLevel_Yielding], StorageManager_options_AICarValues_max[StorageManager_Options_AICarValues.AIDifficultyLevel_Yielding], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_AICarValues_default[StorageManager_Options_AICarValues.AIDifficultyLevel_Yielding])
     end)
-
+    end)
     ui_columns(1, false)
 end
 
 local drawLateralOffsetsSection = function()
     ui_newLine(1)
-    ui_dwriteText('Lateral Offsets (Driving Lanes)', UI_HEADER_TEXT_FONT_SIZE)
+    Section.section('Lateral Offsets (Driving Lanes)', function()
     ui_newLine(1)
 
     ui_columns(2, false, "lateralsSection")
-    ui_setColumnWidth(0, 560)
+    ui_setColumnWidth(0, ui.windowWidth() * 0.46)
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
@@ -293,25 +300,93 @@ local drawLateralOffsetsSection = function()
     UILateralOffsetsImageWidget_draw(storage)
 
     ui_columns(1, false)
+    end)
+end
+
+local drawBehaviorSection = function()
+    ui_newLine(1)
+    Section.section('Behavior & Mode', function()
+    ui_newLine(1)
+
+    -- Profile dropdown
+    local profileIndex = storage_Behavior.profile or StorageManager_Profile.Realistic
+    -- Infer profile from current storage_Behavior values if profile is nil
+    local detectedProfile = nil
+    for idx, profileData in pairs(StorageManager.BehaviorProfiles or {}) do
+        if profileData.mode == storage_Behavior.mode
+           and profileData.humanErrorEnabled == storage_Behavior.humanErrorEnabled
+           and math.abs(profileData.entryBlendTime_s - storage_Behavior.entryBlendTime_s) < 0.01 then
+            detectedProfile = idx
+            break
+        end
+    end
+    profileIndex = detectedProfile or profileIndex or StorageManager_Profile.Realistic
+
+    local profileNames = {"Casual", "Realistic", "Competitive"}
+    local newProfileIndex, profileChanged = ui_combo('AI Behavior Profile', profileIndex, ui.ComboFlags.None, profileNames)
+    if profileChanged and newProfileIndex ~= profileIndex then
+        profileIndex = newProfileIndex
+        StorageManager_applyBehaviorProfile(profileIndex)
+        storage_Behavior.profile = profileIndex  -- remember user's choice
+    end
+    ui_newLine(0.5)
+    if ui_itemHovered() then
+        ui_setTooltip([[Choose the overall AI driving style:
+  Casual      - Trackday only, instant reactions, no errors, no defense.
+  Realistic   - Trackday/Hybrid, human timing, no errors, gradual blending.
+  Competitive - Race mode, defend position, human errors (brake/traction), aggressive.]])
+    end
+
+    -- Mode display (read-only; shows what mode the profile activated)
+    local modeNames = {[StorageManager_BehaviorMode.TrackDay] = "Track Day", [StorageManager_BehaviorMode.Race] = "Race", [StorageManager_BehaviorMode.HybridAdaptive] = "Hybrid (Auto)"}
+    ui_text('Current Mode: ' .. (modeNames[storage_Behavior.mode] or 'Unknown'))
+    ui_newLine(1)
+
+    -- Advanced section with 14 sliders
+    local isAdvancedOpen = storage_Debugging.showBehaviorAdvanced or false
+    local checkboxLabel = isAdvancedOpen and 'Hide Advanced Behavior Sliders' or 'Show Advanced Behavior Sliders'
+    if ui_checkbox(checkboxLabel, isAdvancedOpen) then isAdvancedOpen = not isAdvancedOpen end
+    storage_Debugging.showBehaviorAdvanced = isAdvancedOpen
+    if ui_itemHovered() then ui_setTooltip('Granular sliders for the behavior polish values.\nMost users should pick a Profile above and leave these at defaults.') end
+
+    UIOperations_createDisabledSection(not isAdvancedOpen, function()
+        ui_newLine(1)
+
+        storage_Behavior.entryBlendTime_s = UIOperations_renderSlider('Entry blend time', 'Time to fade in when entering a new state (yielding, overtaking, etc.).\nHigher = smoother transitions.', storage_Behavior.entryBlendTime_s, 0.0, 5.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 1.5)
+        storage_Behavior.exitBlendTime_s = UIOperations_renderSlider('Exit blend time', 'Time to fade out when leaving a state.', storage_Behavior.exitBlendTime_s, 0.0, 5.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 2.0)
+        storage_Behavior.aiReactionDelay_s = UIOperations_renderSlider('AI reaction delay', 'How long the AI waits before reacting to a situation.', storage_Behavior.aiReactionDelay_s, 0.0, 2.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 0.4)
+        storage_Behavior.aiReactionJitter_s = UIOperations_renderSlider('AI reaction jitter', 'Random extra delay added on top of reaction delay.', storage_Behavior.aiReactionJitter_s, 0.0, 1.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 0.2)
+        storage_Behavior.aiLookaheadWindow_s = UIOperations_renderSlider('AI lookahead window', 'How far ahead the AI looks to anticipate.', storage_Behavior.aiLookaheadWindow_s, 0.0, 10.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 2.0)
+        storage_Behavior.aiLookaheadConfidenceThreshold = UIOperations_renderSlider('Lookahead confidence threshold', 'Min confidence to act on lookahead.', storage_Behavior.aiLookaheadConfidenceThreshold, 0.0, 1.0, DEFAULT_SLIDER_WIDTH, '%.2f', 0.7)
+        storage_Behavior.pointBySpeedDeltaKmh = UIOperations_renderSlider('Point-by speed delta (km/h)', 'How much faster (km/h) a car behind must be to yield.', storage_Behavior.pointBySpeedDeltaKmh, 0.0, 80.0, DEFAULT_SLIDER_WIDTH, '%.0f km/h', 15.0)
+        storage_Behavior.defenseDurationMin_s = UIOperations_renderSlider('Defense duration min (s)', 'Minimum time defending position before yielding.', storage_Behavior.defenseDurationMin_s, 0.0, 10.0, DEFAULT_SLIDER_WIDTH, '%.1f s', 1.0)
+        storage_Behavior.defenseDurationMax_s = UIOperations_renderSlider('Defense duration max (s)', 'Maximum time defending position before yielding.', storage_Behavior.defenseDurationMax_s, 0.0, 10.0, DEFAULT_SLIDER_WIDTH, '%.1f s', 3.0)
+        storage_Behavior.overtakeAggressiveness = UIOperations_renderSlider('Overtake aggressiveness', 'How assertive AI is when space is marginal.', storage_Behavior.overtakeAggressiveness, 0.0, 1.0, DEFAULT_SLIDER_WIDTH, '%.2f', 0.5)
+        storage_Behavior.humanErrorEnabled = UIOperations_renderSlider('Human errors enabled', 'Whether AI cars make realistic mistakes (lock-ups, traction loss).', storage_Behavior.humanErrorEnabled and 1 or 0, 0, 1, DEFAULT_SLIDER_WIDTH, '%.0f', 1) >= 0.5
+        storage_Behavior.humanLockupProbability = UIOperations_renderSlider('Lock-up probability (per sec)', 'Chance per second of brake lock-up when braking hard.', storage_Behavior.humanLockupProbability, 0.0, 0.10, DEFAULT_SLIDER_WIDTH, '%.3f', 0.03)
+        storage_Behavior.humanTractionMistakeProbability = UIOperations_renderSlider('Traction mistake prob (per sec)', 'Chance per second of traction loss on throttle.', storage_Behavior.humanTractionMistakeProbability, 0.0, 0.10, DEFAULT_SLIDER_WIDTH, '%.3f', 0.02)
+        storage_Behavior.errorCooldown_s = UIOperations_renderSlider('Error cooldown (s)', 'Minimum time between human errors on the same car.', storage_Behavior.errorCooldown_s or 7.0, 0.0, 30.0, DEFAULT_SLIDER_WIDTH, '%.1f s', 7.0)
+    end)
+    end)
 end
 
 SettingsWindow.draw = function()
-    -- Draw the app icon at the top-right of the settings window
-    AppIconRenderer_draw()
+    Style.windowBegin('settingsWindow')
+    Logo.draw(42)
 
     ui_pushDWriteFont('Segoe UI')
 
-    ui_text(string_format('Settings loaded for %s', StorageManager_getPerTrackPerModeStorageKey()))
+    ui_textColored(string_format('SETTINGS  /  %s', StorageManager_getPerTrackPerModeStorageKey()), Theme.colors.muted)
     ui_newLine(1)
 
     -- Draw the Enabled checkbox
     local appEnabled = storage.enabled
-    local enabledCheckBoxColor = appEnabled and ColorManager.RGBM_Colors.LimeGreen or ColorManager.RGBM_Colors.Red
+    local enabledCheckBoxColor = appEnabled and Theme.colors.accent or Theme.colors.muted
     ui_pushStyleColor(ui_StyleColor.Text, enabledCheckBoxColor)
     local enabledDisabledText = appEnabled and 'Enabled' or 'Disabled'
-    if ui_checkbox(string_format('Realistic Trackday %s for: %s (Mode: %s)', enabledDisabledText, RaceTrackManager_getTrackName(), RaceTrackManager_getSessionTypeName()), appEnabled) then storage.enabled = not storage.enabled end
+    if ui_checkbox(string_format('SimOpenTrackDay %s for: %s (Mode: %s)', enabledDisabledText, RaceTrackManager_getTrackName(), RaceTrackManager_getSessionTypeName()), appEnabled) then storage.enabled = not storage.enabled end
     ui_popStyleColor(1)
-    if ui_itemHovered() then ui_setTooltip('Enable the Realistic Trackday app for this specific track and session mode.\n\nEach track and session mode type use individually saved settings.') end
+    if ui_itemHovered() then ui_setTooltip('Enable the SimOpenTrackDay app for this specific track and session mode.\n\nEach track and session mode type use individually saved settings.') end
 
     ui_newLine(1)
 
@@ -340,19 +415,23 @@ SettingsWindow.draw = function()
     ui_newLine(1)
     ui_separator()
 
-    -- Create the Yielding and Overtaking table with 2 columns
-    ui_columns(2, true, "yieldingOvertakingSection")
-    ui_setColumnWidth(0, 560)
-    --ui.setColumnWidth(1, 260)
+    drawBehaviorSection()
 
     ui_newLine(1)
-    ui_dwriteText('Yielding', UI_HEADER_TEXT_FONT_SIZE)
-    ui_newLine(1)
+    ui_separator()
+
+    -- Create the Yielding and Overtaking table with 2 columns
+    ui_columns(2, true, "yieldingOvertakingSection")
+    ui_setColumnWidth(0, ui.windowWidth() * 0.46)
+    --ui.setColumnWidth(1, 260)
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
 
-    local handleYieldingCheckboxColor = handleYielding and ColorManager.RGBM_Colors.LimeGreen or ColorManager.RGBM_Colors.Red
+    Section.section('Yielding', function()
+    ui_newLine(1)
+
+    local handleYieldingCheckboxColor = handleYielding and Theme.colors.accent or Theme.colors.muted
     ui_pushStyleColor(ui_StyleColor.Text, handleYieldingCheckboxColor)
     if ui_checkbox('Handle Yielding', storage_Yielding.handleYielding) then storage_Yielding.handleYielding = not storage_Yielding.handleYielding end
     ui_popStyleColor(1)
@@ -389,7 +468,7 @@ SettingsWindow.draw = function()
         storage_Yielding.speedLimitValueToOvertakingCar = UIOperations_renderSlider('Top speed limit value to overtaking car [0..1]', "When yielding, the yielding car's top speed will be limited to this fraction of the overtaking car's current speed to let it pass more easily.\n1.0 = no top speed limiting\n0.5 = limit top speed to half the current speed of the overtaking car.\n0.0 = make the car grind to a halt", storage_Yielding.speedLimitValueToOvertakingCar, StorageManager_options_Yielding_min[StorageManager_Options_Yielding.SpeedLimitValueToOvertakingCar], StorageManager_options_Yielding_max[StorageManager_Options_Yielding.SpeedLimitValueToOvertakingCar], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_Yielding_default[StorageManager_Options_Yielding.SpeedLimitValueToOvertakingCar])
         local speedLimitValueToOvertakingCar  = storage_Yielding.speedLimitValueToOvertakingCar
         UIOperations_createDisabledSection(speedLimitValueToOvertakingCar >= 1.0, function()
-            storage_Yielding.minimumSpeedLimitKmhToLimitToOvertakingCar = UIOperations_renderSlider('Minimum top speed to limit to overtaking car', "When yielding, the yielding car's top speed will not be limited below this speed even if the overtaking car is very slow.\n0.0 = no minimum top speed limit while yielding", storage_Yielding.minimumSpeedLimitKmhToLimitToOvertakingCar, StorageManager_options_Yielding_min[StorageManager_options_Yielding_min.MinimumSpeedLimitKmhToLimitToOvertakingCar], StorageManager_options_Yielding_max[StorageManager_Options_Yielding.MinimumSpeedLimitKmhToLimitToOvertakingCar], DEFAULT_SLIDER_WIDTH, '%.2f km/h', StorageManager_options_Yielding_default[StorageManager_Options_Yielding.MinimumSpeedLimitKmhToLimitToOvertakingCar])
+            storage_Yielding.minimumSpeedLimitKmhToLimitToOvertakingCar = UIOperations_renderSlider('Minimum top speed to limit to overtaking car', "When yielding, the yielding car's top speed will not be limited below this speed even if the overtaking car is very slow.\n0.0 = no minimum top speed limit while yielding", storage_Yielding.minimumSpeedLimitKmhToLimitToOvertakingCar, StorageManager_options_Yielding_min[StorageManager_Options_Yielding.MinimumSpeedLimitKmhToLimitToOvertakingCar], StorageManager_options_Yielding_max[StorageManager_Options_Yielding.MinimumSpeedLimitKmhToLimitToOvertakingCar], DEFAULT_SLIDER_WIDTH, '%.2f km/h', StorageManager_options_Yielding_default[StorageManager_Options_Yielding.MinimumSpeedLimitKmhToLimitToOvertakingCar])
 
         end)
 
@@ -403,14 +482,13 @@ SettingsWindow.draw = function()
             storage_Yielding.distanceToOvertakingCarToLimitSpeed = UIOperations_renderSlider('Distance to overtaking car to apply speed limiting', 'When yielding, if an overtaking car is within this distance behind us, we will limit our speed to let it pass more easily.', storage_Yielding.distanceToOvertakingCarToLimitSpeed, StorageManager_options_Yielding_min[StorageManager_Options_Yielding.DistanceToOvertakingCarToLimitSpeed], StorageManager_options_Yielding_max[StorageManager_Options_Yielding.DistanceToOvertakingCarToLimitSpeed], DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_Yielding_default[StorageManager_Options_Yielding.DistanceToOvertakingCarToLimitSpeed])
         end)
     end)
-
+    end)
     ui_nextColumn()
 
-    ui_newLine(1)
-    ui_dwriteText('Overtaking', UI_HEADER_TEXT_FONT_SIZE)
+    Section.section('Overtaking', function()
     ui_newLine(1)
 
-    local handleOvertakingCheckboxColor = handleOvertaking and ColorManager.RGBM_Colors.LimeGreen or ColorManager.RGBM_Colors.Red
+    local handleOvertakingCheckboxColor = handleOvertaking and Theme.colors.accent or Theme.colors.muted
     ui_pushStyleColor(ui_StyleColor.Text, handleOvertakingCheckboxColor)
     if ui_checkbox('Handle Overtaking', storage_Overtaking.handleOvertaking) then storage_Overtaking.handleOvertaking = not storage_Overtaking.handleOvertaking end
     ui_popStyleColor(1)
@@ -442,6 +520,7 @@ SettingsWindow.draw = function()
 
         storage_Overtaking.overtakeRampRelease_mps =  UIOperations_renderSlider('Overtaking Lateral Offset decrement step', 'How quickly the lateral offset returns to normal once an overtaking car has fully driven past the overtaken car.\nThe higher it is, the more quickly cars will change lanes moving back to the default lateral offset after finishing overtaking.', storage_Overtaking.overtakeRampRelease_mps, StorageManager_options_Overtaking_min[StorageManager_Options_Overtaking.OvertakeRampRelease_mps], StorageManager_options_Overtaking_max[StorageManager_Options_Overtaking.OvertakeRampRelease_mps], DEFAULT_SLIDER_WIDTH, '%.3f m/s', StorageManager_options_Overtaking_default[StorageManager_Options_Overtaking.OvertakeRampRelease_mps])
     end)
+    end)
 
     -- finish two columns
     ui_columns(1, false)
@@ -451,10 +530,9 @@ SettingsWindow.draw = function()
 
     UIOperations_createDisabledSection(not Constants.ENABLE_ACCIDENT_HANDLING_IN_APP, function()
         ui_columns(2, true, "accidentsSection")
-        ui_setColumnWidth(0, 560)
+        ui_setColumnWidth(0, ui.windowWidth() * 0.46)
 
-        ui_newLine(1)
-        ui_dwriteText('Accidents', UI_HEADER_TEXT_FONT_SIZE)
+        Section.section('Accidents', function()
         ui_newLine(1)
 
         if ui_checkbox('Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)', storage.handleAccidents) then storage.handleAccidents = not storage.handleAccidents end
@@ -466,11 +544,11 @@ SettingsWindow.draw = function()
 
             storage.distanceToStartNavigatingAroundCarInAccident_meters =  UIOperations_renderSlider('Distance to start navigating around car in accident (m)', 'Distance from accident at which AI will start navigating around the car in accident.', storage.distanceToStartNavigatingAroundCarInAccident_meters, 5, 100, DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_default[StorageManager_Options.DistanceToStartNavigatingAroundCarInAccident_meters])
         end)
+        end)
 
         ui_nextColumn()
 
-        ui_newLine(1)
-        ui_dwriteText('Pathfinding', UI_HEADER_TEXT_FONT_SIZE)
+        Section.section('Pathfinding', function()
         ui_newLine(1)
 
         storage_PathFinding.forwardDistanceMeters =  UIOperations_renderSlider('Forward distance', 'The distance ahead of the car that the pathfinding system will consider when calculating paths around obstacles.', storage_PathFinding.forwardDistanceMeters, StorageManager_options_PathFinding_min[StorageManager_Options_PathFinding.ForwardDistanceMeters], StorageManager_options_PathFinding_max[StorageManager_Options_PathFinding.ForwardDistanceMeters], DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_PathFinding_default[StorageManager_Options_PathFinding.ForwardDistanceMeters])
@@ -486,15 +564,14 @@ SettingsWindow.draw = function()
 
         -- finish two columns
         ui_columns(1, false)
-
+        end)
     end)
 
 
     ui_newLine(1)
     ui_separator()
 
-    ui_newLine(1)
-    ui_dwriteText('Other', UI_HEADER_TEXT_FONT_SIZE)
+    Section.section('Other', function()
     ui_newLine(1)
 
     if ui_checkbox('Override AI awareness', storage.overrideAiAwareness) then storage.overrideAiAwareness = not storage.overrideAiAwareness end
@@ -505,7 +582,7 @@ SettingsWindow.draw = function()
     storage.clearAhead_meters = UIOperations_renderSlider('The distance which determines whether a car is far enough ahead of another car', 'When checking if a car is clear ahead of another car, this is the distance used to determine if it is clear.', storage.clearAhead_meters, StorageManager_options_min[StorageManager_Options.ClearAhead_meters], StorageManager_options_max[StorageManager_Options.ClearAhead_meters], DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_default[StorageManager_Options.ClearAhead_meters])
 
     storage.deferTimeAfterSessionStart = UIOperations_renderSlider('Defer yielding/overtaking for a while after session start', "The time after the session starts during which no yielding or overtaking will be performed by AI cars.\n\nUsually only applicable for race scenarios where you don't want the cars to try and yield immediately after start because it creates chaos.", storage.deferTimeAfterSessionStart, StorageManager_options_min[StorageManager_Options.DeferTimeAfterSessionStart], StorageManager_options_max[StorageManager_Options.DeferTimeAfterSessionStart], DEFAULT_SLIDER_WIDTH, '%.2f seconds', StorageManager_options_default[StorageManager_Options.DeferTimeAfterSessionStart])
-
+    end)
     ui_separator()
 
     renderDebuggingSection(storage_Debugging)
@@ -537,6 +614,7 @@ SettingsWindow.draw = function()
     if not appEnabled then
         ui_popDisabled()
     end
+    Style.windowEnd()
 end
 
 --[===[
