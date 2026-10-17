@@ -3,7 +3,7 @@
 > Mapa denso do código para **desenvolvedores** e **AI agents** que vão modificar o app.
 > Leia o `docs/AGENT.md` primeiro para o onboarding; este documento entra no "como as peças se encaixam".
 
-Escopo: app **LuaJIT 2.1 / Lua 5.1** carregado pelo **CSP** como `apps/lua/SimOpenTrackDay/manifest.ini`.
+Escopo: app **LuaJIT 2.1 / Lua 5.1** carregado pelo **CSP** como `apps/lua/SimOpenTrackDay/manifest.ini`. A compatibilidade de APIs é checada pelo entry point; runtime e visual in-game não estão validados por este mapa.
 Entry point: `SimOpenTrackDay.lua`. O `manifest.ini` registra os callbacks:
 
 | Callback | Onde | Papel |
@@ -110,7 +110,7 @@ Entry point: `SimOpenTrackDay.lua`. O `manifest.ini` registra os callbacks:
 
 `SimOpenTrackDay.lua` carrega os módulos na ordem: `Constants` → `Logger` → `CSPCompatibilityManager` → `VecPool` → DataStructures → `GameTimeManager` → `AppIconRenderer` → `ColorManager` → `RaceTrackManager` → `StorageManager` → `MathHelpers` → `CarManager` → `CarOperations` → `CameraManager` → `Strings*` → `StringsManager` → `OnCarEventManager` → `CarStateMachine` → `States/*` → `AccidentManager` → `RaceFlagManager` → UI → `SessionDetails` → `Pathfinding` → `BehaviorPolish` → `HumanErrorManager` → `SettingsWindow`.
 
-Motivo: **vários módulos capturam storage no load time**, ex. `CarStateMachine.lua`:
+Motivo: **vários módulos capturam storage no load time**, ex. `CarStateMachine/CarStateMachine.lua`:
 ```lua
 local storage_Yielding = StorageManager.getStorage_Yielding()
 local storage_Debugging = StorageManager.getStorage_Debugging()
@@ -161,7 +161,7 @@ table.clear(carList)
 - Pool: `CarOperations._reusableSideAnchorTable` + **8 scratch vec3** (`_reusableVec3_center`, `...frontLeft`, `...centerLeft`, `...rearLeft`, `...frontRight`, `...centerRight`, `...rearRight`, `...right`).
 - `outTable` default é o pool; `table_clear(outTable)` no início; retorna a tabela com `frontLeft/centerLeft/rearLeft/frontRight/centerRight/rearRight/center/forwardDirection/leftDirection/rightDirection/upDirection`.
 - **Nunca aloque** `vec3()` dentro do hot path. `VecPool.getTempVec3` retorna **um singleton compartilhado** — não guarde referência entre chamadas.
-- Cuidado: `checkIfCarIsBlockedByAnotherCarAndSaveSideBlockRays` salva as direções/ray data em `CarManager.cars_sideBlockRaysData[carIndex]`, que é limpo a cada `CarStateMachine.updateCar` (`CarStateMachine.lua`).
+- Cuidado: `checkIfCarIsBlockedByAnotherCarAndSaveSideBlockRays` salva as direções/ray data em `CarManager.cars_sideBlockRaysData[carIndex]`, que é limpo a cada `CarStateMachine.updateCar` (`CarStateMachine/CarStateMachine.lua`).
 
 ### 2.5 Yellow zones com bucket O(1)
 
@@ -276,7 +276,7 @@ table.clear(carList)
 | `cars_speedBuffer` / `cars_speedSampleCount` | `CarManager.lua` | buffer circular de velocidades |
 | `cars_defenseRemainingTime_s` | `CarManager` / `CarState_DefendingPosition` | tempo restante defendendo posição |
 | `cars_currentReusableList` | `CarManager.lua` | lista reusada a cada frame |
-| `cars_state` (local) | `CarStateMachine.lua` | estado atual da FSM por carro |
+| `cars_state` (local) | `CarStateMachine/CarStateMachine.lua` | estado atual da FSM por carro |
 | `cars_sideBlockRaysData` | `CarManager` | dados dos raycasts laterais, limpos por frame |
 | `sortedCarList_carIndexToSortedIndex` | `CarManager.lua` | índice reverso carIndex → posição no sort |
 | `HumanErrorManager.lastEventTimeByCar` / `errorCountByCar` | `HumanErrorManager.lua` | cooldown/contagem por carro |
@@ -377,17 +377,14 @@ Isso **funciona** porque `ac.storage` aceita chaves arbitrárias, mas:
 | --- | --- | --- |
 | `physics.setAICaution` | experimental/documentado | valida; máximo prático 16 (`MAX_AI_CAUTION_VALUE` em `StorageManager.lua`) |
 | `physics.setAITopSpeed` / `setAIThrottleLimit` | **não funcionam em AI Flood do AC** | motivo do `CarSpeedLimiter.lua` (desligado) e do anti-drag-race |
-| `physics.setAIBrakeMistake` / `setAITractionMistake` | **CSP 0.3.0+** | usadas por `HumanErrorManager` |
+| `physics.setAIBrakeMistake` / `setAITractionMistake` | verificadas pelo entry point | usadas por `HumanErrorManager`; não se declara uma versão mínima de CSP neste documento |
 | `physics.setAILapsToComplete` | disponível no SDK distribuído | não registrada nem usada pelo app atual |
 | `physics.Collider.TrackWalls()` / `TrackGround()` | **preview649** | API de colliders; não usada diretamente hoje |
 | `physics.preventAIFromRetiring` | **chamar recorrentemente** | por frame, enquanto durar a condição (`CarOperations.preventAIFromRetiring`) |
 | `physics.overrideRacingFlag` | estável | base do `RaceFlagManager` |
 | `ac.storage` | estável | aceita chaves arbitrárias (ver §5.1) |
 
-Todas as funções de CSP que exigem versão recente são registradas no topo do entry point via
-`CSPCompatibilityManager.addFunction(...)` e validadas por
-`CSPCompatibilityManager.checkForMissingElements(...)`. Ao adicionar uma API nova,
-**registre-a lá** para receber o diagnóstico de versão mínima.
+As APIs CSP usadas e registradas pelo app passam por `CSPCompatibilityManager.addFunction(...)` e são verificadas por `CSPCompatibilityManager.checkForMissingElements(...)`. O SDK também contém APIs não usadas pelo app — por exemplo `physics.setAILapsToComplete` — que não são registradas. Ao adicionar uma API nova ao app, **registre-a no entry point** para receber o diagnóstico de ausência.
 
 ---
 
@@ -400,7 +397,7 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 ├─ CarStateMachine/
 │  ├─ CarStateMachine.lua           FSM central (`updateCar`)
 │  ├─ CarState_TEMPLATE.lua         contrato de novo estado
-│  └─ States/*.lua                  14 estados (ver STATE_MACHINE.md)
+│  └─ States/*.lua                  estados (ver docs/STATE_MACHINE.md)
 ├─ StorageManager.lua               enum→collection→DoD→storage→getters
 ├─ SettingsWindow.lua               UI settings (`draw`)
 ├─ UIManager.lua                    car list / overhead / offsets preview

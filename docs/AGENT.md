@@ -7,7 +7,7 @@
 
 ## 1. O que é este projeto
 
-**SimOpenTrackDay** é um fork em desenvolvimento de **Assetto Corsa Realistic Trackday**, um app em **Lua** para o **Assetto Corsa**, carregado via **Custom Shaders Patch (CSP)**. O projeto upstream é de Andreas Grech; consulte o README e a licença MIT para atribuição.
+**SimOpenTrackDay** é um projeto derivado independente, em desenvolvimento, baseado em **Assetto Corsa Realistic Trackday**: um app em **Lua** para **Assetto Corsa**, carregado via **Custom Shaders Patch (CSP)**. O projeto original é de Andreas Grech; veja os [créditos e licença](../README.md#créditos-e-licença) no README.
 
 Ele altera o comportamento dos carros controlados pela **IA** para que ajam como humanos num *track day* em vez de bots que seguem a *racing line* com "antolhos". Comportamentos principais:
 
@@ -25,7 +25,7 @@ A inspiração é a experiência real das **Touristenfahrten da Nordschleife**, 
 | Item | Valor |
 | --- | --- |
 | **Engine** | **LuaJIT 2.1** (compatível com **Lua 5.1**) — a mesma engine que o CSP usa internamente |
-| **CSP alvo** | **0.3.0+** |
+| **CSP** | Necessário para carregar Lua Apps; a compatibilidade das APIs usadas é verificada pelo app. Nenhuma versão mínima é declarada aqui. |
 | **Manifest** | `manifest.ini` com `[CORE] LAZY = NONE` |
 | **Callbacks** | `MANIFEST__UPDATE`, `MANIFEST__FUNCTION_MAIN`, `MANIFEST__FUNCTION_SETTINGS`, `MANIFEST__FUNCTION_ICON`, `MANIFEST__TRANSPARENT` |
 | **SDK/submodules** | `lib/ac_apps/` (SDK do CSP) e `lib/AssettoCorsaCSPLuaCompatibilityManager/` (submodule de compatibilidade) — não editar como código do app; atualizar o submodule deliberadamente |
@@ -33,7 +33,7 @@ A inspiração é a experiência real das **Touristenfahrten da Nordschleife**, 
 
 As funções de CSP `physics.setAIBrakeMistake` e `physics.setAITractionMistake` são registradas via `CSPCompatibilityManager.addFunction(...)` no topo do entry point. `physics.setAILapsToComplete` existe no SDK distribuído, mas não é registrada nem usada pelo app atual.
 
-> **Importante**: o payload no repositório está na raiz. Instalado, o entry point fica em `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`. Não mova os módulos para uma nova hierarquia dentro do repositório.
+> **Importante**: o payload no repositório está na raiz. Instalado, o entry point fica em `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`. A instalação é manual. Não mova os módulos para uma nova hierarquia dentro do repositório; preserve instalações e configurações existentes.
 
 ---
 
@@ -203,11 +203,11 @@ StorageManager.getStorage_Behavior()
     Para opções de behavior, edite `SettingsWindow.lua` na seção de Behavior. Categorias novas ganham uma seção análoga.
 
 4. **Lógica de IA**
-   - **Novo estado?** Estenda a FSM em `CarStateMachine.lua` (adicione o bit flag em `CarStateType` e os arrays `states_*Functions`) e crie `CarState_<Name>.lua` em `States/`, usando `CarState_TEMPLATE.lua`.
+   - **Novo estado?** Estenda a FSM em `CarStateMachine/CarStateMachine.lua` (adicione o bit flag em `CarStateType` e os arrays `states_*Functions`) e crie `CarState_<Name>.lua` em `CarStateMachine/States/`, usando `CarStateMachine/CarState_TEMPLATE.lua`.
    - **Só lógica?** Estenda o manager relevante (`CarOperations`, `CollisionAvoidanceManager`, etc.).
 
 5. **Wiring**
-    Chame a partir do `MANIFEST__UPDATE` no entry point se for per-frame. Se for evento, use os handlers de `ac.onCarJumped` / `ac.onCarCollision` (registrados no entry point).
+    Chame a partir do `MANIFEST__UPDATE` no entry point se for per-frame. Para ícones das janelas, o manifest usa `MANIFEST__FUNCTION_ICON`. Se for evento, use os handlers de `ac.onCarJumped` / `ac.onCarCollision` (registrados no entry point).
 
 6. **Validar**
     Rode o checker de sintaxe (seção 7); a contagem é determinada dinamicamente pelos arquivos encontrados.
@@ -247,7 +247,7 @@ Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\l
 | `docs/TESTING.md` | Como validar antes de pilotar |
 | `docs/UI_REDESIGN_DISCOVERY.md` | Inventário e status da revisão de UI |
 | `CONTRIBUTING.md` | Fluxo de contribuição |
-| `README.md` (raiz) | Descrição do produto, changelog e vídeos |
+| `README.md` (raiz) | Visão geral, instalação manual, uso e créditos |
 
 ---
 
@@ -257,7 +257,7 @@ Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\l
 - ⛔ **Não edite `lib/ac_apps/` como código do projeto** (SDK vendor); atualizações no submodule de compatibilidade devem ser deliberadas. `lib/uilib/` é biblioteca própria, não vendor.
 - ⛔ **NÃO modifique `manifest.ini`** para testar localmente. O CSP carrega o app como `apps/lua/<pasta>/manifest.ini`.
 - ⚠️ **NÃO aloque tabelas em hot paths.** Use as tabelas reutilizáveis (ex.: `cars_currentReusableList`, `_reusableSideAnchorTable`) e pools como `VecPool`.
-- ⚠️ **CSP 0.3.0+ é pré-requisito.** `physics.setAIBrakeMistake` e `physics.setAITractionMistake` passam por `CSPCompatibilityManager.addFunction`.
+- ⚠️ **Compatibilidade CSP é checada pelo entry point.** `physics.setAIBrakeMistake` e `physics.setAITractionMistake` passam por `CSPCompatibilityManager.addFunction`; consulte o diagnóstico do app para APIs ausentes.
 - ⚠️ **Respeite o DoD.** Estado de carro em tabelas indexadas, não em instâncias.
 - ⚠️ **Não reinvente a roda.** Antes de criar lógica nova, verifique se já existe tabela de classes/storage/enum para estender.
 - ⚠️ **Erros intencionais existem.** Não "conserte" o `HumanErrorManager` achando que é bug.
@@ -268,8 +268,8 @@ Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\l
 
 1. Leia este arquivo inteiro.
 2. Abra `SimOpenTrackDay.lua` e localize `MANIFEST__UPDATE`.
-3. Leia `CarStateMachine.lua` e identifique os bit flags em `CarStateType`.
-4. Abra `CarState_DrivingNormally.lua` como exemplo de estado real.
+3. Leia `CarStateMachine/CarStateMachine.lua` e identifique os bit flags em `CarStateType`.
+4. Abra `CarStateMachine/States/CarState_DrivingNormally.lua` como exemplo de estado real.
 5. Leia `StorageManager.lua` nas seções de enum/collection/storage Table e `getStorage*()`.
 6. Rode o checker de sintaxe (seção 7); confirme a contagem dinâmica e que não há falhas.
 7. Só então comece a alterar código.

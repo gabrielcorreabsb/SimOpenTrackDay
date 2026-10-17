@@ -1,16 +1,33 @@
-# Contributing
+# Contribuir
 
-SimOpenTrackDay is an in-development fork of [Assetto Corsa Realistic Trackday](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday). Keep upstream attribution and its MIT license notices intact. Do not present upstream releases as releases of this fork.
+SimOpenTrackDay é um projeto derivado independente em desenvolvimento. Leia o [README](README.md) e os [créditos/licença](README.md#créditos-e-licença) antes de alterar ou redistribuir o projeto; preserve os avisos MIT do original e os créditos das dependências.
 
-## Local workflow
+## Preparar o checkout
 
-1. Clone the project with submodules: `git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git SimOpenTrackDay`, then run `git submodule update --init --recursive` if needed.
-2. Keep the app payload in the repository root. Do not reorganize modules into an `apps/lua` tree; that is the installed location, not the repository layout.
-3. Make focused changes and preserve existing diagnostic tags and compatibility handling.
-4. Run the Lua syntax checker: `powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"`. It finds `luajit` on `PATH`, or accepts optional `-LuaJitPath` and `-Root` arguments.
-5. Run the headless mock-contract smoke test with `luajit tools/test_ui_smoke.lua`. It uses `tools/fixtures/settings_baseline.lua`; this checks only the mocked contracts/paths exercised, not CSP rendering or runtime behavior. Manual CSP/Assetto Corsa validation is a separate check and has not yet been established for this fork.
-6. Run the vector-logo/icon callback smoke test with `luajit tools/test_logo_smoke.lua`. It compiles the callback extracted from the entry point and tests mocked drawing behavior; it does not validate CSP rendering or in-game runtime behavior.
-7. Optionally compare against a separately available original SettingsWindow source by setting `RTD_BASELINE_SETTINGS` to its path before running `tools/test_ui_smoke.lua`. The committed fixture remains the portable default and is never regenerated from current code automatically.
-8. Before sharing, review the diff and describe which checks actually ran. Do not claim an in-game test unless it was performed and recorded.
+```sh
+git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git
+cd SimOpenTrackDay
+git submodule update --init --recursive
+```
 
-Keep the upstream Git remote separate from the fork's own remote when configuring remotes; repository remotes are a local user decision. No commits, pushes, deployments, or releases are performed automatically by this project workflow. Do not delete existing app installations or user configuration when testing; back them up and use a separate installation where practical.
+O payload do app fica na raiz do checkout. `apps/lua/SimOpenTrackDay/` é o caminho de instalação, não uma pasta a criar dentro do repositório. A cópia para o Assetto Corsa é manual; veja [Instalação no README](README.md#instalação-manual) e preserve instalações/configurações existentes.
+
+## Fluxo de contribuição
+
+- Faça alterações focadas; preserve os nove registros `[RTD-DIAG-*]`, contratos de storage e comportamento de compatibilidade sem evidência para removê-los.
+- Mantenha o submodule `lib/AssettoCorsaCSPLuaCompatibilityManager/` e o SDK em `lib/ac_apps/` conforme suas origens e licenças. O SDK é vendor: não edite como código do app.
+- Para bugs deste projeto, use o [issue tracker SimOpenTrackDay](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues). O [repositório upstream](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday) é referência de origem/crédito; não use releases upstream como releases deste projeto nem envie alterações ao upstream sem autorização própria.
+
+## Verificações locais
+
+Com LuaJIT 2.1 disponível no `PATH`, execute da raiz:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
+luajit tools/test_ui_smoke.lua
+luajit tools/test_logo_smoke.lua
+```
+
+O checker aceita `-LuaJitPath` e `-Root`. Os testes UI/logo são headless com mocks; não validam o runtime nem o rendering do CSP. Para comparação opcional, `RTD_BASELINE_SETTINGS` pode apontar para um arquivo-fonte baseline disponível localmente antes de executar o smoke UI; não use caminhos pessoais em documentação ou issues. A fixture versionada é o padrão e não se atualiza a partir do código corrente.
+
+Antes de compartilhar uma alteração, revise o diff e registre apenas checks realmente executados. Não declare validação in-game sem realizá-la. Este fluxo não configura remotes, faz commit/push, instala o app ou publica releases automaticamente.

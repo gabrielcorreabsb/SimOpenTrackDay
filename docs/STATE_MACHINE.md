@@ -1,4 +1,4 @@
-# Máquina de Estados (FSM) dos Carros IA — Realistic Trackday
+# Máquina de Estados (FSM) dos Carros IA — SimOpenTrackDay
 
 Documento descreve a **Finite State Machine (FSM)** que governa o comportamento
 de cada carro IA: estados, o que fazem, transições e como adicionar novos.
@@ -6,7 +6,7 @@ de cada carro IA: estados, o que fazem, transições e como adicionar novos.
 - **Arquivo central:** `CarStateMachine/CarStateMachine.lua`
 - **Estados:** `CarStateMachine/States/CarState_<Nome>.lua`
 - **Template:** `CarStateMachine/CarState_TEMPLATE.lua`
-- **Enum:** `CarStateMachine.CarStateType` (`CarStateMachine.lua:26`)
+- **Enum:** `CarStateMachine.CarStateType` em `CarStateMachine/CarStateMachine.lua`
 
 ---
 
@@ -54,7 +54,7 @@ do estado:
 ### Dispatch de `updateCar`
 
 `CarStateMachine.updateCar(carIndex, dt, sortedCarsList, sortedCarsListIndex)`
-(`CarStateMachine.lua:239`) roda por frame nesta ordem:
+(`CarStateMachine/CarStateMachine.lua`) roda por frame nesta ordem:
 
 1. **Transição enfileirada:** se há `queuedStatesToTransitionInto`, faz
    `changeState` e chama a `entry` do novo estado.
@@ -135,7 +135,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 `exit`.
 
 ### 3.1 DRIVING_NORMALLY
-- **Arquivo:** `States/CarState_DrivingNormally.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_DrivingNormally.lua` — **min:** `0`
 - **Entry:** sincroniza offset calculado com o real; alvo =
   `storage.defaultLateralOffset`; limpa refs de overtake/yield; setas off;
   restaura aggression/difficulty/grip/caution padrão; reseta throttle.
@@ -147,7 +147,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
   `storage.deferTimeAfterSessionStart`.
 
 ### 3.2 EASING_IN_YIELD
-- **Arquivo:** `States/CarState_EasingInYield.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_EasingInYield.lua` — **min:** `0`
 - **Entry:** valida `cars_currentlyYieldingCarToIndex` (setado pelo estado
   anterior); offset calculado a partir do real; seta para o lado de yield.
 - **Update:** `yieldSafelyToSide(...)`; sem brecha -> `setAIThrottleLimit(0.4)` +
@@ -157,7 +157,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** reseta brake, throttle limit e setas.
 
 ### 3.3 STAYING_ON_YIELDING_LANE
-- **Arquivo:** `States/CarState_StayingOnYieldingLane.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_StayingOnYieldingLane.lua` — **min:** `0`
 - **Entry:** valida o carro perseguidor; `ReasonWhyCantYield = None`.
 - **Update:** `setAICaution(AICaution_Yielding)`; agressão/dificuldade de yield
   opcionais; se perseguidor perto (`distanceToOvertakingCarToLimitSpeed`) limita
@@ -169,7 +169,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
   setas.
 
 ### 3.4 EASING_OUT_YIELD
-- **Arquivo:** `States/CarState_EasingOutYield.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_EasingOutYield.lua` — **min:** `0`
 - **Entry:** seta offset calculado; reseta throttle/top-speed/caution; seta
   invertida (voltando ao centro).
 - **Update:** `driveSafelyToSide(..., storage_Yielding.rampRelease_mps, ...)`.
@@ -179,7 +179,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** setas.
 
 ### 3.5 EASING_IN_OVERTAKE
-- **Arquivo:** `States/CarState_EasingInOvertake.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_EasingInOvertake.lua` — **min:** `0`
 - **Entry:** valida `cars_currentlyOvertakingCarIndex`; seta offset calculado.
 - **Update:** `calculateAICautionAggressionDifficultyWhileOvertaking`
   (aplica caution/agressão/dificuldade) e `overtakeSafelyToSide(...)`.
@@ -189,7 +189,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** caution, agressão/dificuldade padrão, setas.
 
 ### 3.6 STAYING_ON_OVERTAKING_LANE
-- **Arquivo:** `States/CarState_StayingOnOvertakingLane.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_StayingOnOvertakingLane.lua` — **min:** `0`
 - **Entry:** vazia.
 - **Update:** recalcula caution/agressão/dificuldade de overtake e
   `overtakeSafelyToSide` para manter a faixa.
@@ -201,7 +201,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** caution, dificuldade/agressão padrão, setas.
 
 ### 3.7 EASING_OUT_OVERTAKE
-- **Arquivo:** `States/CarState_EasingOutOvertake.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_EasingOutOvertake.lua` — **min:** `0`
 - **Entry:** valida `cars_currentlyOvertakingCarIndex`; seta offset calculado.
 - **Update:** `driveSafelyToSide(..., storage_Overtaking.overtakeRampRelease_mps, ...)`.
 - **Transições:** ultrapassado inválido -> `DRIVING_NORMALLY`; carro atrás
@@ -210,9 +210,10 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
   ao offset normal (lado de yield) -> limpa ref e vai para `DRIVING_NORMALLY`.
 - **Exit:** setas.
 
-### 3.8 DEFENDING_POSITION (novo)
-- **Arquivo:** `States/CarState_DefendingPosition.lua` (também inline em
-  `CarStateMachine.lua:614-720` para máxima compatibilidade) — **min:** `0`
+### 3.8 DEFENDING_POSITION
+- **Implementação ativa:** inline em `CarStateMachine/CarStateMachine.lua` — **min:** `0`.
+  `CarStateMachine/States/CarState_DefendingPosition.lua` também existe, mas não é
+  requerido pelo entry point atual.
 - **Entry:** sorteia `defenseDuration_s` em `[defenseDurationMin_s,
   defenseDurationMax_s]` (default `1.0`–`3.0` s de `getStorage_Behavior`);
   `StateExitReason.YieldingToCar`.
@@ -226,7 +227,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
   estados; pronto para ser conectado.
 
 ### 3.9 DRIVING_IN_YELLOW_FLAG_ZONE
-- **Arquivo:** `States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
 - **Entry:** vazia.
 - **Update:** `setAITopSpeed(50)`, `toggleTurningLights(Hazards)`,
   `toggleCarCollisions(false)`.
@@ -236,7 +237,7 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** top-speed e setas.
 
 ### 3.10 NAVIGATING_AROUND_ACCIDENT
-- **Arquivo:** `States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
 - **Entry:** vazia.
 - **Update:** `setAICaution(0)`, `setAITopSpeed(30)`; recalcula acidente mais
   próximo; offset via `CollisionAvoidanceManager.computeDesiredLateralOffset`;
@@ -248,25 +249,25 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 - **Exit:** caution, top-speed, pedais e `cars_navigatingAroundAccidentIndex = 0`.
 
 ### 3.11 COLLIDED_WITH_TRACK
-- **Arquivo:** `States/CarState_CollidedWithTrack.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_CollidedWithTrack.lua` — **min:** `0`
 - **Entry/Exit:** vazias. **Update:** `stopCarAfterAccident(carIndex)`.
 - **Transição:** vazia — **estado terminal**.
 
 ### 3.12 COLLIDED_WITH_CAR
-- **Arquivo:** `States/CarState_CollidedWithCar.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_CollidedWithCar.lua` — **min:** `0`
 - **Entry/Exit:** vazias. **Update:** `stopCarAfterAccident(carIndex)` +
   `toggleCarCollisions(false)`.
 - **Transição:** vazia — **estado terminal**.
 
 ### 3.13 ANOTHER_CAR_COLLIDED_INTO_ME
-- **Arquivo:** `States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `10`
+- **Arquivo:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `10`
 - **Entry:** `ac.overrideCarControls` (horn comentado).
 - **Update:** `stopCarAfterAccident(carIndex)` + `toggleCarCollisions(false)`.
 - **Transição:** vazia — **estado terminal** (o min de 10 s não leva a lugar
   algum). **Exit:** vazia.
 
 ### 3.14 AFTER_CUSTOMAIFLOOD_TELEPORT
-- **Arquivo:** `States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
+- **Arquivo:** `CarStateMachine/States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
 - **Entry:** `setCarFuel(100)`, `engageGear(3)`, `setEngineRPM(5000)`,
   `setAIStopCounter(0)`.
 - **Update:** `setGentleStop(false)`, `setAICaution(0)`, `awakeCar`,
@@ -284,8 +285,8 @@ Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
 ## 4. Transições importantes (regras)
 
 As decisões de yield/overtake ficam em
-`CarStateMachine.handleShouldWeYieldToBehindCar` (`CarStateMachine.lua:577`) e
-`CarStateMachine.handleShouldWeOvertakeFrontCar` (`CarStateMachine.lua:405`).
+  `CarStateMachine.handleShouldWeYieldToBehindCar` e
+`CarStateMachine.handleShouldWeOvertakeFrontCar` em `CarStateMachine/CarStateMachine.lua`.
 
 ### 4.1 `handleShouldWeYieldToBehindCar`
 
@@ -332,7 +333,7 @@ Senão registra `ReasonWhyCantOvertake` (ex.: `YieldingCarIsFaster`,
 
 ## 5. Como adicionar um novo estado (workflow)
 
-1. **Bitflag** no enum `CarStateType` em `CarStateMachine.lua`, próxima potência
+1. **Bitflag** no enum `CarStateType` em `CarStateMachine/CarStateMachine.lua`, próxima potência
    de 2 livre (ex.: `MY_STATE = 131072`).
 2. **String** em `CarStateTypeStrings[MY_STATE] = "MyState"`.
 3. **Tempo mínimo:** `states_minimumTimeInState[MY_STATE] = 0` (use `0` salvo
@@ -340,9 +341,10 @@ Senão registra `ReasonWhyCantOvertake` (ex.: `YieldingCarIsFaster`,
 4. **Registrar as 4 funções:** `states_entryFunctions`,
    `states_updateFunctions`, `states_transitionFunctions`,
    `states_exitFunctions`.
-5. **Criar** `States/CarState_<Nome>.lua` espelhando `CarState_TEMPLATE.lua`.
-6. **Opcionalmente espelhar inline** em `CarStateMachine.lua` (como
-   `DEFENDING_POSITION`, que mantém as duas versões).
+5. **Criar** `CarStateMachine/States/CarState_<Nome>.lua` espelhando
+   `CarStateMachine/CarState_TEMPLATE.lua` e adicioná-lo ao carregamento no entry point.
+6. Mantenha uma implementação ativa por estado; `DEFENDING_POSITION` é atualmente
+   implementado inline no módulo central, e seu arquivo separado não é carregado.
 7. **Adicionar transições de/para** esse estado nas funções `transition` dos
    estados relevantes.
 8. **Expor no debug/UI** se necessário (nome legível já vem do passo 2).
@@ -364,8 +366,8 @@ Senão registra `ReasonWhyCantOvertake` (ex.: `YieldingCarIsFaster`,
   anterior após transição.
 - **Transições são enfileiradas:** a `entry` roda no início do próximo
   `updateCar`, não no frame que decidiu.
-- **Sem `entry` registrada**, `updateCar` loga erro e aborta o frame do carro
-  (`CarStateMachine.lua:283`).
+- **Sem `entry` registrada**, `updateCar` loga erro e aborta o update daquele carro
+  (`CarStateMachine/CarStateMachine.lua`).
 
 ---
 

@@ -8,18 +8,11 @@ Este documento descreve como validar o código-fonte do projeto em desenvolvimen
 
 ## 1. Pré-requisitos de ambiente
 
-### 1.1 LuaJIT 2.1 (instalar uma vez)
+### 1.1 LuaJIT
 
-LuaJIT é a engine que o CSP/AC usa internamente. É necessária para rodar o
-script `check_lua_syntax.ps1` (validação de sintaxe dos arquivos `.lua`).
-
-Instalação via winget:
-
-```powershell
-winget install --id=DEVCOM.LuaJIT -e --accept-package-agreements --accept-source-agreements
-```
-
-- Versão esperada: `LuaJIT 2.1.19907` ou superior.
+LuaJIT é necessário para rodar o checker de sintaxe e os smoke tests headless.
+Use uma instalação compatível com LuaJIT 2.1; este guia não fixa uma versão de
+CSP nem recomenda um instalador específico.
 
 Para conferir a versão instalada:
 
@@ -91,7 +84,7 @@ Esse teste compila somente o callback de ícone extraído do entry point e testa
 
 ### Últimos checks headless registrados
 
-Os últimos resultados registrados são: sintaxe Lua 66 PASS, mock UI portátil 542 PASS, mock de logo 19 PASS e comparação opcional com baseline 607 PASS. São checks de fonte/mocks; não comprovam estado da instalação, compatibilidade CSP em execução ou aparência in-game. Para comparar com um baseline separado, defina opcionalmente `RTD_BASELINE_SETTINGS` para o caminho local desse arquivo-fonte antes de executar `tools/test_ui_smoke.lua`; a fixture versionada continua sendo o padrão e não é regenerada automaticamente.
+Os últimos resultados registrados são: sintaxe Lua 66 PASS, mock UI portátil 542 PASS, mock de logo 21 PASS e comparação opcional com baseline 607 PASS. São checks de fonte/mocks; não comprovam estado da instalação, compatibilidade CSP em execução ou aparência in-game. Para comparar com um baseline separado, defina opcionalmente `RTD_BASELINE_SETTINGS` para o caminho local desse arquivo-fonte antes de executar `tools/test_ui_smoke.lua`; a fixture versionada continua sendo o padrão e não é regenerada automaticamente.
 
 ---
 
@@ -117,22 +110,15 @@ Faça a cópia **manualmente** dos arquivos de runtime da raiz e das pastas `Car
 
 Este é um roteiro mínimo de smoke test manual para executar após instalar uma cópia de teste. Runtime CSP e validação visual permanecem pendentes; não presuma que os arquivos instalados correspondem a uma versão específica do código-fonte.
 
-1. Abra o Assetto Corsa.
-2. Vá em **Content Manager → Settings → Custom Shaders Patch**.
-3. Verifique **Lua Apps** — o app "SimOpenTrackDay" deve aparecer na lista.
-4. Habilite o app.
-5. Volte para **Content Manager → Settings → Custom Shaders Patch → New AI
-   Behaviour**.
-6. Ative **AI Flood** (Trackday mode).
-7. Inicie uma sessão **Practice** na Nordschleife (ou outra pista com AI spline).
-8. Abra a janela in-game do "SimOpenTrackDay" pelo sidebar.
+1. Abra o Assetto Corsa e habilite `SimOpenTrackDay` entre as Lua Apps do CSP.
+2. Inicie uma sessão offline com carros IA em uma pista com AI spline.
+3. Abra a janela `SimOpenTrackDay` no jogo e confira os logs CSP se ocorrer erro.
 
 ### Se der erro de CSP faltando
 
-Se faltarem funções CSP, consulte as mensagens de compatibilidade e os logs CSP, incluindo os registros `[RTD-DIAG-*]` e a última mensagem de compatibilidade disponível. `CSPCompatibilityManager.ShowErrorModalDialog = false` desativa intencionalmente o modal de diagnóstico; não dependa de uma janela modal para perceber a falha. Isso é mais provável em **CSP < 0.3.0**. Soluções:
+Se faltarem funções CSP, consulte as mensagens de compatibilidade e os logs CSP, incluindo os registros `[RTD-DIAG-*]` e a última mensagem de compatibilidade disponível. `CSPCompatibilityManager.ShowErrorModalDialog = false` desativa intencionalmente o modal de diagnóstico; não dependa de uma janela modal para perceber a falha. Use uma versão do CSP que disponibilize as APIs exigidas pelo app; este guia não fixa um número mínimo.
 
-- Atualize o CSP para 0.3.0+ (https://acstuff.club/patch).
-- **OU** desabilite o app por enquanto via "Lua Apps".
+- Se as APIs exigidas estiverem ausentes, atualize o CSP por um canal confiável ou desabilite o app em Lua Apps até resolver a compatibilidade.
 
 ---
 
@@ -170,7 +156,7 @@ Use estes cenários detalhados para validar as features após instalar manualmen
 1. `SettingsWindow → Behavior & Mode → "Realistic"` (default).
 2. Pilote na Nordschleife.
 
-- **Esperado**: cedem com diff > 15 km/h.
+- **Esperado**: o limiar configurado para ceder é 15 km/h.
 - **Esperado**: blend time 1.5s (visível: a lateral muda gradualmente).
 - **Esperado**: hesitação de ~0.4s antes de reagir.
 - **Esperado**: nenhuma defesa, nenhum erro.
@@ -180,28 +166,24 @@ Use estes cenários detalhados para validar as features após instalar manualmen
 1. `SettingsWindow → Behavior & Mode → "Competitive"`.
 2. Pilote na Nordschleife.
 
-- **Esperado**: carros defendem posição por 1–3s antes de ceder.
+- **Esperado**: a duração de defesa configurada varia de 1,5 a 3,5s.
 - **Esperado**: lock-ups ocasionais em frenagem forte.
 - **Esperado**: tração perdida na saída de curva.
 - **Esperado**: cedem só se muito mais rápido (10 km/h diff).
 
-### Cenário 6: Modo Hybrid (auto-detect)
+### Cenário 6: Opção de modo Hybrid (comportamento adaptativo pendente)
 
-1. Selecione o perfil Realistic (mode = `HybridAdaptive`).
-2. Inicie Practice com 2 carros IA.
-   - **Esperado**: AI detecta "few cars + Practice" → **Track Day mode**.
-3. Aumente para 10+ carros via AI Flood.
-   - **Esperado**: continua Track Day (cars adaptam).
-4. Troque para Race com 2 carros.
-   - **Esperado**: detecta "Race" → **Race mode** → defesa ativa.
+1. Selecione um perfil na interface e confira o `Current Mode` exibido; o modo não é editável diretamente.
+
+- **Limite atual:** `applyBehaviorProfile` é chamado pela interface ao selecionar um perfil, não automaticamente. O perfil Casual e o Realistic configuram `Track Day`; Competitive configura `Race`. `Hybrid (Auto)` não tem detecção/adaptação implementada, portanto não espere mudança automática de modo.
 
 ### Cenário 7: Anti-drag-race
 
 1. Perfil **Competitive**.
 2. Pilote atrás de um AI mais lento em uma reta longa.
 
-- **Esperado**: o AI à frente **não acelera** deliberadamente para segurar o
-  jogador; `setAiTopSpeed` é limitado a 95% da sua velocidade.
+- **Esperado**: ao aplicar o limitador anti-drag-race, a velocidade-alvo do carro
+  à frente é limitada a 95% da velocidade do carro que se aproxima.
 
 ---
 

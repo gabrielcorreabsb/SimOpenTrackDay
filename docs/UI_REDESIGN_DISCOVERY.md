@@ -22,12 +22,12 @@ The simulation update callback is `MANIFEST__UPDATE`; transparent rendering uses
 
 ## Settings baseline order
 
-Preserve this functional sequence as the baseline while correcting presentation:
+Current `SettingsWindow.draw()` order:
 
-1. Icon/header/enabled control.
+1. 42px vector logo, track/session label, and enabled control.
 2. Default, yielding, and overtaking lateral offsets.
-3. AI Caution, Aggression, and Difficulty in three columns with proportional widths. The designer has closed the layout decision and the reviewer accepted preserving this baseline; in-game visual validation remains pending.
-4. Behavior profile and 14 advanced options (advanced options disabled until enabled).
+3. AI Caution, Aggression, and Difficulty in three columns with proportional widths.
+4. Behavior profile and advanced options (disabled until enabled).
 5. Yielding and overtaking.
 6. Accidents and pathfinding.
 7. Other settings.
@@ -105,7 +105,7 @@ The entry point retains nine `[RTD-DIAG-*]` log statements: five suffixed tags (
 ## Current state
 
 - **IMPLEMENTED:** manifest IDs, window labels/sizes, and `MANIFEST__FUNCTION_ICON` on both windows are present in `manifest.ini`; the legacy PNG file and `ICON` metadata entries are removed.
-- **IMPLEMENTED:** the line-based OTD vector logo is used by the main-window icon renderer and the manifest icon callback; no PNG is drawn by that renderer. `Constants.APP_ICON_SIZE` remains 128 for the main renderer; Settings draws the logo at 52.
+- **IMPLEMENTED:** the line-based OTD vector logo is used by the main-window icon renderer and manifest icon callback; no PNG is drawn. `Constants.APP_ICON_SIZE` remains 128 for the main renderer; Settings calls `Logo.draw(42)`.
 - **DECIDED:** preserve module locations and root payload; preserve the main window/UIManager outside redesign; keep compatibility submodule/vendor distinctions intact.
-- **VALIDATED (local source checks):** the last recorded results are Lua syntax 66 PASS, portable UI mock 542 PASS, `luajit tools/test_logo_smoke.lua` 21 PASS (including absence of legacy `ICON` metadata), and optional `RTD_BASELINE_SETTINGS` mock 607 PASS. A local payload audit recorded 70/70 matching runtime paths, zero mismatches, directory/entry agreement, and nine diagnostic lines identical to the protected baseline; it is historical evidence and does not establish which files are currently installed or running. The negative-scroll regression probe is also historical. The new icon callback was source-mock tested, not validated in CSP runtime.
+- **VALIDATED (headless/source checks only):** last recorded checks were Lua syntax 66 PASS, portable UI mock 542 PASS, `luajit tools/test_logo_smoke.lua` 21 PASS (including absence of legacy `ICON` metadata), and optional `RTD_BASELINE_SETTINGS` mock 607 PASS. A prior 70/70 local payload audit and negative-scroll regression probe are historical only; they say nothing about files currently installed or running. The icon callback is mock-tested, not validated in CSP runtime.
 - **PENDING:** CSP runtime and in-game visual validation. A manual CSP smoke test remains a follow-up after manual installation; no build or release is published by this verification.
