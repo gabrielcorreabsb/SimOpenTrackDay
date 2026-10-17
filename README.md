@@ -181,7 +181,7 @@ The app requires <a href="https://acstuff.club/patch/" target="_blank">Custom Sh
 
 ### Development fork installation
 
-The repository root contains the app source. Manually copy only the runtime payload (root runtime `.lua` files, `manifest.ini`, the legacy PNG metadata asset, `LICENSE`, and the runtime folders `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/`) into:
+The repository root contains the app source. Manually copy only the runtime payload (root runtime `.lua` files, `manifest.ini`, `LICENSE`, and the runtime folders `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/`) into:
 
 ```text
 <Assetto Corsa>/apps/lua/SimOpenTrackDay/

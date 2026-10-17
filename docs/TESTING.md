@@ -109,7 +109,7 @@ Substitua os valores entre `<...>` por caminhos seus. Preserve também as config
 
 ### 3.2 Copiar a nova versão
 
-Faça a cópia **manualmente** dos arquivos de runtime da raiz e das pastas `CarStateMachine/`, `DataStructures/`, `Strings/` e `lib/` para uma pasta paralela `<Assetto Corsa>/apps/lua/SimOpenTrackDay/`. Inclua o entry point `SimOpenTrackDay.lua`, `manifest.ini`, o PNG legado de metadados e os demais arquivos runtime necessários. Não copie `.git/`, `tools/`, `docs/`, `artifacts/` ou arquivos `*.bak`. Não use uma cópia ampla do repositório. O entry point instalado deve ser `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; não crie a hierarquia `apps/lua/` dentro do clone. Mantenha instalações existentes e configurações do usuário intactas.
+Faça a cópia **manualmente** dos arquivos de runtime da raiz e das pastas `CarStateMachine/`, `DataStructures/`, `Strings/` e `lib/` para uma pasta paralela `<Assetto Corsa>/apps/lua/SimOpenTrackDay/`. Inclua o entry point `SimOpenTrackDay.lua`, `manifest.ini` e os demais arquivos runtime necessários. Não copie `.git/`, `tools/`, `docs/`, `artifacts/` ou arquivos `*.bak`. Não use uma cópia ampla do repositório. O entry point instalado deve ser `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; não crie a hierarquia `apps/lua/` dentro do clone. Mantenha instalações existentes e configurações do usuário intactas.
 
 ---
 

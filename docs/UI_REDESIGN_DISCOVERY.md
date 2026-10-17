@@ -15,10 +15,10 @@ Source of truth: `manifest.ini`.
 
 | ID | Name | Callback | Size | Icon metadata | Icon callback |
 | --- | --- | --- | --- | --- | --- |
-| `mainWindow` | `SimOpenTrackDay` | `MANIFEST__FUNCTION_MAIN` | 1024 × 768 | `AssettoCorsaRealisticTrackday_Icon.png` | `MANIFEST__FUNCTION_ICON` |
-| `settingsWindow` | `SimOpenTrackDay Settings` | `MANIFEST__FUNCTION_SETTINGS` | 1760 × 1210 | `AssettoCorsaRealisticTrackday_Icon.png` | `MANIFEST__FUNCTION_ICON` |
+| `mainWindow` | `SimOpenTrackDay` | `MANIFEST__FUNCTION_MAIN` | 1024 × 768 | Removed | `MANIFEST__FUNCTION_ICON` |
+| `settingsWindow` | `SimOpenTrackDay Settings` | `MANIFEST__FUNCTION_SETTINGS` | 1760 × 1210 | Removed | `MANIFEST__FUNCTION_ICON` |
 
-The simulation update callback is `MANIFEST__UPDATE`; transparent rendering uses `MANIFEST__TRANSPARENT`. `FUNCTION_ICON` uses the official CSP icon callback for both windows and draws the OTD mark with supported vector line calls; `ui.drawPath` is absent from the SDK and is not used. The legacy PNG `ICON` entries remain as compatibility metadata, but are not an accepted fallback for this vector callback. See the [CSP Lua apps documentation](https://github.com/ac-custom-shaders-patch/acc-lua-sdk/wiki/Lua-apps). Window-title/taskbar icon precedence and in-game callback coordinates remain **PENDING** runtime confirmation.
+The simulation update callback is `MANIFEST__UPDATE`; transparent rendering uses `MANIFEST__TRANSPARENT`. The legacy Assetto Corsa Realistic Trackday PNG and its `ICON` manifest metadata were removed for SimOpenTrackDay; no PNG fallback is claimed. `FUNCTION_ICON` uses the official CSP icon callback for both windows and draws the OTD mark with supported vector line calls; `ui.drawPath` is absent from the SDK and is not used. See the [CSP Lua apps documentation](https://github.com/ac-custom-shaders-patch/acc-lua-sdk/wiki/Lua-apps). Window-title/taskbar icon precedence and in-game callback coordinates remain **PENDING** runtime confirmation.
 
 ## Settings baseline order
 
@@ -104,8 +104,8 @@ The entry point retains nine `[RTD-DIAG-*]` log statements: five suffixed tags (
 
 ## Current state
 
-- **IMPLEMENTED:** manifest IDs, window labels/sizes, legacy PNG metadata, and `MANIFEST__FUNCTION_ICON` on both windows are present in `manifest.ini`.
+- **IMPLEMENTED:** manifest IDs, window labels/sizes, and `MANIFEST__FUNCTION_ICON` on both windows are present in `manifest.ini`; the legacy PNG file and `ICON` metadata entries are removed.
 - **IMPLEMENTED:** the line-based OTD vector logo is used by the main-window icon renderer and the manifest icon callback; no PNG is drawn by that renderer. `Constants.APP_ICON_SIZE` remains 128 for the main renderer; Settings draws the logo at 52.
 - **DECIDED:** preserve module locations and root payload; preserve the main window/UIManager outside redesign; keep compatibility submodule/vendor distinctions intact.
-- **VALIDATED (local source checks):** the last recorded results are Lua syntax 66 PASS, portable UI mock 542 PASS, `luajit tools/test_logo_smoke.lua` 19 PASS, and optional `RTD_BASELINE_SETTINGS` mock 607 PASS. A local payload audit recorded 70/70 matching runtime paths, zero mismatches, directory/entry agreement, and nine diagnostic lines identical to the protected baseline; it is historical evidence and does not establish which files are currently installed or running. The negative-scroll regression probe is also historical. The new icon callback was source-mock tested, not validated in CSP runtime.
+- **VALIDATED (local source checks):** the last recorded results are Lua syntax 66 PASS, portable UI mock 542 PASS, `luajit tools/test_logo_smoke.lua` 21 PASS (including absence of legacy `ICON` metadata), and optional `RTD_BASELINE_SETTINGS` mock 607 PASS. A local payload audit recorded 70/70 matching runtime paths, zero mismatches, directory/entry agreement, and nine diagnostic lines identical to the protected baseline; it is historical evidence and does not establish which files are currently installed or running. The negative-scroll regression probe is also historical. The new icon callback was source-mock tested, not validated in CSP runtime.
 - **PENDING:** CSP runtime and in-game visual validation. A manual CSP smoke test remains a follow-up after manual installation; no build or release is published by this verification.

@@ -131,6 +131,8 @@ for _, section in ipairs({ 'WINDOW_0', 'WINDOW_1' }) do
     manifest:match('%[' .. section .. '%](.-)%[RENDER_CALLBACKS%]')
   check(body and body:match('FUNCTION_ICON%s*=%s*MANIFEST__FUNCTION_ICON') and entryHasCallback,
     section .. ' points to the implemented MANIFEST__FUNCTION_ICON callback')
+  check(body and body:match('\n%s*ICON%s*=') == nil,
+    section .. ' has no legacy ICON metadata key')
 end
 
 local callback, logger = callbackChunk()
