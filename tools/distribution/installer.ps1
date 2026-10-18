@@ -8,11 +8,65 @@
     [switch]$LibraryOnly,
     [switch]$ShowProgress,
     [switch]$Quiet,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [string]$LogRoot,
+    [string]$LogName = 'installer'
 )
 
 $script:PackageRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $script:PayloadRelativeRoot = 'payload/SimOpenTrackDay'
+
+# Installer logging is opt-in: without -LogRoot the console entry point never starts a log, so the
+# default behavior stays byte-for-byte identical to the pre-logging installer. The logging helpers
+# live in a standalone module that is loaded only when it is both needed and present next to this
+# script; a harness may pre-define the four helpers to intercept them without touching the module.
+$script:SotdInstallerLogActive = $false
+$script:SotdInstallerLogDisabled = $false
+$script:SotdInstallerLogPath = $null
+$script:SotdInstallerLogModulePath = Join-Path $PSScriptRoot 'installer.logging.ps1'
+if (-not (Get-Command Start-SotdInstallerLog -ErrorAction SilentlyContinue) -and
+    (Test-Path -LiteralPath $script:SotdInstallerLogModulePath -PathType Leaf)) {
+    . $script:SotdInstallerLogModulePath
+}
+
+function Start-SotdInstallerLogIfRequested {
+    param(
+        [string]$LogRoot,
+        [string]$LogName = 'installer'
+    )
+    # Returns $true only when this call opened the log. Logging is skipped when it was not requested,
+    # when a session is already open (the console entry point owns it), when the logging helpers are
+    # unavailable - the shipped package does not include installer.logging.ps1 - or after a previous
+    # attempt in the same run already failed, so a single run reports each log problem exactly once.
+    if ([string]::IsNullOrWhiteSpace($LogRoot) -or $script:SotdInstallerLogActive -or $script:SotdInstallerLogDisabled) { return $false }
+    if (-not (Get-Command Start-SotdInstallerLog -ErrorAction SilentlyContinue)) {
+        $script:SotdInstallerLogDisabled = $true
+        [Console]::Error.WriteLine('Installer log unavailable: the logging helpers are not installed next to the installer.')
+        return $false
+    }
+    try {
+        $logArguments = @{ LogRoot = $LogRoot }
+        if (-not [string]::IsNullOrWhiteSpace($LogName)) { $logArguments.LogName = $LogName }
+        $logStartResult = Start-SotdInstallerLog @logArguments
+        if ($null -ne $logStartResult -and -not [string]::IsNullOrEmpty([string]$logStartResult.Path)) {
+            $script:SotdInstallerLogPath = [string]$logStartResult.Path
+        }
+        $script:SotdInstallerLogActive = $true
+        return $true
+    } catch {
+        $script:SotdInstallerLogDisabled = $true
+        [Console]::Error.WriteLine("Installer log init failed: $($_.Exception.Message)")
+        return $false
+    }
+}
+
+function Stop-SotdInstallerLogIfOwned {
+    param([bool]$Owned)
+    if (-not $Owned) { return }
+    Stop-SotdInstallerLog
+    $script:SotdInstallerLogActive = $false
+    $script:SotdInstallerLogPath = $null
+}
 
 function ConvertTo-SotdFullPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -655,8 +709,16 @@ function Invoke-SotdInstaller {
         [string]$AssettoCorsaRoot,
         [string]$BackupRoot,
         [string]$JournalPath,
-        [switch]$ShowProgress
+        [switch]$ShowProgress,
+        [string]$LogRoot,
+        [string]$LogName = 'installer'
     )
+    # The interactive menu forwards the caller's -LogRoot/-LogName here. When the console entry
+    # point already started the log, the script flag prevents a second, duplicate log session.
+    $logOwned = Start-SotdInstallerLogIfRequested -LogRoot $LogRoot -LogName $LogName
+    # The try/finally wraps the unchanged body so a log opened here is always closed; the body below
+    # keeps its original indentation on purpose to keep this change reviewable line by line.
+    try {
     if ($Mode -eq 'Rollback') {
         Invoke-SotdRollback $AssettoCorsaRoot $JournalPath $BackupRoot
         return
@@ -692,6 +754,9 @@ function Invoke-SotdInstaller {
         }
     }
     return Install-SotdPlan $freshPlan $ac.Target $ac.Root $BackupRoot $JournalPath
+    } finally {
+        Stop-SotdInstallerLogIfOwned -Owned $logOwned
+    }
 }
 
 function Invoke-SotdSelfTest {
@@ -705,7 +770,9 @@ function Show-SotdInteractiveMenu {
         [string]$AssettoCorsaRoot,
         [string]$BackupRoot,
         [string]$JournalPath,
-        [switch]$NoPause
+        [switch]$NoPause,
+        [string]$LogRoot,
+        [string]$LogName = 'installer'
     )
     Write-Host 'SimOpenTrackDay installer'
     Write-Host '========================='
@@ -736,16 +803,22 @@ function Show-SotdInteractiveMenu {
             if ($selection -eq '1') {
                 $previewArguments = @{ Mode = 'Preview'; AssettoCorsaRoot = $AssettoCorsaRoot; ShowProgress = [bool]$ShowProgress }
                 if ($BackupRoot) { $previewArguments.BackupRoot = $BackupRoot }
+                if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $previewArguments.LogRoot = $LogRoot }
+                if (-not [string]::IsNullOrWhiteSpace($LogName)) { $previewArguments.LogName = $LogName }
                 $null = Invoke-SotdInstaller @previewArguments
             } elseif ($selection -eq '2') {
                 if (-not $BackupRoot) { $BackupRoot = Read-Host 'Backup root (leave empty for default):' }
                 if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
                 $installArguments = @{ Mode = 'Install'; AssettoCorsaRoot = $AssettoCorsaRoot; BackupRoot = $BackupRoot; JournalPath = $JournalPath; ShowProgress = [bool]$ShowProgress }
+                if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $installArguments.LogRoot = $LogRoot }
+                if (-not [string]::IsNullOrWhiteSpace($LogName)) { $installArguments.LogName = $LogName }
                 $null = Invoke-SotdInstaller @installArguments
             } else {
                 if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
                 $rollbackArguments = @{ Mode = 'Rollback'; AssettoCorsaRoot = $AssettoCorsaRoot; JournalPath = $JournalPath; ShowProgress = [bool]$ShowProgress }
                 if ($BackupRoot) { $rollbackArguments.BackupRoot = $BackupRoot }
+                if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $rollbackArguments.LogRoot = $LogRoot }
+                if (-not [string]::IsNullOrWhiteSpace($LogName)) { $rollbackArguments.LogName = $LogName }
                 $null = Invoke-SotdInstaller @rollbackArguments
             }
         } else {
@@ -760,26 +833,93 @@ function Show-SotdInteractiveMenu {
     }
 }
 
-if (-not $LibraryOnly) {
-    if ($Interactive) {
-        try {
+# Console entry point. It owns the opt-in log lifecycle (start before the action, log the failure, stop
+# in the finally) so every error path leaves a closed, self-identifying log. It returns a process exit
+# code instead of calling exit so a headless harness can dot-source and drive it directly.
+function Invoke-SotdInstallerConsole {
+    param(
+        [ValidateSet('Preview', 'Install', 'Rollback')][string]$Mode = 'Preview',
+        [string]$AssettoCorsaRoot,
+        [string]$BackupRoot,
+        [string]$JournalPath,
+        [switch]$ShowProgress,
+        [switch]$Interactive,
+        [switch]$Quiet,
+        [switch]$NoPause,
+        [string]$LogRoot,
+        [string]$LogName = 'installer'
+    )
+    $logStarted = Start-SotdInstallerLogIfRequested -LogRoot $LogRoot -LogName $LogName
+    if ($logStarted) {
+        # Record the requested mode so a log kept for diagnostics says what the installer was asked to do.
+        Write-SotdInstallerLog -Message ("Mode: " + $Mode) -Level 'INFO'
+    }
+    try {
+        if ($Interactive) {
             if (-not $Quiet) { $ShowProgress = $true }
             $menuArguments = @{}
             if ($AssettoCorsaRoot) { $menuArguments.AssettoCorsaRoot = $AssettoCorsaRoot }
             if ($BackupRoot) { $menuArguments.BackupRoot = $BackupRoot }
             if ($JournalPath) { $menuArguments.JournalPath = $JournalPath }
+            if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $menuArguments.LogRoot = $LogRoot }
+            if (-not [string]::IsNullOrWhiteSpace($LogName)) { $menuArguments.LogName = $LogName }
             Show-SotdInteractiveMenu @menuArguments -NoPause:$NoPause
-            exit 0
-        } catch {
-            [Console]::Error.WriteLine("Installer error: $($_.Exception.Message)")
-            exit 1
+        } else {
+            $invokeArguments = @{
+                Mode = $Mode
+                AssettoCorsaRoot = $AssettoCorsaRoot
+                BackupRoot = $BackupRoot
+                JournalPath = $JournalPath
+                ShowProgress = [bool]$ShowProgress
+            }
+            if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $invokeArguments.LogRoot = $LogRoot }
+            if (-not [string]::IsNullOrWhiteSpace($LogName)) { $invokeArguments.LogName = $LogName }
+            $null = Invoke-SotdInstaller @invokeArguments
         }
-    }
-    try {
-        Invoke-SotdInstaller -Mode $Mode -AssettoCorsaRoot $AssettoCorsaRoot -BackupRoot $BackupRoot -JournalPath $JournalPath -ShowProgress:$ShowProgress
-        exit 0
+        return 0
     } catch {
         [Console]::Error.WriteLine("Installer error: $($_.Exception.Message)")
-        exit 1
+        if ($logStarted) { Write-SotdInstallerLog -Message ("Installer error: " + $_.Exception.Message) -Level 'ERROR' }
+        # The start result carries the path, so the error path never needs the logging module to be present.
+        $logPath = $script:SotdInstallerLogPath
+        if ([string]::IsNullOrEmpty($logPath) -and $logStarted -and
+            (Get-Command Get-SotdInstallerLogPath -ErrorAction SilentlyContinue)) {
+            $logPath = [string](Get-SotdInstallerLogPath)
+        }
+        if ($Interactive -and -not $Quiet) {
+            if (-not [string]::IsNullOrEmpty([string]$logPath)) {
+                $reply = Read-Host 'Open log file in Notepad now? [Y/n]:'
+                if (-not $reply -or ([string]$reply).Trim() -match '^(?i:y)?$') {
+                    try { Start-Process -FilePath notepad.exe -ArgumentList ('"' + $logPath + '"') -ErrorAction Stop }
+                    catch { [Console]::Error.WriteLine("Could not launch notepad: $($_.Exception.Message)") }
+                }
+            }
+        } elseif (-not [string]::IsNullOrEmpty([string]$logPath)) {
+            # A CLI/SSH caller cannot see a GUI window, so only the path is emitted; no silent launch.
+            [Console]::Error.WriteLine("Installer log: $logPath")
+        }
+        # Interactive console users must be able to read the error and log path before the window closes.
+        if ($Interactive -and -not $NoPause) { Read-Host 'Press Enter to exit' | Out-Null }
+        return 1
+    } finally {
+        Stop-SotdInstallerLogIfOwned -Owned $logStarted
     }
+}
+
+if (-not $LibraryOnly) {
+    $consoleArguments = @{
+        Mode = $Mode
+        AssettoCorsaRoot = $AssettoCorsaRoot
+        BackupRoot = $BackupRoot
+        JournalPath = $JournalPath
+        ShowProgress = [bool]$ShowProgress
+        Interactive = [bool]$Interactive
+        Quiet = [bool]$Quiet
+        NoPause = [bool]$NoPause
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogRoot)) { $consoleArguments.LogRoot = $LogRoot }
+    if (-not [string]::IsNullOrWhiteSpace($LogName)) { $consoleArguments.LogName = $LogName }
+    $consoleExitCode = Invoke-SotdInstallerConsole @consoleArguments
+    if ($null -eq $consoleExitCode) { $consoleExitCode = 0 }
+    exit ([int]$consoleExitCode)
 }

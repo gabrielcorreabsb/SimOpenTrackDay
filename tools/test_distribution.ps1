@@ -169,7 +169,7 @@ try {
         'CSP compatibility notice is retained in payload'
 
     $rootFiles = @((Get-ChildItem -LiteralPath $packageRoot -File -Force | ForEach-Object { $_.Name }) | Sort-Object -CaseSensitive)
-    $expectedRootFiles = @(@('INSTALL.md', 'checksums.sha256', 'install.bat', 'installer.ps1') | Sort-Object -CaseSensitive)
+    $expectedRootFiles = @(@('INSTALL.md', 'checksums.sha256', 'install.bat', 'installer.logging.ps1', 'installer.ps1') | Sort-Object -CaseSensitive)
     Assert (($rootFiles -join '|') -ceq ($expectedRootFiles -join '|')) 'package root has only the delivery files and checksum list'
 
     [void][IO.Directory]::CreateDirectory((Join-Path $acRoot 'apps'))

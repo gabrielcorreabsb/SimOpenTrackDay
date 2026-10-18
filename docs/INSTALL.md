@@ -69,6 +69,48 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1"
 
 O backup associado é lido do journal. Não remova journal/backups antes de confirmar o resultado. Em conflito/erro, pare e preserve arquivos e journal para inspeção; o rollback não promete remover todos os arquivos temporários/empty directories remanescentes. Não force remoção automatizada nem apague arquivos desconhecidos.
 
+## Troubleshooting
+
+Sintomas comuns durante o uso da versão instalada no Assetto Corsa. Esta seção **não** é sobre erros do instalador PowerShell (esses aparecem em stderr antes do instalador fechar a janela); é sobre erros runtime Lua depois que o app já está carregando dentro do AC.
+
+### Sintoma: `UI draw failed: .../MainWindow.lua:165: attempt to call field 'drawContent' (a nil value)`
+
+O traceback indica que, na primeira frame, `MainWindow.lua:165` chama `SettingsWindow.drawContent(…)`, mas o campo `drawContent` não existe na tabela `SettingsWindow` que foi carregada. A fonte atual (commit `e855e3d`) define `SettingsWindow.drawContent` em `SettingsWindow.lua:471`, então **a fonte está consistente**. O sintoma aponta para **payload instalado desatualizado** no destino AC, normalmente um `apps/lua/SimOpenTrackDay/SettingsWindow.lua` deixado por uma versão anterior do app, quando `SettingsWindow` ainda era um módulo procedural sem o campo `drawContent`.
+
+**Como confirmar antes de qualquer reinstalação:**
+
+```powershell
+# 1. Hash do SettingsWindow.lua no pacote extraído
+Get-FileHash -LiteralPath "C:\pacote\extraido\payload\SimOpenTrackDay\SettingsWindow.lua" -Algorithm SHA256
+
+# 2. Hash do SettingsWindow.lua instalado no destino AC
+Get-FileHash -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay\SettingsWindow.lua" -Algorithm SHA256
+
+# 3. Hash esperado (consta em checksums.sha256 do pacote)
+Select-String -Path "C:\pacote\extraido\checksums.sha256" -Pattern "SettingsWindow\.lua$"
+```
+
+- Se **(2)** for diferente de **(1)** e de **(3)**: payload desatualizado. Vá para "Correção" abaixo.
+- Se **(2)** for igual a **(1)** e **(3)**: a fonte está alinhada; a causa é outra (CSP hook injetando módulo customizado, conflito com outro mod Lua em `apps/lua`, ou erro de parse silencioso em outro módulo carregado antes do `MainWindow`). Preserve `apps/lua/SimOpenTrackDay` para inspeção, capture o `ac.log` do CSP e investigue.
+
+**Correção para payload desatualizado:**
+
+```powershell
+# Faça backup manual do apps\lua\SimOpenTrackDay antes (precaução):
+Copy-Item -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay" -Destination "<backup manual>" -Recurse
+
+# Remova a pasta de instalação antiga e re-instale:
+Remove-Item -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay" -Recurse -Force
+& "C:\pacote\extraido\install.bat" -Mode Install -AssettoCorsaRoot "<raiz AC>"
+# quando pedir confirmação, digite YES
+```
+
+Reinstale via `install.bat -Mode Install` para que o caminho `New` force substituição completa. Preview antes (`-Mode Preview`) deve listar todos os arquivos Lua como `New` (não `Changed`) se a remoção manual foi efetiva.
+
+### Sintoma: app não abre / janela some imediatamente / erro genérico em `ac.log`
+
+Capture o `ac.log` do CSP (`Documents\Assetto Corsa\logs\ac.log.0` ou similar) e verifique se há linhas `UI draw failed:` diferentes das listadas acima, ou erros `module '…' not found`. Preserve a pasta `apps/lua/SimOpenTrackDay` no destino AC para inspeção manual antes de qualquer reinstalação.
+
 ## Build e validação
 
 `tools/build_package.ps1` usa o checkout como `-SourceRoot` padrão e exige `-OutputPath` novo, externo à fonte, com diretório pai já existente. Sem `-Build`, apenas preview; com `-Build`, gera o pacote sem sobrescrever destino existente. O payload declarado contém 66 arquivos. Checksums abrangem somente runtime payload.

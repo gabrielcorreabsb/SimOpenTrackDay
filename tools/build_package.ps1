@@ -10,6 +10,7 @@ $manifestPath = Join-Path $PSScriptRoot 'runtime-manifest.txt'
 $deliveryFiles = @(
     @{ Source = 'tools/distribution/install.bat'; Destination = 'install.bat' },
     @{ Source = 'tools/distribution/installer.ps1'; Destination = 'installer.ps1' },
+    @{ Source = 'tools/distribution/installer.logging.ps1'; Destination = 'installer.logging.ps1' },
     @{ Source = 'docs/INSTALL.md'; Destination = 'INSTALL.md' }
 )
 

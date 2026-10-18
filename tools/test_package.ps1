@@ -51,6 +51,7 @@ try {
     $deliveryFixtures = @(
         @{ Path = 'tools/distribution/install.bat'; Text = "@echo off`r`nrem installer fixture`r`n" },
         @{ Path = 'tools/distribution/installer.ps1'; Text = "# installer fixture`n" },
+        @{ Path = 'tools/distribution/installer.logging.ps1'; Text = "# installer logging fixture`n" },
         @{ Path = 'docs/INSTALL.md'; Text = "# Install fixture`n" }
     )
     foreach ($delivery in $deliveryFixtures) {
@@ -99,7 +100,7 @@ try {
             "excluded development/vendor path is absent: $excluded"
     }
 
-    $expectedDelivery = @('install.bat', 'installer.ps1', 'INSTALL.md')
+    $expectedDelivery = @('install.bat', 'installer.ps1', 'installer.logging.ps1', 'INSTALL.md')
     foreach ($deliveryName in $expectedDelivery) {
         $deliveryOutput = Join-Path $outputPath $deliveryName
         Assert (Test-Path -LiteralPath $deliveryOutput -PathType Leaf) "delivery file is present at package root: $deliveryName"
@@ -107,8 +108,8 @@ try {
         Assert ([IO.File]::ReadAllText($deliveryOutput) -ceq $fixture.Text) "delivery file content is copied unchanged: $deliveryName"
     }
     $actualRootFiles = @((Get-ChildItem -LiteralPath $outputPath -File -Force | ForEach-Object { $_.Name }) | Sort-Object -CaseSensitive)
-    $expectedRootFiles = @(@('INSTALL.md', 'checksums.sha256', 'install.bat', 'installer.ps1') | Sort-Object -CaseSensitive)
-    Assert (($actualRootFiles -join '|') -ceq ($expectedRootFiles -join '|')) 'package root contains exactly the checksum list and three delivery files'
+    $expectedRootFiles = @(@('INSTALL.md', 'checksums.sha256', 'install.bat', 'installer.logging.ps1', 'installer.ps1') | Sort-Object -CaseSensitive)
+    Assert (($actualRootFiles -join '|') -ceq ($expectedRootFiles -join '|')) 'package root contains exactly the checksum list and four delivery files'
     Assert (Test-Path -LiteralPath (Join-Path $payloadRoot 'LICENSE') -PathType Leaf) 'runtime license is in the payload'
     Assert (Test-Path -LiteralPath (Join-Path $payloadRoot 'lib/AssettoCorsaCSPLuaCompatibilityManager/README.md') -PathType Leaf) `
         'CSP compatibility notice is in the payload'
