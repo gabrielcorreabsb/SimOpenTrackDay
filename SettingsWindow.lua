@@ -48,42 +48,43 @@ local UIAppNameVersionWidget_drawBottomRight = UIAppNameVersionWidget.drawBottom
 local UIOperations = UIOperations
 local UIOperations_createDisabledSection = UIOperations.createDisabledSection
 
-local StorageManager = StorageManager
-local StorageManager_getPerTrackPerModeStorageKey = StorageManager.getPerTrackPerModeStorageKey
-local StorageManager_Profile = StorageManager.Profile
-local StorageManager_BehaviorMode = StorageManager.BehaviorMode
-local StorageManager_applyBehaviorProfile = StorageManager.applyBehaviorProfile
+local SettingsModel = require('SettingsModel')
+local UIState = require('UIState')
+local StorageManager_getPerTrackPerModeStorageKey = SettingsModel.getPerTrackPerModeStorageKey
+local StorageManager_Profile = SettingsModel.Profile
+local StorageManager_BehaviorMode = SettingsModel.BehaviorMode
+local StorageManager_applyBehaviorProfile = SettingsModel.applyBehaviorProfile
 
-local StorageManager_options_default = StorageManager.options_default
-local StorageManager_options_min = StorageManager.options_min
-local StorageManager_options_max = StorageManager.options_max
+local StorageManager_options_default = SettingsModel.options_default
+local StorageManager_options_min = SettingsModel.options_min
+local StorageManager_options_max = SettingsModel.options_max
 
-local StorageManager_options_Yielding_default = StorageManager.options_Yielding_default
-local StorageManager_options_Yielding_min = StorageManager.options_Yielding_min
-local StorageManager_options_Yielding_max = StorageManager.options_Yielding_max
+local StorageManager_options_Yielding_default = SettingsModel.options_Yielding_default
+local StorageManager_options_Yielding_min = SettingsModel.options_Yielding_min
+local StorageManager_options_Yielding_max = SettingsModel.options_Yielding_max
 
-local StorageManager_options_Overtaking_default = StorageManager.options_Overtaking_default
-local StorageManager_options_Overtaking_min = StorageManager.options_Overtaking_min
-local StorageManager_options_Overtaking_max = StorageManager.options_Overtaking_max
+local StorageManager_options_Overtaking_default = SettingsModel.options_Overtaking_default
+local StorageManager_options_Overtaking_min = SettingsModel.options_Overtaking_min
+local StorageManager_options_Overtaking_max = SettingsModel.options_Overtaking_max
 
-local StorageManager_options_AICarValues_default = StorageManager.options_AICarValues_default
-local StorageManager_options_AICarValues_min = StorageManager.options_AICarValues_min
-local StorageManager_options_AICarValues_max = StorageManager.options_AICarValues_max
+local StorageManager_options_AICarValues_default = SettingsModel.options_AICarValues_default
+local StorageManager_options_AICarValues_min = SettingsModel.options_AICarValues_min
+local StorageManager_options_AICarValues_max = SettingsModel.options_AICarValues_max
 
-local StorageManager_options_Debugging_default = StorageManager.options_Debugging_default
-local StorageManager_options_Debugging_min = StorageManager.options_Debugging_min
-local StorageManager_options_Debugging_max = StorageManager.options_Debugging_max
+local StorageManager_options_Debugging_default = SettingsModel.options_Debugging_default
+local StorageManager_options_Debugging_min = SettingsModel.options_Debugging_min
+local StorageManager_options_Debugging_max = SettingsModel.options_Debugging_max
 
-local StorageManager_options_PathFinding_default = StorageManager.options_PathFinding_default
-local StorageManager_options_PathFinding_min = StorageManager.options_PathFinding_min
-local StorageManager_options_PathFinding_max = StorageManager.options_PathFinding_max
+local StorageManager_options_PathFinding_default = SettingsModel.options_PathFinding_default
+local StorageManager_options_PathFinding_min = SettingsModel.options_PathFinding_min
+local StorageManager_options_PathFinding_max = SettingsModel.options_PathFinding_max
 
-local StorageManager_Options = StorageManager.Options
-local StorageManager_Options_Debugging = StorageManager.Options_Debugging
-local StorageManager_Options_Yielding = StorageManager.Options_Yielding
-local StorageManager_Options_Overtaking = StorageManager.Options_Overtaking
-local StorageManager_Options_AICarValues = StorageManager.Options_AICarValues
-local StorageManager_Options_PathFinding = StorageManager.Options_PathFinding
+local StorageManager_Options = SettingsModel.Options
+local StorageManager_Options_Debugging = SettingsModel.Options_Debugging
+local StorageManager_Options_Yielding = SettingsModel.Options_Yielding
+local StorageManager_Options_Overtaking = SettingsModel.Options_Overtaking
+local StorageManager_Options_AICarValues = SettingsModel.Options_AICarValues
+local StorageManager_Options_PathFinding = SettingsModel.Options_PathFinding
 
 
 
@@ -98,14 +99,13 @@ local DEFAULT_SLIDER_FORMAT = '%.2f'
 local DEFAULT_SLIDERGRAB_STYLECOLOR = Theme.colors.accent
 local AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO = Theme.colors.accentSoft
 
-local storage = StorageManager.getStorage()
-local storage_Yielding = StorageManager.getStorage_Yielding()
-local storage_Overtaking = StorageManager.getStorage_Overtaking()
-local storage_Debugging = StorageManager.getStorage_Debugging()
-local storage_AICarValues = StorageManager.getStorage_AICarValues()
-local storage_PathFinding = StorageManager.getStorage_PathFinding()
-local storage_Behavior = StorageManager.getStorage_Behavior()
-local advancedBehaviorOpen = false
+local storage = SettingsModel.getStorage()
+local storage_Yielding = SettingsModel.getStorage_Yielding()
+local storage_Overtaking = SettingsModel.getStorage_Overtaking()
+local storage_Debugging = SettingsModel.getStorage_Debugging()
+local storage_AICarValues = SettingsModel.getStorage_AICarValues()
+local storage_PathFinding = SettingsModel.getStorage_PathFinding()
+local storage_Behavior = SettingsModel.getStorage_Behavior()
 local function drawLanguageSelector()
     local indexes = { en = 1, ['pt-BR'] = 2, es = 3 }
     local locales = { 'en', 'pt-BR', 'es' }
@@ -330,17 +330,7 @@ local drawBehaviorSection = function()
     -- Profile dropdown
     -- Profile is inferred from persisted behavior values because it is not a
     -- declared ac.storage field.
-    local profileIndex = StorageManager_Profile.Realistic
-    local detectedProfile = nil
-    for idx, profileData in pairs(StorageManager.BehaviorProfiles or {}) do
-        if profileData.mode == storage_Behavior.mode
-           and profileData.humanErrorEnabled == storage_Behavior.humanErrorEnabled
-           and math.abs(profileData.entryBlendTime_s - storage_Behavior.entryBlendTime_s) < 0.01 then
-            detectedProfile = idx
-            break
-        end
-    end
-    profileIndex = detectedProfile or profileIndex or StorageManager_Profile.Realistic
+    local profileIndex = SettingsModel.inferBehaviorProfile(storage_Behavior)
 
     local profileNames = {Localization.text('Casual'), Localization.text('Realistic'), Localization.text('Competitive')}
     local newProfileIndex, profileChanged = ui_combo(translatedLabel('AI Behavior Profile', 'behavior.profile'), profileIndex, ui.ComboFlags.None, profileNames)
@@ -362,10 +352,10 @@ local drawBehaviorSection = function()
     ui_newLine(1)
 
     -- Advanced section with 14 sliders
-    local isAdvancedOpen = advancedBehaviorOpen
+    local isAdvancedOpen = UIState.advancedBehaviorOpen
     local checkboxLabel = translatedLabel(isAdvancedOpen and 'Hide Advanced Behavior Sliders' or 'Show Advanced Behavior Sliders', 'behavior.advanced.toggle')
     if ui_checkbox(checkboxLabel, isAdvancedOpen) then isAdvancedOpen = not isAdvancedOpen end
-    advancedBehaviorOpen = isAdvancedOpen
+    UIState.advancedBehaviorOpen = isAdvancedOpen
     if ui_itemHovered() then ui_setTooltip('Granular sliders for the behavior polish values.\nMost users should pick a Profile above and leave these at defaults.') end
 
     if isAdvancedOpen then

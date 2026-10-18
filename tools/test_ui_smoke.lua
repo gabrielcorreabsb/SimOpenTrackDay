@@ -35,6 +35,7 @@ local styleColor = {}
 for i, name in ipairs(styleColorNames) do styleColor[name] = i - 1 end
 local comboFlags = { None = 0, NoPreview = 1, NoArrowButton = 2, WidthFitPreview = 4 }
 local mouseButton = { Left = 0, Right = 1, Middle = 2 }
+local mockStorageBackend = {}
 
 local function newVec2(x, y)
   return { x = x or 0, y = y or 0, set = function(self, a, b)
@@ -44,8 +45,11 @@ local function newVec2(x, y)
   add = function(self, other) self.x, self.y = self.x + other.x, self.y + other.y; return self end }
 end
 
-local function setUp(settingsFile, accidentsEnabled, scrollPosition)
+local function setUp(settingsFile, accidentsEnabled, scrollPosition, initialLocale)
   package.loaded['SettingsWindow'] = nil
+  package.loaded['SettingsModel'] = nil
+  package.loaded['UIState'] = nil
+  package.loaded['UIStorage'] = nil
   for _, name in ipairs({ 'Theme', 'Style', 'Section', 'Logo', 'Slider', 'Toggle' }) do
     package.loaded['lib/uilib/' .. name] = nil
     package.loaded['lib.uilib.' .. name] = nil
@@ -223,7 +227,7 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   _G.ac = {
     getSim = function() return { raceSessionType = 'practice' } end,
     getTrackFullID = function() return 'smoke_track' end,
-    storage = function(defaults)
+    storage = function(defaults, namespace)
       if defaults.mode ~= nil then
         local values = {}
         for key, value in pairs(defaults) do values[key] = value end
@@ -235,6 +239,24 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
           end,
           __newindex = function(_, key, value)
             if values[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+            values[key] = value
+          end,
+        })
+      end
+      if namespace == 'ui' then
+        local values = mockStorageBackend[namespace]
+        if not values then
+          values = {}
+          for key, value in pairs(defaults) do values[key] = value end
+          mockStorageBackend[namespace] = values
+        end
+        return setmetatable({}, {
+          __index = function(_, key)
+            if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+            return values[key]
+          end,
+          __newindex = function(_, key, value)
+            if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
             values[key] = value
           end,
         })
@@ -259,7 +281,7 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   local storageManager = require('StorageManager')
   _G.StorageManager = storageManager
   local localization = require('Localization')
-  localization.setLocale('en')
+  if initialLocale ~= 'preserve' then localization.setLocale(initialLocale or 'en') end
   _G.UIAppNameVersionWidget = require('UIAppNameVersionWidget')
   local uiOperations = require('UIOperations')
   local renderSlider = uiOperations.renderSlider
@@ -567,11 +589,20 @@ local entryFile = assert(io.open(root .. '/SimOpenTrackDay.lua', 'rb'))
 local entrySource = entryFile:read('*a')
 entryFile:close()
 local mainCallback = entrySource:match('function script%.MANIFEST__FUNCTION_MAIN%(dt%)%s*(.-)function script%.MANIFEST__FUNCTION_ICON')
-check(mainCallback ~= nil and mainCallback:find("Localization.label('Language', 'settings.language')", 1, true) ~= nil,
-  'main-window callback exposes the language selector')
+local mainWindowDelegation = 'MainWindow.draw(shouldAppRun, anyMissingCSPElements, missingCSPElementsErrorMessage)'
+check(mainCallback ~= nil and mainCallback:find(mainWindowDelegation, 1, true) ~= nil,
+  'entry main callback delegates to MainWindow.draw with the app/CSP arguments')
 if mainCallback then
-  check(mainCallback:find("Localization.label('Language', 'settings.language')", 1, true) < mainCallback:find('shouldAppRun()', 1, true),
-    'main-window language selector is available before the app-running guard')
+  local mainWindowFile = assert(io.open(root .. '/MainWindow.lua', 'rb'))
+  local mainWindowSource = mainWindowFile:read('*a')
+  mainWindowFile:close()
+  local languageSelector = "Localization.label('Language', 'settings.language')"
+  local languageSelectorPosition = mainWindowSource:find(languageSelector, 1, true)
+  local appRunGuardPosition = mainWindowSource:find('shouldAppRun()', 1, true)
+  check(languageSelectorPosition ~= nil,
+    'MainWindow presentation exposes the language selector with its stable ID')
+  check(languageSelectorPosition ~= nil and appRunGuardPosition ~= nil and languageSelectorPosition < appRunGuardPosition,
+    'MainWindow language selector is available before the app-running guard')
 end
 local sliderGrabAccentFound = false
 for _, push in ipairs(state.styleColorPushes) do
@@ -620,6 +651,13 @@ local unknownProfileWriteOk = pcall(function() state.behavior.profile = profile 
 check(not unknownProfileReadOk and not unknownProfileWriteOk,
   'profile UI never reads or writes the undeclared behavior.profile key')
 check(state.behavior.humanErrorEnabled == true, 'competitive profile enables human errors')
+
+profile = storageManager.Profile.Casual
+state.pendingCombo['AI Behavior Profile'] = profile
+draw(settings, state)
+check(state.behavior.mode == storageManager.BehaviorMode.TrackDay and
+  state.behavior.entryBlendTime_s == 0.5 and state.behavior.humanErrorEnabled == false,
+  'Casual profile remains selectable and applies its existing values')
 
 profile = storageManager.Profile.Realistic
 state.pendingCombo['AI Behavior Profile'] = profile
@@ -719,6 +757,20 @@ check(state.sliders[activeResetLabel] and state.sliders[activeResetLabel].disabl
   'active slider is enabled for reset test')
 check(state.ai.defaultAICaution == activeResetDefault,
   'right-click on active slider resets it to the baseline default')
+
+draw(settings, state)
+check(localization.getLocale() == 'en' and state.combos.Language and state.combos.Language.value == 1,
+  'language selector is visibly at English before interaction')
+state.pendingCombo['Language'] = 2
+draw(settings, state)
+check(localization.getLocale() == 'pt-BR' and state.combos.Language ~= nil,
+  'selecting Portuguese through the Settings language combo updates its Localization singleton')
+check(mockStorageBackend.ui.uiLanguage == 'pt-BR', 'Settings language interaction writes the persistent app-independent UI namespace')
+local reloadedSettings, _, reloadedState = setUp(currentPath, true, nil, 'preserve')
+check(require('Localization').getLocale() == 'pt-BR', 'settings/application module reload restores persisted language')
+draw(reloadedSettings, reloadedState)
+check(reloadedState.controlIDs['Deslocamento lateral padrão [-1..1]'] == offsetControlID,
+  'reloaded Settings redraw uses restored locale while retaining source-English control ID')
 
 if failures > 0 then
   io.stderr:write(string.format('UI smoke harness failed: %d assertion(s); %d checks.\n', failures, checks))

@@ -1,4 +1,5 @@
 local StorageManager = {}
+local UIStorage = require('UIStorage')
 
 local fillInDoDTables = function(collection_beforeDoD, options_default, options_min, options_max)
     options_default = {}
@@ -682,6 +683,11 @@ end
 ---@return StorageTable_Global storage_Global
 function StorageManager.getStorage_Global()
     return storage_Global
+end
+
+---@return table storage_UI
+function StorageManager.getStorage_UI()
+    return UIStorage.get()
 end
 
 ---@return StorageTable_Debugging storage_Debugging

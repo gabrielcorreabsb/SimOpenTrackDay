@@ -9,17 +9,52 @@ for _, locale in ipairs(Localization.locales) do
     catalogs[locale] = require('lib/i18n/' .. locale)
 end
 
-local function getGlobalStorage()
+local function getStorage()
     local manager = rawget(_G, 'StorageManager') or require('StorageManager')
-    return manager.getStorage_Global()
+    local getUIStorage = manager.getStorage_UI
+    local uiStorage
+    if getUIStorage == nil then
+        uiStorage = require('UIStorage').get()
+    elseif type(getUIStorage) ~= 'function' then
+        error('StorageManager.getStorage_UI must be a function', 2)
+    else
+        uiStorage = getUIStorage()
+    end
+    if uiStorage == nil then
+        error('StorageManager.getStorage_UI returned no storage handle', 2)
+    end
+    return uiStorage, manager
 end
 
 local function validLocale(locale)
     return localeIndex[locale] ~= nil
 end
 
-local storage = getGlobalStorage()
-local locale = storage.uiLanguage
+local uiStorage, storageManager = getStorage()
+local persistedLocale = uiStorage.uiLanguage
+if type(persistedLocale) ~= 'string' then
+    error('UI storage uiLanguage must be a string', 0)
+end
+if persistedLocale == '' then
+    local globalStorage = storageManager.getStorage_Global()
+    local legacyReadOk, legacyLocale = pcall(function()
+        return globalStorage.uiLanguage
+    end)
+    if not legacyReadOk then
+        local errorText = tostring(legacyLocale)
+        local unknownKey = 'Unknown key: uiLanguage'
+        local unknownKeyAt = errorText:find(unknownKey, 1, true)
+        local followingCharacter = unknownKeyAt and errorText:sub(unknownKeyAt + #unknownKey, unknownKeyAt + #unknownKey) or ''
+        if not unknownKeyAt or followingCharacter:match('[%w_]') then
+            error(legacyLocale, 0)
+        end
+    elseif validLocale(legacyLocale) then
+        persistedLocale = legacyLocale
+        uiStorage.uiLanguage = legacyLocale
+    end
+end
+
+local locale = persistedLocale
 if not validLocale(locale) then locale = 'en' end
 
 function Localization.getLocale()
@@ -28,8 +63,8 @@ end
 
 function Localization.setLocale(newLocale)
     if not validLocale(newLocale) then return false end
+    uiStorage.uiLanguage = newLocale
     locale = newLocale
-    storage.uiLanguage = newLocale
     return true
 end
 

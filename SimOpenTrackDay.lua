@@ -256,11 +256,7 @@ local ac_getCar = ac.getCar
 local ac_getSim = ac.getSim
 local ac_iterateCars = ac.iterateCars
 local ui = ui
-local ui_textColored = ui.textColored
-local Localization = require('Localization')
-local ui_newLine = ui.newLine
-local ui_separator = ui.separator
-local ui_button = ui.button
+local MainWindow = require('MainWindow')
 local math = math
 local math_min = math.min
 local Constants = Constants
@@ -275,7 +271,6 @@ local AccidentManager = AccidentManager
 local AccidentManager_registerCollision = AccidentManager.registerCollision
 local AccidentManager_informAboutCarReset = AccidentManager.informAboutCarReset
 local AppIconRenderer = AppIconRenderer
-local AppIconRenderer_draw = AppIconRenderer.draw
 local CameraManager = CameraManager
 local CameraManager_getFocusedCarIndex = CameraManager.getFocusedCarIndex
 local CarManager = CarManager
@@ -290,15 +285,78 @@ local CarStateMachine_setReasonWhyCantYield = CarStateMachine.setReasonWhyCantYi
 local CarStateMachine_updateCar = CarStateMachine.updateCar
 local CarStateMachine_handleQueuedAccidents = CarStateMachine.handleQueuedAccidents
 local UIManager = UIManager
-local UIManager_toggleSettingsWindow = UIManager.toggleSettingsWindow
-local UIManager_drawMainWindowLateralOffsetsSection = UIManager.drawMainWindowLateralOffsetsSection
-local UIManager_drawUICarList = UIManager.drawUICarList
 local UIManager_drawCarStateOverheadText = UIManager.drawCarStateOverheadText
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
 local RaceFlagManager_removeRaceFlag = RaceFlagManager.removeRaceFlag
 local SettingsWindow = SettingsWindow
 local SettingsWindow_draw = SettingsWindow.draw
+
+local SettingsWindow_memProbeDone = false
+local SettingsWindow_memProbeFirstEntry
+do
+  local function logProbe(message)
+    pcall(function()
+      if ac and ac.log then ac.log('[SOTD-MEM-PROBE] ' .. message) end
+    end)
+  end
+
+  local function functionDetails(label, fn)
+    local result = label .. ' identity=' .. tostring(fn)
+    if type(fn) ~= 'function' then return result .. ' metadata=unavailable' end
+
+    local debugLibrary = debug
+    if type(debugLibrary) ~= 'table' or type(debugLibrary.getinfo) ~= 'function' then
+      return result .. ' metadata=debug.getinfo-unavailable'
+    end
+    local ok, info = pcall(debugLibrary.getinfo, fn, 'S')
+    if not ok or type(info) ~= 'table' then return result .. ' metadata=getinfo-failed' end
+    return result .. ' source=' .. tostring(info.source) ..
+      ' linedefined=' .. tostring(info.linedefined) ..
+      ' lastlinedefined=' .. tostring(info.lastlinedefined) ..
+      ' what=' .. tostring(info.what)
+  end
+
+  local function behaviorFunction(draw)
+    local debugLibrary = debug
+    if type(draw) ~= 'function' or type(debugLibrary) ~= 'table' or
+        type(debugLibrary.getupvalue) ~= 'function' then
+      return nil, 'debug.getupvalue-unavailable'
+    end
+    for index = 1, 256 do
+      local ok, name, value = pcall(debugLibrary.getupvalue, draw, index)
+      if not ok then return nil, 'getupvalue-failed' end
+      if name == nil then break end
+      if name == 'drawBehaviorSection' then return value, 'found' end
+    end
+    return nil, 'drawBehaviorSection-not-found'
+  end
+
+  local function snapshot(stage, callback)
+    local ok, message = pcall(function()
+      local currentDraw = SettingsWindow.draw
+      local loadedDraw
+      if type(package) == 'table' and type(package.loaded) == 'table' and
+          type(package.loaded.SettingsWindow) == 'table' then
+        loadedDraw = package.loaded.SettingsWindow.draw
+      end
+      local behavior, behaviorStatus = behaviorFunction(SettingsWindow_draw)
+      return stage .. ' ' .. functionDetails('alias', SettingsWindow_draw) ..
+        ' alias-equals-local-table-draw=' .. tostring(SettingsWindow_draw == currentDraw) ..
+        ' alias-equals-package-loaded-draw=' .. tostring(SettingsWindow_draw == loadedDraw) ..
+        ' ' .. functionDetails('SettingsWindow.draw', currentDraw) ..
+        ' ' .. functionDetails('package.loaded.SettingsWindow.draw', loadedDraw) ..
+        ' drawBehaviorSection=' .. behaviorStatus .. ' ' .. functionDetails('drawBehaviorSection', behavior) ..
+        ' ' .. functionDetails('settings-callback', callback)
+    end)
+    if ok then logProbe(message) else logProbe(stage .. ' introspection-failed') end
+  end
+
+  SettingsWindow_memProbeFirstEntry = function(callback)
+    snapshot('first-settings-entry', callback)
+  end
+  snapshot('alias-receipt', nil)
+end
 
 
 
@@ -447,59 +505,7 @@ end)
 ---
 function script.MANIFEST__FUNCTION_MAIN(dt)
   local ok, err = xpcall(function()
-  ui_textColored(Localization.text("SimOpenTrackDay allows you to alter the AI cars' behavior to act more like humans driving during a track day event by yielding to faster cars and overtaking slower cars."), ColorManager.RGBM_Colors.WhiteSmoke)
-  ui_newLine(1)
-  local localeIndexes = { en = 1, ['pt-BR'] = 2, es = 3 }
-  local locales = { 'en', 'pt-BR', 'es' }
-  local localeIndex, localeChanged = ui.combo(Localization.label('Language', 'settings.language'), localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
-  if localeChanged then Localization.setLocale(locales[localeIndex] or 'en') end
-  ui_newLine(1)
-
-  -- Show the missing CSP elements error message if needed
-  if anyMissingCSPElements and missingCSPElementsErrorMessage and missingCSPElementsErrorMessage ~= '' then
-    ui_textColored(missingCSPElementsErrorMessage, rgbm(1, 0, 0, 1))
-    ui_newLine(1)
-    ui_separator()
-    ui_newLine(1)
-  end
-
-  AppIconRenderer_draw()
-
-  local settingsButtonText = Localization.text('Modify Settings')
-  local settingsButtonWidth = math.min(ui.availableSpaceX(), math.max(120, ui.measureDWriteText(settingsButtonText, 14, -1).x + 24))
-  if ui_button(Localization.label('Modify Settings', 'main.settings'), vec2(settingsButtonWidth, 40)) then
-    UIManager_toggleSettingsWindow()
-  end
-  ui_newLine(1)
-
-  -- If the app is not running, show a message and stop drawing further UI
-  if (not shouldAppRun()) then
-    UIManager.drawAppNotRunningMessageInMainWindow()
-    return
-  end
-
-  -- Profiler.beginFrame()
-
-  -- ui.text(string.format('AI cars yielding to the %s', RaceTrackManager.TrackSideStrings[RaceTrackManager.getYieldingSide()]))
-  -- ui.newLine(1)
-
-  ui.dwriteText(Localization.text('Driving lanes'), 17)
-  ui.separator()
-  -- Profiler.begin('UIManager_drawMainWindowLateralOffsetsSection')
-  UIManager_drawMainWindowLateralOffsetsSection()
-  -- Profiler["end"]('UIManager_drawMainWindowLateralOffsetsSection')
-
-  ui_newLine(1)
-
-  ui.dwriteText(Localization.text('AI car list'), 17)
-  ui.separator()
-  -- Profiler.begin('UIManager_drawUICarList')
-  UIManager_drawUICarList()
-  -- Profiler["end"]('UIManager_drawUICarList')
-
-  -- Profiler.drawUI()
-
-  -- Profiler.endFrame()
+  MainWindow.draw(shouldAppRun, anyMissingCSPElements, missingCSPElementsErrorMessage)
   end, function(e) return tostring(e) .. "\n" .. debug.traceback() end)
   if not ok and ac and ac.error then
     ac.error("[RTD-DIAG] draw error: " .. tostring(err))
@@ -865,6 +871,12 @@ end
 function script.MANIFEST__FUNCTION_SETTINGS()
   -- if (not CAN_APP_RUN) then return end
 
+  if not SettingsWindow_memProbeDone then
+    SettingsWindow_memProbeDone = true
+    if SettingsWindow_memProbeFirstEntry then
+      SettingsWindow_memProbeFirstEntry(script.MANIFEST__FUNCTION_SETTINGS)
+    end
+  end
   SettingsWindow_draw()
 end
 

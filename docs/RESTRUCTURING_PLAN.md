@@ -4,9 +4,8 @@ Plano atual e fonte única de direção para as próximas etapas. Substitui prop
 
 ## Contexto e limites
 
-- Base B foi alterada localmente, sem commit e sem redesenho executado. Há novos `MainWindow`, `SettingsModel` e `UIState`; `UIStorage` preexistente está não rastreado. `Localization`, `StorageManager`, `SimOpenTrackDay`, `SettingsWindow` e ferramentas de teste também têm alterações locais.
-- Esses módulos não estão publicados. Antes de trabalho compartilhado, consolidar apenas dependências necessárias, revisar os diffs e preservar alterações alheias; não presumir que a base está coerente.
-- Estado: P0 publicado em `origin/main` no commit `64e3d69476d99a52dc58108505e64f896ba1b878`; base B local, P1–P5 pendentes. Implementação P1–P4 pode começar dentro do escopo abaixo. P5 trata da criação do pacote seguro; execução em instalação real não está autorizada. Permanecem vedados reset de armazenamento e mudanças em vendor/submódulos ou configuração OpenCode.
+- Base B foi consolidada para P1, aguardando publicação desta unidade. Inclui módulos de apresentação, estado, queries e armazenamento compartilhado da UI; os três documentos dirty do usuário (`docs/AGENT.md`, `docs/ARCHITECTURE.md`, `docs/LOCALIZATION.md`) não fazem parte da unidade P1 e devem ser preservados.
+- Estado: P0 inicial publicado em `origin/main` no commit `64e3d69476d99a52dc58108505e64f896ba1b878`; atualização documental da paleta publicada em `origin/main` no commit `90f300a5a5a0a3474435c58dda21537695b72571`. P1 consolidado e validado, aguardando publicação; P2–P5 pendentes. P1 não implementa a direção visual nem remove diagnósticos. P5 trata da criação do pacote seguro; execução em instalação real não está autorizada. Permanecem vedados reset de armazenamento e mudanças em vendor/submódulos ou configuração OpenCode.
 - Usuário autorizou em 18/10/2026 a remoção de diagnósticos e, posteriormente, uma janela com abas internas. A direção UX abaixo foi orientada pelo designer; ainda não está implementada.
 - Commit/push por unidade validada, com staging explícito. Coordenador e git-release revisam/publicam; preservar arquivos dirty não relacionados, sem force push ou reescrita de histórico. Se push falhar, resolver antes da etapa seguinte.
 
@@ -17,10 +16,11 @@ Plano atual e fonte única de direção para as próximas etapas. Substitui prop
 - Arquivos-alvo: `docs/RESTRUCTURING_PLAN.md`, um link em `docs/README.md`.
 - Aceite: plano único, links relativos válidos e revisão do diff da unidade P0 (estes dois arquivos), preservando alterações dirty alheias. Não executar testes Lua.
 
-### P1 — Base coerente B | pendente
+### P1 — Base coerente B | validado para publicação
 
-- Alvo: consolidar refatoração local e dependências necessárias já existentes, sem incluir arquivos alheios; revisar `MainWindow`, `SettingsModel`, `UIState`, `UIStorage`, localização, armazenamento, janela, entry point e testes pertinentes.
-- Aceite: inventário de diffs e dependências, compatibilidade de APIs/contratos documentada, testes adaptados e verdes antes de compartilhar a base. Não afirmar publicação prévia dos novos módulos.
+- Unidade: `MainWindow.lua`, `SettingsModel.lua`, `UIState.lua`, `UIStorage.lua`, `Localization.lua`, `StorageManager.lua`, `SettingsWindow.lua`, `SimOpenTrackDay.lua`, `tools/test_main_window.lua`, `tools/test_settings_model.lua`, `tools/test_ui_smoke.lua` e `tools/test_localization.lua`.
+- Evidência registrada em 18/10/2026: testes main/localization passaram; SettingsModel (27), UI smoke (822) e logo smoke (21) passaram; sintaxe (77) passou; `git diff --check` passou; revisão read-only sem achados. Esta evidência não equivale a validação CSP.
+- A publicação P1 deve incluir somente a unidade revisada, preservando documentos e demais alterações dirty alheias. Próxima etapa após commit/push P1: P2, remoção autorizada da instrumentação diagnóstica.
 
 ### P2 — Retirada de instrumentação diagnóstica | pendente
 

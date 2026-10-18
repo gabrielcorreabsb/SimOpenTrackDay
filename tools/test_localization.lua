@@ -2,6 +2,7 @@
 package.path = './?.lua;./?/init.lua;' .. package.path
 
 local known = { uiLanguage = 'en' }
+local uiKnown = { uiLanguage = '' }
 local globalStorage = setmetatable({}, {
   __index = function(_, key)
     if known[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
@@ -12,7 +13,20 @@ local globalStorage = setmetatable({}, {
     known[key] = value
   end,
 })
-_G.StorageManager = { getStorage_Global = function() return globalStorage end }
+local initialUIStorage = setmetatable({}, {
+  __index = function(_, key)
+    if uiKnown[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+    return uiKnown[key]
+  end,
+  __newindex = function(_, key, value)
+    if uiKnown[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+    uiKnown[key] = value
+  end,
+})
+_G.StorageManager = {
+  getStorage_Global = function() return globalStorage end,
+  getStorage_UI = function() return initialUIStorage end,
+}
 
 local localization = require('Localization')
 local en = require('lib/i18n/en')
@@ -278,8 +292,8 @@ for line in settingsSource:gmatch('[^\r\n]+') do
   end
 end
 check(sliderCallCount >= 50, 'inventory extracted from live SettingsWindow slider calls')
-check(sourceContains('SimOpenTrackDay.lua', "Localization.text('Driving lanes')"), 'Driving lanes msgid is present at its live call site')
-check(sourceContains('SimOpenTrackDay.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
+check(sourceContains('MainWindow.lua', "Localization.text('Driving lanes')"), 'Driving lanes msgid is present at its live call site')
+check(sourceContains('MainWindow.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
 check(sourceContains('UIManager.lua', "T('SimOpenTrackDay is not running.')"), 'not-running msgid is present at its live call site')
 check(sourceContains('UIManager.lua', 'T("yes #%d", currentlyYieldingCarIndex)'), 'yielding status uses an unformatted template msgid')
 check(sourceContains('UIManager.lua', 'T("yes #%d", currentlyOvertakingCarIndex)'), 'overtaking status uses an unformatted template msgid')
@@ -290,7 +304,7 @@ check(sourceContains('UIManager.lua', 'T(defaultDrivingSideString)'), 'default s
 
 check(localization.getLocale() == 'en', 'missing language falls back to English')
 check(localization.text('Current Mode: %s', 'Race') == 'Current Mode: Race', 'English formatting')
-check(localization.setLocale('pt-BR') and known.uiLanguage == 'pt-BR', 'locale persists globally')
+check(localization.setLocale('pt-BR') and uiKnown.uiLanguage == 'pt-BR', 'locale persists in UI storage')
 check(localization.text('Current Mode: %s', 'Corrida') == 'Modo atual: Corrida', 'translated formatting')
 check(localization.text('untranslated msgid') == 'untranslated msgid', 'missing translation falls back to source')
 local savedClose = pt.Close
@@ -307,7 +321,7 @@ check(formatSignature('%03d %.2f %% %s %08.3A') == '%03d|%.2f|%%|%s|%08.3A', 'fo
 check(formatSignature('%03d %.2f %s') ~= formatSignature('%s %.2f %03d'), 'format parser detects reordered placeholders')
 check(localization.label('##debug-only') == '##debug-only', 'hidden-only ID label is preserved')
 check(not localization.setLocale('fr') and localization.getLocale() == 'pt-BR', 'invalid locale rejected without changing locale')
-check(localization.setLocale('es') and known.uiLanguage == 'es' and localization.text('Left') == 'Izquierda', 'locale can be changed and persisted')
+check(localization.setLocale('es') and uiKnown.uiLanguage == 'es' and localization.text('Left') == 'Izquierda', 'locale can be changed and persisted')
 check(localization.text('yes #%d', 12) == 'sí #12', 'Spanish formatted car-status placeholder')
 check(localization.text('%s v%s by %s', 'SimOpenTrackDay', '1.2', 'Author') == 'SimOpenTrackDay v1.2 por Author', 'Spanish formatted version-widget placeholders')
 check(localization.text('Center') == 'Centro', 'center side localization is present')
@@ -318,14 +332,346 @@ localization.label(stableLabel)
 localization.setLocale('es')
 check(labelID(localization.label(stableLabel)) == labelID('Modify Settings###main.settings'), 'embedded label ID remains stable across locales')
 
-known.uiLanguage = 'pt-BR'
+uiKnown.uiLanguage = 'pt-BR'
 package.loaded.Localization = nil
 local reloaded = require('Localization')
-check(reloaded.getLocale() == 'pt-BR', 'valid persisted locale is loaded on module initialization')
+check(reloaded.getLocale() == 'pt-BR', 'valid persisted UI locale is loaded on module initialization')
 
-known.uiLanguage = 'invalid'
+uiKnown.uiLanguage = 'invalid'
 package.loaded.Localization = nil
 local fallback = require('Localization')
-check(fallback.getLocale() == 'en' and known.uiLanguage == 'invalid', 'invalid persisted locale falls back without unsafe storage access')
+check(fallback.getLocale() == 'en' and uiKnown.uiLanguage == 'invalid', 'invalid persisted locale falls back without rewriting stored value')
+
+-- Exercise the actual StorageManager schema against a strict, persistent
+-- ac.storage mock indexed by the SDK namespace and key arguments.
+local persisted = {}
+local seenSchemas = {}
+local storageCreations = {}
+local function strictPersistentStorage(defaults, namespace)
+  assert(type(namespace) == 'string', 'storage namespace must be explicit')
+  seenSchemas[namespace] = defaults
+  storageCreations[namespace] = (storageCreations[namespace] or 0) + 1
+  local data = persisted[namespace]
+  if not data then
+    data = {}
+    for key, value in pairs(defaults) do data[key] = value end
+    persisted[namespace] = data
+  else
+    for key, value in pairs(defaults) do
+      if data[key] == nil then data[key] = value end
+    end
+  end
+  return setmetatable({}, {
+    __index = function(_, key)
+      if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+      return data[key]
+    end,
+    __newindex = function(_, key, value)
+      if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+      data[key] = value
+    end,
+  })
+end
+_G.Constants = { APP_VERSION = 'test', APP_NAME = 'test' }
+_G.Logger = { log = function() end }
+_G.ac = {
+  getSim = function() return { raceSessionType = 'practice' } end,
+  getTrackFullID = function() return 'track-one' end,
+  storage = strictPersistentStorage,
+}
+-- Reproduce both lookup shapes that were failing: the global legacy manager,
+-- then only package.loaded's legacy manager. The shared UIStorage fallback is
+-- created once and subsequently reused by real StorageManager.
+local legacyLoadedManager = { getStorage_Global = function() return { uiLanguage = 'en' } end }
+_G.StorageManager = legacyLoadedManager
+package.loaded.StorageManager = nil
+package.loaded.UIStorage = nil
+package.loaded.Localization = nil
+local legacyGlobalLocalization = require('Localization')
+local sharedUIHandle = require('UIStorage').get()
+check(legacyGlobalLocalization.getLocale() == 'en', 'legacy global manager without UI getter falls back to shared UI storage')
+_G.StorageManager = nil
+package.loaded.StorageManager = legacyLoadedManager
+package.loaded.Localization = nil
+local loadedLegacyLocalization = require('Localization')
+check(loadedLegacyLocalization.getLocale() == 'en', 'package.loaded legacy manager without UI getter uses shared UI storage')
+check(require('UIStorage').get() == sharedUIHandle and storageCreations.ui == 1,
+  'UIStorage singleton creates one ac.storage handle across legacy-manager fallback calls')
+_G.StorageManager = nil
+package.loaded.StorageManager = nil
+package.loaded.Localization = nil
+local realStorageManager = require('StorageManager')
+_G.StorageManager = realStorageManager
+check(type(realStorageManager.getStorage_UI) == 'function', 'real StorageManager exposes the UI storage getter')
+check(realStorageManager.getStorage_UI().uiLanguage == 'en', 'shared UI handle retains the one-time legacy locale migration')
+check(realStorageManager.getStorage_UI() == sharedUIHandle and storageCreations.ui == 1,
+  'real StorageManager getter reuses the fallback singleton handle')
+check(seenSchemas.ui and seenSchemas.ui.uiLanguage == '', 'real UI store uses the app-independent ui namespace')
+check(seenSchemas.global and seenSchemas.global.uiLanguage == 'en', 'legacy global uiLanguage schema remains for compatibility')
+check(persisted.ui ~= nil, 'persistent mock is keyed by the UI storage namespace')
+local undeclaredUIWrite = pcall(function() realStorageManager.getStorage_UI().otherSetting = true end)
+check(not undeclaredUIWrite, 'strict UI schema rejects undeclared keys')
+local realLocalization = require('Localization')
+check(realLocalization.getLocale() == 'en', 'empty UI locale with absent/invalid legacy key defaults to English')
+check(realLocalization.setLocale('pt-BR'), 'real schema accepts Portuguese selection')
+check(realStorageManager.getStorage_UI().uiLanguage == 'pt-BR', 'Portuguese selection persists in real UI storage')
+check(require('Localization') == realLocalization, 'main/settings share the same Localization module singleton')
+
+-- Run the requested strict legacy-schema case through the real StorageManager
+-- UI getter while denying uiLanguage on its legacy global getter.
+persisted.ui.uiLanguage = ''
+realStorageManager.getStorage_Global = function()
+  return setmetatable({}, {
+    __index = function(_, key) error('Unknown key: ' .. tostring(key), 2) end,
+    __newindex = function(_, key) error('Unknown key: ' .. tostring(key), 2) end,
+  })
+end
+package.loaded.Localization = nil
+local missingLegacyStorageLocale = require('Localization')
+check(missingLegacyStorageLocale.getLocale() == 'en',
+  'strict legacy schema without uiLanguage defaults to English using declared real UI schema')
+check(missingLegacyStorageLocale.setLocale('pt-BR') and persisted.ui.uiLanguage == 'pt-BR',
+  'strict legacy schema still persists locale through real UI storage')
+
+local function reloadApplication(trackID, sessionType)
+  _G.ac.getTrackFullID = function() return trackID end
+  _G.ac.getSim = function() return { raceSessionType = sessionType } end
+  package.loaded.Localization = nil
+  package.loaded.StorageManager = nil
+  package.loaded.UIStorage = nil
+  _G.StorageManager = nil
+  local manager = require('StorageManager')
+  _G.StorageManager = manager
+  return require('Localization'), manager
+end
+local reloadedPT, otherTrackManager = reloadApplication('track-two', 'race')
+check(reloadedPT.getLocale() == 'pt-BR', 'locale persists across track and session namespaces')
+check(otherTrackManager.getStorage_UI().uiLanguage == 'pt-BR', 'UI language remains shared across track/mode storage')
+check(otherTrackManager.getStorage_Behavior().mode ~= nil, 'strict behavior schema remains available without a profile field')
+local unknownProfileRead = pcall(function() return otherTrackManager.getStorage_Behavior().profile end)
+local unknownProfileWrite = pcall(function() otherTrackManager.getStorage_Behavior().profile = 'x' end)
+check(not unknownProfileRead and not unknownProfileWrite, 'behavior.profile remains undeclared and rejected')
+check(reloadedPT.setLocale('es'), 'Spanish selection persists')
+local reloadedES, _ = reloadApplication('another-track', 'qualifying')
+check(reloadedES.getLocale() == 'es', 'Spanish locale survives reloading both modules')
+
+-- Legacy reads are strict: migrate only a declared legacy value, and never
+-- rewrite invalid legacy values. Errors beyond a missing legacy key propagate.
+local function localizationWithLegacy(legacyValue, legacyMode)
+  local ui = { uiLanguage = '' }
+  local manager = {
+    getStorage_UI = function() return ui end,
+    getStorage_Global = function()
+      if legacyMode == 'error' then error('legacy getter failed') end
+      return setmetatable({}, {
+        __index = function(_, key)
+          if key ~= 'uiLanguage' or legacyMode == 'missing' then error('Unknown key: ' .. tostring(key), 2) end
+          return legacyValue
+        end,
+      })
+    end,
+  }
+  _G.StorageManager = manager
+  package.loaded.Localization = nil
+  return pcall(require, 'Localization'), ui
+end
+for _, legacyLocale in ipairs({ 'en', 'pt-BR', 'es' }) do
+  local migrated, migratedStorage = localizationWithLegacy(legacyLocale)
+  check(migrated and migratedStorage.uiLanguage == legacyLocale,
+    'valid legacy locale migrates exactly into UI storage: ' .. legacyLocale)
+end
+local invalidLegacy, invalidLegacyStorage = localizationWithLegacy('invalid')
+check(invalidLegacy and invalidLegacyStorage.uiLanguage == '', 'invalid legacy locale defaults without migration/rewrite')
+local missingLegacy, missingLegacyStorage = localizationWithLegacy(nil, 'missing')
+check(missingLegacy and missingLegacyStorage.uiLanguage == '', 'missing strict legacy key defaults to English')
+local brokenLegacy = localizationWithLegacy(nil, 'error')
+check(not brokenLegacy, 'unrelated legacy getter errors propagate')
+
+local precedenceUI = { uiLanguage = 'es' }
+_G.StorageManager = {
+  getStorage_UI = function() return precedenceUI end,
+  getStorage_Global = function() error('legacy getter must not be called for a valid UI locale') end,
+}
+package.loaded.Localization = nil
+local precedenceOK, precedenceLocalization = pcall(require, 'Localization')
+check(precedenceOK and precedenceLocalization.getLocale() == 'es', 'valid UI locale takes precedence over legacy locale')
+check(precedenceUI.uiLanguage == 'es', 'existing UI locale is not rewritten during load')
+
+local errorUI = setmetatable({}, {
+  __index = function(_, key) if key == 'uiLanguage' then error('UI getter failure') end end,
+  __newindex = function(_, key) error('UI setter failure: ' .. key) end,
+})
+_G.StorageManager = { getStorage_UI = function() return errorUI end, getStorage_Global = function() return globalStorage end }
+package.loaded.Localization = nil
+local uiReadOK = pcall(require, 'Localization')
+check(not uiReadOK, 'UI storage getter failures are not swallowed')
+
+_G.StorageManager = {
+  getStorage_UI = function() error('present UI getter failure') end,
+  getStorage_Global = function() return globalStorage end,
+}
+package.loaded.Localization = nil
+local throwingUIGetterOK, throwingUIGetterError = pcall(require, 'Localization')
+check(not throwingUIGetterOK and tostring(throwingUIGetterError):find('present UI getter failure', 1, true) ~= nil,
+  'present UI getter errors propagate without fallback')
+
+_G.StorageManager = {
+  getStorage_UI = true,
+  getStorage_Global = function() return globalStorage end,
+}
+package.loaded.Localization = nil
+local nonCallableGetterOK = pcall(require, 'Localization')
+check(not nonCallableGetterOK, 'present non-callable UI getter fails instead of falling back')
+
+_G.StorageManager = {
+  getStorage_UI = function() return nil end,
+  getStorage_Global = function() return globalStorage end,
+}
+package.loaded.Localization = nil
+local nilHandleOK = pcall(require, 'Localization')
+check(not nilHandleOK, 'present UI getter returning nil fails instead of falling back')
+
+_G.StorageManager = {
+  getStorage_UI = function() return {} end,
+  getStorage_Global = function() return globalStorage end,
+}
+package.loaded.Localization = nil
+local invalidHandleOK, invalidHandleError = pcall(require, 'Localization')
+check(not invalidHandleOK and tostring(invalidHandleError):find('uiLanguage must be a string', 1, true) ~= nil,
+  'present UI getter returning a handle without its schema field fails visibly')
+
+local writeUI = setmetatable({}, {
+  __index = function(_, key) if key == 'uiLanguage' then return '' end end,
+  __newindex = function(_, key) error('unrelated UI write failure: ' .. key) end,
+})
+local noLegacyStorage = setmetatable({}, {
+  __index = function(_, key) error('Unknown key: ' .. tostring(key), 2) end,
+})
+_G.StorageManager = { getStorage_UI = function() return writeUI end, getStorage_Global = function() return noLegacyStorage end }
+package.loaded.Localization = nil
+local writeLocalization = require('Localization')
+local writeOK, writeError = pcall(function() writeLocalization.setLocale('pt-BR') end)
+check(not writeOK and tostring(writeError):find('unrelated UI write failure', 1, true) ~= nil,
+  'real UI store write errors are not swallowed')
+check(writeLocalization.getLocale() == 'en', 'failed UI write does not change the active locale')
+
+local strictMissingUI = setmetatable({}, {
+  __index = function(_, key) error('Unknown key: ' .. tostring(key), 2) end,
+  __newindex = function(_, key) error('Unknown key: ' .. tostring(key), 2) end,
+})
+_G.StorageManager = { getStorage_UI = function() return strictMissingUI end, getStorage_Global = function() return globalStorage end }
+package.loaded.Localization = nil
+local missingUISchemaOK = pcall(require, 'Localization')
+check(not missingUISchemaOK, 'missing UI schema key fails visibly instead of using session-only persistence')
+
+-- Full fallback/restart acceptance using only a backend shared across the
+-- simulated process resets. Every new UIStorage module must create a fresh
+-- handle while reading and writing the same strict `ui` namespace.
+local savedEnvironment = {
+  ac = _G.ac, Constants = _G.Constants, Logger = _G.Logger,
+  StorageManagerGlobal = _G.StorageManager,
+  StorageManagerLoaded = package.loaded.StorageManager,
+  LocalizationLoaded = package.loaded.Localization,
+  UIStorageLoaded = package.loaded.UIStorage,
+}
+local restartBackend, restartCreations = {}, 0
+local legacyReads, legacyWrites = 0, 0
+local strictLegacyWithoutLanguage = setmetatable({}, {
+  __index = function(_, key)
+    legacyReads = legacyReads + 1
+    error('Unknown key: ' .. tostring(key), 2)
+  end,
+  __newindex = function(_, key)
+    legacyWrites = legacyWrites + 1
+    error('Unknown key: ' .. tostring(key), 2)
+  end,
+})
+local restartLegacyStorageManager = {
+  getStorage_Global = function() return strictLegacyWithoutLanguage end,
+}
+local function installRestartRuntime()
+  _G.Constants = { APP_VERSION = 'test', APP_NAME = 'test' }
+  _G.Logger = { log = function() end }
+  _G.ac = {
+    storage = function(defaults, namespace)
+      assert(namespace == 'ui', 'fallback only creates the app-independent UI store')
+      restartCreations = restartCreations + 1
+      local values = restartBackend[namespace]
+      if not values then
+        values = {}
+        for key, value in pairs(defaults) do values[key] = value end
+        restartBackend[namespace] = values
+      end
+      return setmetatable({}, {
+        __index = function(_, key)
+          if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+          return values[key]
+        end,
+        __newindex = function(_, key, value)
+          if defaults[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+          values[key] = value
+        end,
+      })
+    end,
+  }
+end
+local function restartWithLegacyManager(locale, restartNumber)
+  _G.StorageManager = nil
+  package.loaded.StorageManager = nil
+  package.loaded.Localization = nil
+  package.loaded.UIStorage = nil
+  installRestartRuntime()
+  package.loaded.StorageManager = restartLegacyStorageManager
+  local ok, loadedLocalization = pcall(require, 'Localization')
+  check(ok, 'legacy manager without UI getter loads through UIStorage fallback after restart ' .. restartNumber .. ': ' .. tostring(loadedLocalization))
+  if ok then
+    check(loadedLocalization.getLocale() == locale,
+      'UI locale restores across Localization/UIStorage/StorageManager reload ' .. restartNumber)
+    return loadedLocalization
+  end
+end
+
+_G.StorageManager = nil
+package.loaded.StorageManager = nil
+package.loaded.Localization = nil
+package.loaded.UIStorage = nil
+installRestartRuntime()
+package.loaded.StorageManager = restartLegacyStorageManager
+local restart1OK, restart1 = pcall(require, 'Localization')
+check(restart1OK and restart1.getLocale() == 'en',
+  'strict legacy storage without uiLanguage initializes the fallback path in English')
+check(legacyReads == 1 and legacyWrites == 0, 'first-use migration only attempts the strict legacy read')
+check(restart1OK and restart1.setLocale('pt-BR') and restartBackend.ui.uiLanguage == 'pt-BR',
+  'fallback path persists Portuguese into UIStorage namespace')
+check(restartCreations == 1, 'first fallback creates exactly one UI storage handle')
+local restart2 = restartWithLegacyManager('pt-BR', 2)
+check(restartCreations == 2, 'first simulated restart creates one fresh UIStorage handle')
+check(legacyReads == 1 and legacyWrites == 0, 'valid persisted UI locale bypasses strict legacy storage after restart')
+check(restart2 and restart2.setLocale('es') and restartBackend.ui.uiLanguage == 'es',
+  'legacy-manager fallback persists Spanish into the same backend')
+local restart3 = restartWithLegacyManager('es', 3)
+check(restartCreations == 3, 'second simulated restart creates one fresh UIStorage handle')
+check(legacyReads == 1 and legacyWrites == 0, 'Spanish reload also leaves unavailable legacy storage untouched')
+
+_G.StorageManager = nil
+package.loaded.StorageManager = nil
+package.loaded.Localization = nil
+package.loaded.UIStorage = nil
+installRestartRuntime()
+_G.ac.storage = function() error('ac.storage creation failed exactly') end
+package.loaded.StorageManager = restartLegacyStorageManager
+local creationOK, creationError = pcall(require, 'Localization')
+check(not creationOK and tostring(creationError):find('ac.storage creation failed exactly', 1, true) ~= nil,
+  'UIStorage creation error propagates without session-only fallback')
+check(type(package.loaded.Localization) ~= 'table', 'failed UIStorage creation does not publish a fabricated locale module')
+package.loaded.Localization = nil
+
+_G.ac = savedEnvironment.ac
+_G.Constants = savedEnvironment.Constants
+_G.Logger = savedEnvironment.Logger
+_G.StorageManager = savedEnvironment.StorageManagerGlobal
+package.loaded.StorageManager = savedEnvironment.StorageManagerLoaded
+package.loaded.Localization = savedEnvironment.LocalizationLoaded
+package.loaded.UIStorage = savedEnvironment.UIStorageLoaded
 if failures > 0 then error(string.format('Localization tests failed: %d assertion(s)', failures)) end
 print('Localization tests passed.')
