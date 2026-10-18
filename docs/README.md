@@ -13,6 +13,7 @@ Browse by intent. Documents describe source; they do not prove installation or C
 - [Localization](LOCALIZATION.md) · [Testing](TESTING.md)
 
 ## Workflow and plans
+- [Restructuring plan](RESTRUCTURING_PLAN.md) — current phased plan and acceptance gates.
 - [Project organization](plans/PROJECT_ORGANIZATION.md) — proposed documentation/context steps.
 - [UI identity](plans/UI_IDENTITY.md) — proposed direction and phases.
 
