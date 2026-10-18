@@ -4,7 +4,9 @@
     [string]$AssettoCorsaRoot,
     [string]$BackupRoot,
     [string]$JournalPath,
-    [switch]$LibraryOnly
+    [switch]$Interactive,
+    [switch]$LibraryOnly,
+    [switch]$NoPause
 )
 
 $script:PackageRoot = [IO.Path]::GetFullPath($PSScriptRoot)
@@ -659,7 +661,86 @@ function Invoke-SotdInstaller {
     return Install-SotdPlan $freshPlan $ac.Target $ac.Root $BackupRoot $JournalPath
 }
 
+function Invoke-SotdSelfTest {
+    param([switch]$WhatIf)
+    Write-Host 'Self-test placeholder (will be implemented in unit U6).'
+    return 0
+}
+
+function Show-SotdInteractiveMenu {
+    param(
+        [string]$AssettoCorsaRoot,
+        [string]$BackupRoot,
+        [string]$JournalPath,
+        [switch]$NoPause
+    )
+    Write-Host 'SimOpenTrackDay installer'
+    Write-Host '========================='
+    while ($true) {
+        Write-Host ''
+        Write-Host '  1) Preview (read-only)'
+        Write-Host '  2) Install (writes files, needs YES)'
+        Write-Host '  3) Rollback from a journal'
+        Write-Host '  4) Run self-test (sandbox smoke check)'
+        Write-Host '  5) Exit'
+        $selection = Read-Host 'Choose an option [1-5]:'
+        if ($null -ne $selection) { $selection = ([string]$selection).Trim() } else { $selection = '' }
+
+        if ($selection -eq '5') {
+            Write-Host 'Exiting installer.'
+            return
+        }
+        if ($selection -eq '4') {
+            $null = Invoke-SotdSelfTest
+        } elseif ($selection -eq '1' -or $selection -eq '2' -or $selection -eq '3') {
+            if (-not $AssettoCorsaRoot) {
+                $AssettoCorsaRoot = Read-Host 'Assetto Corsa root (folder containing acs.exe):'
+            }
+            if (-not $AssettoCorsaRoot) {
+                Write-Host 'An Assetto Corsa root is required for this action.'
+                continue
+            }
+            if ($selection -eq '1') {
+                $previewArguments = @{ Mode = 'Preview'; AssettoCorsaRoot = $AssettoCorsaRoot }
+                if ($BackupRoot) { $previewArguments.BackupRoot = $BackupRoot }
+                $null = Invoke-SotdInstaller @previewArguments
+            } elseif ($selection -eq '2') {
+                if (-not $BackupRoot) { $BackupRoot = Read-Host 'Backup root (leave empty for default):' }
+                if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
+                $installArguments = @{ Mode = 'Install'; AssettoCorsaRoot = $AssettoCorsaRoot; BackupRoot = $BackupRoot; JournalPath = $JournalPath }
+                $null = Invoke-SotdInstaller @installArguments
+            } else {
+                if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
+                $rollbackArguments = @{ Mode = 'Rollback'; AssettoCorsaRoot = $AssettoCorsaRoot; JournalPath = $JournalPath }
+                if ($BackupRoot) { $rollbackArguments.BackupRoot = $BackupRoot }
+                $null = Invoke-SotdInstaller @rollbackArguments
+            }
+        } else {
+            Write-Host 'Invalid choice'
+            continue
+        }
+
+        if (-not $NoPause) {
+            $reply = Read-Host 'Press Enter to return to the menu, or type Q to quit:'
+            if ($reply -and ([string]$reply).Trim() -match '^(?i:q)$') { return }
+        }
+    }
+}
+
 if (-not $LibraryOnly) {
+    if ($Interactive) {
+        try {
+            $menuArguments = @{}
+            if ($AssettoCorsaRoot) { $menuArguments.AssettoCorsaRoot = $AssettoCorsaRoot }
+            if ($BackupRoot) { $menuArguments.BackupRoot = $BackupRoot }
+            if ($JournalPath) { $menuArguments.JournalPath = $JournalPath }
+            Show-SotdInteractiveMenu @menuArguments -NoPause:$NoPause
+            exit 0
+        } catch {
+            [Console]::Error.WriteLine("Installer error: $($_.Exception.Message)")
+            exit 1
+        }
+    }
     try {
         Invoke-SotdInstaller -Mode $Mode -AssettoCorsaRoot $AssettoCorsaRoot -BackupRoot $BackupRoot -JournalPath $JournalPath
         exit 0
