@@ -6,6 +6,8 @@
     [string]$JournalPath,
     [switch]$Interactive,
     [switch]$LibraryOnly,
+    [switch]$ShowProgress,
+    [switch]$Quiet,
     [switch]$NoPause
 )
 
@@ -267,6 +269,21 @@ function Get-SotdUniqueTransactionTempRelative {
     return Join-SotdRelative $parts.Directory ('.' + $parts.Name + '.' + $TransactionId + '.' + $Kind + '.' + $UniqueId + '.tmp')
 }
 
+function Write-SotdProgress {
+    param(
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [int]$Index,
+        [int]$Total,
+        [string]$Path,
+        [Nullable[DateTime]]$StartedUtc,
+        [switch]$Quiet
+    )
+    if ($Quiet -or $Total -le 0) { return }
+    $elapsed = 0
+    if ($StartedUtc) { $elapsed = [int][Math]::Floor(((Get-Date).ToUniversalTime() - $StartedUtc.ToUniversalTime()).TotalSeconds) }
+    Write-Host "[$Index/$Total] $Stage $Path (elapsed ${elapsed}s)"
+}
+
 function Install-SotdPlan {
     param(
         [Parameter(Mandatory = $true)]$Plan,
@@ -334,8 +351,15 @@ function Install-SotdPlan {
         [void][IO.Directory]::CreateDirectory($BackupRoot)
         [void][IO.Directory]::CreateDirectory($backupTransactionRoot)
 
+        $installStartedUtc = [DateTime]::UtcNow
+        $totalToBackup = @($journal.Entries | Where-Object { $_.Changed -and $_.OriginalHash }).Count
+        $totalToInstall = @($journal.Entries | Where-Object { $_.Changed }).Count
+
+        $backupIndex = 0
         foreach ($entry in $journal.Entries) {
             if (-not $entry.Changed -or -not $entry.OriginalHash) { continue }
+            $backupIndex++
+            Write-SotdProgress -Stage 'Backing up' -Index $backupIndex -Total $totalToBackup -Path $entry.RelativePath -StartedUtc $installStartedUtc -Quiet:($Quiet -or -not $ShowProgress)
             $item = $null
             foreach ($candidate in $Plan) { if ($candidate.RelativePath -eq $entry.RelativePath) { $item = $candidate; break } }
             if ($null -eq $item -or (Get-SotdSha256 $item.TargetPath) -ne $entry.OriginalHash) {
@@ -357,8 +381,11 @@ function Install-SotdPlan {
             Write-SotdJournal $journal $journalPath
         }
 
+        $installIndex = 0
         foreach ($entry in $journal.Entries) {
             if (-not $entry.Changed) { continue }
+            $installIndex++
+            Write-SotdProgress -Stage 'Installing' -Index $installIndex -Total $totalToInstall -Path $entry.RelativePath -StartedUtc $installStartedUtc -Quiet:($Quiet -or -not $ShowProgress)
             $item = $null
             foreach ($candidate in $Plan) { if ($candidate.RelativePath -eq $entry.RelativePath) { $item = $candidate; break } }
             if ($null -eq $item) { throw "Internal plan entry missing: '$($entry.RelativePath)'." }
@@ -565,12 +592,17 @@ function Invoke-SotdRollback {
     }
 
     # No target changes occur before every target, temporary, and available backup passes preflight.
+    $rollbackStartedUtc = [DateTime]::UtcNow
+    $totalRollback = $preflight.Count
     $journal.State = 'RollingBack'
     $journal.Progress = 'Preflight complete'
     Write-SotdJournal $journal $journalFullPath
+    $rollbackIndex = 0
     foreach ($item in $preflight) {
         $entry = $item.Entry
         if (-not $entry.Changed) { continue }
+        $rollbackIndex++
+        Write-SotdProgress -Stage 'Rolling back' -Index $rollbackIndex -Total $totalRollback -Path $entry.RelativePath -StartedUtc $rollbackStartedUtc -Quiet:($Quiet -or -not $ShowProgress)
         $targetNowExists = Test-Path -LiteralPath $item.Target -PathType Leaf
         $targetNowHash = if ($targetNowExists) { Get-SotdSha256 $item.Target } else { $null }
         if ($entry.OriginalHash -and $targetNowHash -eq $entry.NewHash) {
@@ -622,7 +654,8 @@ function Invoke-SotdInstaller {
         [ValidateSet('Preview', 'Install', 'Rollback')][string]$Mode = 'Preview',
         [string]$AssettoCorsaRoot,
         [string]$BackupRoot,
-        [string]$JournalPath
+        [string]$JournalPath,
+        [switch]$ShowProgress
     )
     if ($Mode -eq 'Rollback') {
         Invoke-SotdRollback $AssettoCorsaRoot $JournalPath $BackupRoot
@@ -701,17 +734,17 @@ function Show-SotdInteractiveMenu {
                 continue
             }
             if ($selection -eq '1') {
-                $previewArguments = @{ Mode = 'Preview'; AssettoCorsaRoot = $AssettoCorsaRoot }
+                $previewArguments = @{ Mode = 'Preview'; AssettoCorsaRoot = $AssettoCorsaRoot; ShowProgress = [bool]$ShowProgress }
                 if ($BackupRoot) { $previewArguments.BackupRoot = $BackupRoot }
                 $null = Invoke-SotdInstaller @previewArguments
             } elseif ($selection -eq '2') {
                 if (-not $BackupRoot) { $BackupRoot = Read-Host 'Backup root (leave empty for default):' }
                 if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
-                $installArguments = @{ Mode = 'Install'; AssettoCorsaRoot = $AssettoCorsaRoot; BackupRoot = $BackupRoot; JournalPath = $JournalPath }
+                $installArguments = @{ Mode = 'Install'; AssettoCorsaRoot = $AssettoCorsaRoot; BackupRoot = $BackupRoot; JournalPath = $JournalPath; ShowProgress = [bool]$ShowProgress }
                 $null = Invoke-SotdInstaller @installArguments
             } else {
                 if (-not $JournalPath) { $JournalPath = Read-Host 'Journal path (leave empty for default):' }
-                $rollbackArguments = @{ Mode = 'Rollback'; AssettoCorsaRoot = $AssettoCorsaRoot; JournalPath = $JournalPath }
+                $rollbackArguments = @{ Mode = 'Rollback'; AssettoCorsaRoot = $AssettoCorsaRoot; JournalPath = $JournalPath; ShowProgress = [bool]$ShowProgress }
                 if ($BackupRoot) { $rollbackArguments.BackupRoot = $BackupRoot }
                 $null = Invoke-SotdInstaller @rollbackArguments
             }
@@ -730,6 +763,7 @@ function Show-SotdInteractiveMenu {
 if (-not $LibraryOnly) {
     if ($Interactive) {
         try {
+            if (-not $Quiet) { $ShowProgress = $true }
             $menuArguments = @{}
             if ($AssettoCorsaRoot) { $menuArguments.AssettoCorsaRoot = $AssettoCorsaRoot }
             if ($BackupRoot) { $menuArguments.BackupRoot = $BackupRoot }
@@ -742,7 +776,7 @@ if (-not $LibraryOnly) {
         }
     }
     try {
-        Invoke-SotdInstaller -Mode $Mode -AssettoCorsaRoot $AssettoCorsaRoot -BackupRoot $BackupRoot -JournalPath $JournalPath
+        Invoke-SotdInstaller -Mode $Mode -AssettoCorsaRoot $AssettoCorsaRoot -BackupRoot $BackupRoot -JournalPath $JournalPath -ShowProgress:$ShowProgress
         exit 0
     } catch {
         [Console]::Error.WriteLine("Installer error: $($_.Exception.Message)")
