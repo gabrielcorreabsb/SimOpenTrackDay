@@ -3,10 +3,10 @@
 --bindings
 local ac = ac
 local ac_setWindowOpen = ac.setWindowOpen
-local ac_isWindowOpen = ac.isWindowOpen
 local ui = ui
 local Localization = require('Localization')
 local function T(source, ...) return Localization.text(source, ...) end
+local Theme = require('lib/uilib/Theme')
 local ui_columns = ui.columns
 local ui_setColumnWidth = ui.setColumnWidth
 local ui_nextColumn = ui.nextColumn
@@ -37,7 +37,6 @@ local CameraManager_followCarWithChaseCamera = CameraManager.followCarWithChaseC
 
 -- These are the window IDs as defined in the manifest.ini
 local MAIN_WINDOW_ID = 'mainWindow'
-local SETTINGS_WINDOW_ID = 'settingsWindow'
 
 UIManager.VERTICAL_SCROLLBAR_WIDTH = 9 * 2 -- Andreas: the * 2 is to account for the tiny margin that's created next to the vertical scrollbar which seems to be the same size as the scrollbar width
 
@@ -120,29 +119,28 @@ UIManager.drawMainWindowLateralOffsetsSection = function()
     ui_columns(1, false)
     ui_newLine(1)
     ui_textColored(
-      T("These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings)."),
-      ColorManager.RGBM_Colors.DarkGray)
+      T('Adjust driving lane offsets in Overview.'),
+      Theme.colors.muted)
 end
 
 UIManager.drawAppNotRunningMessageInMainWindow = function()
     local isOnline = Constants.IS_ONLINE
 
-    ui_textColored(T('SimOpenTrackDay is not running.'), ColorManager.RGBM_Colors.Red)
+    ui_textColored(T('SimOpenTrackDay is not running.'), Theme.colors.warning)
     if not isOnline then
-      -- ui_textColored('You can enable the app from the Settings', ColorManager.RGBM_Colors.Red)
-      ui_text(T('You can enable the app from the Settings.'))
+      ui_text(T('Use the enable control in the header.'))
     end
     ui_newLine(1)
 
     local appEnabled = storage.enabled
     ui_text(T('App Enabled: '))
     ui_sameLine()
-    local appEnabledColor = appEnabled and ColorManager.RGBM_Colors.Green or ColorManager.RGBM_Colors.Red
+    local appEnabledColor = appEnabled and Theme.colors.success or Theme.colors.warning
     ui_textColored(T(appEnabled and 'yes' or 'no'), appEnabledColor)
 
     ui_text(T('Playing Online: '))
     ui_sameLine()
-    local isOnlineColor = isOnline and ColorManager.RGBM_Colors.Red or ColorManager.RGBM_Colors.Green
+    local isOnlineColor = isOnline and Theme.colors.warning or Theme.colors.success
     ui_textColored(T(isOnline and 'yes' or 'no'), isOnlineColor)
 end
 
@@ -153,23 +151,8 @@ local openWindow = function(windowID, open)
   ac_setWindowOpen(windowID, open)
 end
 
----Opens the specified window if closed, or closes it if opened.
----@param windowID string
-local toggleWindow = function(windowID)
-  local windowOpen = ac_isWindowOpen(windowID)
-  openWindow(windowID, not windowOpen)
-end
-
 UIManager.openMainWindow = function()
   openWindow(MAIN_WINDOW_ID, true)
-end
-
-UIManager.openSettingsWindow = function()
-  openWindow(SETTINGS_WINDOW_ID, true)
-end
-
-UIManager.toggleSettingsWindow = function()
-  toggleWindow(SETTINGS_WINDOW_ID)
 end
 
 return UIManager

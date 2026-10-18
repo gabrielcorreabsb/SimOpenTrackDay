@@ -115,7 +115,7 @@ This is a minimal manual smoke test to run after installing a test copy. CSP run
 
 1. Open Assetto Corsa and enable `SimOpenTrackDay` among CSP Lua Apps.
 2. Start an offline session with AI cars on a track with an AI spline.
-3. Open the `SimOpenTrackDay` window in-game; check CSP logs if an error occurs.
+3. Open the single `SimOpenTrackDay` window in-game; check CSP logs if an error occurs.
 
 ### If required CSP APIs are missing
 
@@ -217,9 +217,9 @@ If a version causes problems:
 
 After installing a test copy in CSP, verify each locale and layout. These are proposed manual checks, not results:
 
-- Switch among English, Português (Brasil), and Español; confirm the selection persists after closing/reopening the settings window and after restarting the app.
+- Switch among English, Português (Brasil), and Español; confirm the selection persists after closing/reopening the app window and after restarting the app.
 - Verify enabled/disabled state and that disabled controls behave as expected; do not equate “enabled” with “can run.”
 - Expand/collapse advanced behavior controls and confirm their visibility and values; this open/closed UI state is local, not persisted.
-- Inspect the current main panel and car table/toggle access; confirm settings access and no clipped or unreachable common controls. The proposed Overview/Diagnostics separation is future work described in the [UI identity plan](plans/UI_IDENTITY.md), not a claim about the current interface.
+- Confirm the single window has Overview, Behavior, Yielding, Overtaking, and Advanced tabs; the header remains visible while content scrolls; gradients are subtle and primary typography is white. These are pending manual checks, not confirmed CSP results. The current direction is in the [Restructuring plan](RESTRUCTURING_PLAN.md), not historical UI proposals.
 - Inspect narrow layouts around 80, 480, 700, 900, 1200, and 1760 px where practical, plus a wide layout; check overflow and navigation. Mocked width coverage is not a CSP visual guarantee.
 - Confirm translated labels keep stable ImGui IDs and no untranslated presentation strings are obvious. Simulation data, enums, and logs are not expected to be translated.

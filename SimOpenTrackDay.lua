@@ -282,8 +282,6 @@ local UIManager = UIManager
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
 local RaceFlagManager_removeRaceFlag = RaceFlagManager.removeRaceFlag
-local SettingsWindow = SettingsWindow
-local SettingsWindow_draw = SettingsWindow.draw
 
 -- local ENABLE_CUSTOM_AI_FLOOD_MANAGER = false
 
@@ -315,9 +313,8 @@ local function awake()
 
   local globalStorage = StorageManager.getStorage_Global()
   if not globalStorage.appRanFirstTime then
-    Logger.log('First time app run detected.  Showing app windows')
+    Logger.log('First time app run detected.  Showing app window')
     UIManager.openMainWindow()
-    UIManager.openSettingsWindow()
 
     globalStorage.appRanFirstTime = true
   end
@@ -570,14 +567,6 @@ end
 ---
 function script.MANIFEST__TRANSPARENT(dt)
   if (not shouldAppRun()) then return end
-end
-
----
--- wiki: function to be called to draw content of corresponding settings window (only with “SETTINGS” flag)
----
-function script.MANIFEST__FUNCTION_SETTINGS()
-  -- if (not CAN_APP_RUN) then return end
-  SettingsWindow_draw()
 end
 
 --[=====[ 

@@ -185,6 +185,10 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition, initialLoca
       event('line')
     end,
     drawRect = function() end,
+    drawRectFilledMultiColor = function(...)
+      state.gradientCalls = (state.gradientCalls or 0) + 1
+      event('gradient')
+    end,
     drawRectFilled = function(left, right)
       state.fillRects = state.fillRects + 1
       if not state.firstFill then
@@ -333,10 +337,12 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition, initialLoca
   state.ui = ui
   state.sliderConsumer = package.loaded['lib/uilib/Slider'] or package.loaded['lib.uilib.Slider']
   state.toggleConsumer = package.loaded['lib/uilib/Toggle'] or package.loaded['lib.uilib.Toggle']
+  state.uiState = require('UIState')
   return settings, storageManager, state
 end
 
-local function draw(settings, state, verifyCoordinates)
+local settingsTabs = { 'Overview', 'Behavior', 'Yielding', 'Overtaking', 'Advanced' }
+local function draw(settings, state, verifyCoordinates, onlyTab, operationalAvailable)
   state.frame = state.frame + 1
   state.columnCounts = {}
   state.controlIDs, state.sectionColumns, state.dwriteTexts = {}, {}, {}
@@ -344,7 +350,12 @@ local function draw(settings, state, verifyCoordinates)
   state.sliderCalls, state.buttonLabels = {}, {}
   state.lines, state.events, state.firstLogoLine, state.firstControlIndex = {}, {}, nil, nil, nil
   state.firstFill, state.firstFillIndex, state.fillRects = nil, nil, 0
-  settings.draw()
+  local oldTab = state.uiState.activeTab
+  for _, tab in ipairs(onlyTab and { onlyTab } or settingsTabs) do
+    state.uiState.activeTab = tab
+    settings.drawContent(tab, operationalAvailable ~= false)
+  end
+  state.uiState.activeTab = oldTab
   check(state.colorDepth == 0, 'StyleColor stack balanced after draw')
   check(state.fontDepth == 0, 'DWriteFont stack balanced after draw')
   check(state.widthDepth == 0, 'itemWidth stack balanced after draw')
@@ -352,42 +363,30 @@ local function draw(settings, state, verifyCoordinates)
   check(state.idDepth == 0, 'ID stack balanced after draw')
   check(state.groupDepth == 0, 'group stack balanced after draw')
   if verifyCoordinates then
-    local localCursor = state.ui.getCursor()
-    local screenCursor = state.ui.cursorScreenPos()
-    local windowPosition = state.ui.windowPos()
-    check(windowPosition.x == state.windowPosition.x and windowPosition.y == state.windowPosition.y and
-      screenCursor.x - localCursor.x == windowPosition.x and screenCursor.y - localCursor.y == windowPosition.y,
-      'screen/window cursor conversion honors nonzero windowPos')
-    check(state.firstFill ~= nil, 'window/section fills were issued')
-    if state.firstFill then
-    check(state.firstFill.x == 0 and state.firstFill.y == 0 and
-      state.firstFill.x < state.windowSize.x and state.firstFill.y < state.windowSize.y,
-      'window background fill starts at window-local origin')
-    end
     check(state.localCursorSets > 0, 'Section uses getCursor/setCursor window-coordinate positioning')
-    check(state.firstFillIndex and state.firstLogoLine and state.firstFillIndex < state.firstLogoLine,
-      'Style paints window body background before Logo/content')
-    local logoCoordinatesWindowLocal = true
-    for _, line in ipairs(state.lines or {}) do
-      if line.from.x < 0 or line.from.y < 0 or line.from.x >= state.windowSize.x or line.from.y >= state.windowSize.y then
-        logoCoordinatesWindowLocal = false
-        break
-      end
-    end
-    check(logoCoordinatesWindowLocal, 'Logo draw primitives use window-local coordinates with nonzero window position')
   end
 end
 
 local sliderStorageFields
 local function inventory(path, accidentsEnabled)
   local settings, _, state = setUp(path, accidentsEnabled)
-  state.pendingCheckbox['SimOpenTrackDay Disabled for: Mock Track (Mode: Practice)'] = true
   draw(settings, state)
+  local initialCheckboxes = {}
+  for label in pairs(state.checkboxes) do initialCheckboxes[label] = true end
+  local sawShowAdvancedControls = state.checkboxes['Show Advanced Controls'] ~= nil
   state.pendingCheckbox['Show Advanced Behavior Sliders'] = true
   draw(settings, state)
+  state.pendingCheckbox['Show Advanced Controls'] = true
+  draw(settings, state)
+  draw(settings, state)
+  local checkboxes = {}
+  for label in pairs(initialCheckboxes) do checkboxes[label] = true end
+  for label in pairs(state.checkboxes) do checkboxes[label] = true end
   return {
     sliders = state.sliderCalls,
-    checkboxes = state.checkboxes,
+    checkboxes = checkboxes,
+    advancedToggleVariants = sawShowAdvancedControls and state.uiState.advancedControlsOpen and
+      state.checkboxes['Hide Advanced Controls'] ~= nil,
     buttons = state.buttonLabels,
     combos = state.combos or {},
     fields = sliderStorageFields(path),
@@ -485,53 +484,35 @@ local function compareLabels(kind, actualSource, normalize)
   for label in pairs(actual) do check(expected[kind][label], 'no un-baselined active ' .. kind .. ': ' .. label) end
   return total
 end
-local checkboxCount = compareLabels('checkboxes', current.checkboxes, true)
+local checkboxCount
 local buttonCount = compareLabels('buttons', current.buttons)
+check(current.advancedToggleVariants == true,
+  'Advanced tab contributes both localized advanced-controls toggle states to the tab-union inventory')
+local currentBaselineCheckboxes = {}
+for label, value in pairs(current.checkboxes) do
+  if label ~= 'Show Advanced Controls' and label ~= 'Hide Advanced Controls' and
+      label ~= 'Hide Advanced Behavior Sliders' then
+    currentBaselineCheckboxes[label] = value
+  end
+end
+checkboxCount = compareLabels('checkboxes', currentBaselineCheckboxes, true)
 local baselineCombos = {}
 for label, value in pairs(current.combos) do if label ~= 'Language' then baselineCombos[label] = value end end
 local comboCount = compareLabels('combos', baselineCombos)
-check(current.combos['Language'] ~= nil, 'language selector is present in Settings')
+check(comboCount == 1 and current.combos['AI Behavior Profile'] ~= nil,
+  'Settings tabs retain the profile combo; language selection belongs to the global header')
 local fieldCount = compareLabels('fields', current.fields)
 print(string.format('Baseline active controls: %d sliders, %d checkboxes, %d buttons, %d combos; %d storage fields (comments excluded).',
   sliderCount, checkboxCount, buttonCount, comboCount, fieldCount))
-
-local scrollSettings, _, scrollState = setUp(currentPath, true, { x = 0, y = 1500 })
-draw(scrollSettings, scrollState)
-local scrollFill = scrollState.firstFill
-check(scrollFill ~= nil, 'scrolled window paints a background fill')
-if scrollFill then
-  local footprintWidth = scrollFill.right - scrollFill.x
-  local footprintHeight = scrollFill.bottom - scrollFill.y
-  check(scrollFill.x <= 0 and scrollFill.y <= 0 and
-    scrollFill.right >= scrollState.windowSize.x and scrollFill.bottom >= scrollState.windowSize.y,
-    'scrolled background bounds cover the actual window viewport, not only its dimensions')
-  check(footprintWidth >= 900 and footprintHeight >= 700,
-    string.format('scrolled background fill covers visible viewport footprint (fill %.1fx%.1f, viewport 900x700)', footprintWidth, footprintHeight))
-end
-check(scrollState.firstFillIndex and scrollState.firstControlIndex and
-  scrollState.firstFillIndex < scrollState.firstControlIndex,
-  'scrolled viewport background is issued before interactive controls')
-print(string.format('Scroll background probe: scroll=(%.0f, %.0f), first fill=%s; draw-list coordinate placement remains a CSP runtime limitation.',
-  scrollState.scroll.x, scrollState.scroll.y, scrollFill and string.format('(%.1f,%.1f)-(%.1f,%.1f)', scrollFill.x, scrollFill.y, scrollFill.right, scrollFill.bottom) or 'missing'))
 
 local settings, storageManager, state = setUp(currentPath, true)
 state.debugging.drawCarList = true
 state.debugging.debugShowCarStateOverheadText = true
 state.storage.enabled = true
-local appEnabledLabel = 'SimOpenTrackDay Enabled for: Mock Track (Mode: Practice)'
-state.hoverLabel = appEnabledLabel
 draw(settings, state, true)
   check(state.sliders['Entry blend time'] == nil,
   'advanced behavior sliders are genuinely collapsed by default')
-check(table.concat(state.tooltips, '\n'):find('Enable the SimOpenTrackDay app', 1, true) ~= nil,
-  'settings enable tooltip uses current app branding')
-check(state.lastDWriteSize == 12, 'settings footer uses the established 12px version widget')
-check(state.combos.Language and not state.combos.Language.disabled, 'language selector remains available before app controls')
-check(state.checkboxes['Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)'] ~= nil,
-  'operational accident handling control remains in Settings')
-check(state.sliders['Distance from accident to see yellow flag (m)'] and
-  state.sliders['Distance from accident to see yellow flag (m)'].disabled,
-  'operational accident-avoidance slider remains disabled until accident handling is enabled')
+check(state.combos.Language == nil, 'language selector is global and no longer duplicated in Settings content')
 check(state.storage.handleAccidents == false, 'legacy debugging flags do not enable accident handling')
 for _, removedDeveloperControl in ipairs({
   'Show UI Car List', 'Show car state overhead text', 'Show raycasts when driving laterally',
@@ -593,19 +574,31 @@ end
 for _, slider in pairs(state.sliders) do
   check(slider.width <= 80, 'very narrow native slider dimensions are not widened past available space')
 end
-local function checkSectionColumns(width, expectedOvertaking, expectedPathfinding)
+local function checkTabWidth(width)
   local s, _, snapshot = setUp(currentPath, true)
-  snapshot.storage.enabled, snapshot.availableX = true, width
+  snapshot.availableX = width
+  snapshot.uiState.advancedControlsOpen = true
   draw(s, snapshot)
-  check(snapshot.sectionColumns.Overtaking == expectedOvertaking,
-    string.format('Overtaking column index at width %d', width))
-  check(snapshot.sectionColumns.Pathfinding == expectedPathfinding,
-    string.format('Pathfinding column index at width %d', width))
+  for label, slider in pairs(snapshot.sliderCalls) do
+    local drawn = snapshot.sliders[label]
+    check(drawn and drawn.width <= width, string.format('tab-union slider width fits at %d px: %s', width, label))
+  end
 end
-checkSectionColumns(700, 0, 0)
-checkSectionColumns(900, 0, 1)
-checkSectionColumns(1200, 1, 1)
-checkSectionColumns(1760, 1, 1)
+for _, width in ipairs({ 80, 480, 700, 900, 1200, 1760 }) do checkTabWidth(width) end
+
+local disabledSettings, disabledManager, disabledState = setUp(currentPath, true)
+local originalBehaviorMode = disabledState.behavior.mode
+disabledState.pendingCombo['AI Behavior Profile'] = disabledManager.Profile.Competitive
+draw(disabledSettings, disabledState, false, 'Behavior', false)
+check(disabledState.combos['AI Behavior Profile'] and disabledState.combos['AI Behavior Profile'].disabled and
+  disabledState.behavior.mode == originalBehaviorMode,
+  'unavailable app/CSP wrapper disables profile controls and leaves simulation values unchanged')
+disabledState.pendingCheckbox['Handle Yielding'] = true
+local originalHandleYielding = disabledState.yielding.handleYielding
+draw(disabledSettings, disabledState, false, 'Yielding', false)
+check(disabledState.checkboxes['Handle Yielding'] and disabledState.checkboxes['Handle Yielding'].disabled and
+  disabledState.yielding.handleYielding == originalHandleYielding,
+  'unavailable wrapper disables operational lane toggles without writing values')
 local entryFile = assert(io.open(root .. '/SimOpenTrackDay.lua', 'rb'))
 local entrySource = entryFile:read('*a')
 entryFile:close()
@@ -626,32 +619,16 @@ if mainCallback then
     'MainWindow language selector is available before the app-running guard')
 end
 local sliderGrabAccentFound = false
+local accent = require('lib/uilib/Theme').colors.accent
 for _, push in ipairs(state.styleColorPushes) do
   local value = push.value
-  if push.index == styleColor.SliderGrab and value and value.r == 230 / 255 and
-      value.g == 57 / 255 and value.b == 70 / 255 then
+  if push.index == styleColor.SliderGrab and value and value.r == accent.r and
+      value.g == accent.g and value.b == accent.b then
     sliderGrabAccentFound = true
   end
 end
-check(sliderGrabAccentFound, 'window scope establishes the accent SliderGrab style outside sliders')
+check(sliderGrabAccentFound, 'Settings content retains the Theme accent SliderGrab style')
 state.hoverLabel = nil
-
--- Same-frame dependency checks: toggling must not expose dependent controls until next draw.
-state.pendingCheckbox[appEnabledLabel] = true
-draw(settings, state)
-check(state.storage.enabled == false, 'global app enable toggles off')
-check(state.sliders['Default Lateral Offset [-1..1]'] and not state.sliders['Default Lateral Offset [-1..1]'].disabled,
-  'same-frame app disable retains the pre-toggle controls state')
-draw(settings, state)
-check(state.sliders['Default Lateral Offset [-1..1]'].disabled, 'off app controls remain disabled')
-state.pendingCheckbox['SimOpenTrackDay Disabled for: Mock Track (Mode: Practice)'] = true
-draw(settings, state)
-check(state.storage.enabled == true, 'global app enable toggles on')
-check(state.sliders['Default Lateral Offset [-1..1]'] and state.sliders['Default Lateral Offset [-1..1]'].disabled == true,
-  'same-frame app enable respects the pre-toggle disabled guard')
-draw(settings, state)
-check(state.sliders['Default Lateral Offset [-1..1]'].disabled == false,
-  'app controls enable on the following frame')
 
 state.pendingCheckbox['Show Advanced Behavior Sliders'] = true
 draw(settings, state)
@@ -663,6 +640,15 @@ draw(settings, state)
 check(state.debugging.drawCarList == true and state.debugging.debugShowCarStateOverheadText == true,
   'advanced visibility remains transient and leaves legacy debugging flags untouched')
 check(state.sliders['Entry blend time'] == nil, 'advanced sliders are removed from layout when collapsed')
+
+state.pendingCheckbox['Show Advanced Controls'] = true
+draw(settings, state, false, 'Advanced')
+check(state.uiState.advancedControlsOpen == true and state.sliders['Forward distance'] ~= nil,
+  'Advanced tab opens its operational controls without changing the baseline schemas')
+check(state.checkboxes['Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)'] ~= nil and
+  state.sliders['Distance from accident to see yellow flag (m)'] and
+  state.sliders['Distance from accident to see yellow flag (m)'].disabled,
+  'operational accident controls remain present and dependent sliders start disabled')
 
 local profile = storageManager.Profile.Competitive
 state.pendingCombo['AI Behavior Profile'] = profile
@@ -709,12 +695,9 @@ check(state.consumerCalls.slider > 0, 'SettingsWindow actually calls Slider.rend
 check(state.consumerCalls.toggle > 0, 'SettingsWindow actually calls Toggle.render')
 check(state.consumerCalls.uiOperationsSlider == 0,
   'SettingsWindow does not route sliders through legacy UIOperations.renderSlider')
-local footerText = table.concat(state.dwriteTexts or {}, '\n')
-check(footerText:find('SimOpenTrackDay v0.9.8 by dreasgrech', 1, true) ~= nil,
-  'real version footer displays app name, version, and author credit')
-
 local accidentSettings, _, accidentState = setUp(currentPath, true)
 accidentState.storage.enabled = true
+accidentState.uiState.advancedControlsOpen = true
 draw(accidentSettings, accidentState)
 accidentState.pendingCheckbox['Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)'] = true
 draw(accidentSettings, accidentState)
@@ -773,20 +756,6 @@ check(state.sliders[activeResetLabel] and state.sliders[activeResetLabel].disabl
   'active slider is enabled for reset test')
 check(state.ai.defaultAICaution == activeResetDefault,
   'right-click on active slider resets it to the baseline default')
-
-draw(settings, state)
-check(localization.getLocale() == 'en' and state.combos.Language and state.combos.Language.value == 1,
-  'language selector is visibly at English before interaction')
-state.pendingCombo['Language'] = 2
-draw(settings, state)
-check(localization.getLocale() == 'pt-BR' and state.combos.Language ~= nil,
-  'selecting Portuguese through the Settings language combo updates its Localization singleton')
-check(mockStorageBackend.ui.uiLanguage == 'pt-BR', 'Settings language interaction writes the persistent app-independent UI namespace')
-local reloadedSettings, _, reloadedState = setUp(currentPath, true, nil, 'preserve')
-check(require('Localization').getLocale() == 'pt-BR', 'settings/application module reload restores persisted language')
-draw(reloadedSettings, reloadedState)
-check(reloadedState.controlIDs['Deslocamento lateral padrão [-1..1]'] == offsetControlID,
-  'reloaded Settings redraw uses restored locale while retaining source-English control ID')
 
 if failures > 0 then
   io.stderr:write(string.format('UI smoke harness failed: %d assertion(s); %d checks.\n', failures, checks))

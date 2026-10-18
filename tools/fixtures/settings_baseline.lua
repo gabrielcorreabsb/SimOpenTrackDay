@@ -126,7 +126,6 @@ The higher it is, the more quickly cars will change lanes when moving to the yie
     ["Override original Difficulty Level when yielding"] = true,
     ["Override original aggression when overtaking"] = true,
     ["Override original aggression when yielding"] = true,
-    ["Realistic Trackday Disabled for: Mock Track (Mode: Practice)"] = true,
     ["Require overtaking car to be on overtaking lane to yield"] = true,
     ["Require yielding car to be on yielding lane to overtake"] = true,
     ["Show Advanced Behavior Sliders"] = true,

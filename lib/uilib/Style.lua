@@ -4,6 +4,7 @@ local Theme = require('lib/uilib/Theme')
 local vec2 = vec2
 local colorStack = {}
 local windowPushCounts = {}
+local EMPTY_OPTIONS = {}
 
 local function push(index, color)
   ui.pushStyleColor(index, color)
@@ -25,7 +26,7 @@ local function colorIndex(name)
 end
 
 Style.windowBegin = function(name, opts)
-  opts = opts or {}
+  opts = opts or EMPTY_OPTIONS
   if opts.background ~= false then
     -- getCursor() is in window/content coordinates and moves opposite the scroll.
     -- Add the active scroll offset to pin the fill to the viewport; the draw call

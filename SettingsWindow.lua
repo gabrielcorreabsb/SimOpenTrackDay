@@ -11,7 +11,6 @@ local ui_popDisabled = ui.popDisabled
 local ui_columns = ui.columns
 local ui_setColumnWidth = ui.setColumnWidth
 local ui_nextColumn = ui.nextColumn
-local ui_button = ui.button
 local ui_newLine = ui.newLine
 local ui_text_raw = ui.text
 local ui_text = function(message, ...) return ui_text_raw(Localization.text(message, ...)) end
@@ -20,38 +19,25 @@ local ui_textColored_raw = ui.textColored
 local ui_textColored = function(message, color, ...) return ui_textColored_raw(Localization.text(message, ...), color) end
 local ui_pushStyleColor = ui.pushStyleColor
 local ui_popStyleColor = ui.popStyleColor
-local ui_dwriteText = ui.dwriteText
 local Toggle = require('lib/uilib/Toggle')
 local ui_checkbox = Toggle.render
 local ui_combo = ui.combo
-local ui_pushDWriteFont = ui.pushDWriteFont
-local ui_popDWriteFont = ui.popDWriteFont
 local ui_StyleColor = ui.StyleColor
-local string = string
-local string_format = string.format
 local RaceTrackManager = RaceTrackManager
-local RaceTrackManager_getTrackName = RaceTrackManager.getTrackName
-local RaceTrackManager_getSessionTypeName = RaceTrackManager.getSessionTypeName
 local RaceTrackManager_getOvertakingSide = RaceTrackManager.getOvertakingSide
 local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
 local ColorManager = ColorManager
 local Theme = require('lib/uilib/Theme')
-local Style = require('lib/uilib/Style')
 local Section = require('lib/uilib/Section')
-local Logo = require('lib/uilib/Logo')
 local Slider = require('lib/uilib/Slider')
 local UIOperations_renderSlider = Slider.render
 local UILateralOffsetsImageWidget = UILateralOffsetsImageWidget
 local UILateralOffsetsImageWidget_draw = UILateralOffsetsImageWidget.draw
-local UIAppNameVersionWidget = UIAppNameVersionWidget
-local UIAppNameVersionWidget_drawBottomRight = UIAppNameVersionWidget.drawBottomRight
 local UIOperations = UIOperations
 local UIOperations_createDisabledSection = UIOperations.createDisabledSection
 
 local SettingsModel = require('SettingsModel')
 local UIState = require('UIState')
-local StorageManager_getPerTrackPerModeStorageKey = SettingsModel.getPerTrackPerModeStorageKey
-local StorageManager_Profile = SettingsModel.Profile
 local StorageManager_BehaviorMode = SettingsModel.BehaviorMode
 local StorageManager_applyBehaviorProfile = SettingsModel.applyBehaviorProfile
 
@@ -83,9 +69,7 @@ local StorageManager_Options_PathFinding = SettingsModel.Options_PathFinding
 
 
 
-local UI_HEADER_TEXT_FONT_SIZE = 15
 local ui_availableSpaceX = ui.availableSpaceX
-local ui_sameLine = ui.sameLine
 local function translatedLabel(text, id) return Localization.label(text, id) end
 
 local DEFAULT_SLIDER_WIDTH = 200
@@ -100,14 +84,6 @@ local storage_Overtaking = SettingsModel.getStorage_Overtaking()
 local storage_AICarValues = SettingsModel.getStorage_AICarValues()
 local storage_PathFinding = SettingsModel.getStorage_PathFinding()
 local storage_Behavior = SettingsModel.getStorage_Behavior()
-local function drawLanguageSelector()
-    local indexes = { en = 1, ['pt-BR'] = 2, es = 3 }
-    local locales = { 'en', 'pt-BR', 'es' }
-    local index, changed = ui_combo(translatedLabel('Language', 'settings.language'), indexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
-    if changed then Localization.setLocale(locales[index] or 'en') end
-end
-
-
 local getSliderColorForAICautionWhenSetToZero = function(aiCautionValue)
     return aiCautionValue < 1 and AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO or DEFAULT_SLIDERGRAB_STYLECOLOR
 end
@@ -240,7 +216,7 @@ local drawLateralOffsetsSection = function()
     -- ui.newLine(1)
 
     if yieldingSide == overtakingSide then
-      ui_textColored('Warning: Yielding side and overtaking side are the same!', ColorManager.RGBM_Colors.Yellow)
+      ui_textColored('Warning: Yielding side and overtaking side are the same!', Theme.colors.warning)
     end
 
     if wide then ui_nextColumn() end
@@ -309,74 +285,31 @@ local drawBehaviorSection = function()
 end
 
 
-SettingsWindow.draw = function()
-    Style.windowBegin('settingsWindow')
-    Logo.draw(42)
-
-    ui_pushDWriteFont('Segoe UI')
-
-    ui_textColored(Localization.text('SETTINGS  /  %s', StorageManager_getPerTrackPerModeStorageKey()), Theme.colors.muted)
-    drawLanguageSelector()
-    ui_newLine(1)
-
-    -- Draw the Enabled checkbox
-    local appEnabled = storage.enabled
-    local enabledCheckBoxColor = appEnabled and Theme.colors.accent or Theme.colors.muted
-    ui_pushStyleColor(ui_StyleColor.Text, enabledCheckBoxColor)
-    local enabledDisabledText = appEnabled and 'Enabled' or 'Disabled'
-    local enabledLabel = Localization.text('SimOpenTrackDay %s for: %s (Mode: %s)', Localization.text(enabledDisabledText), RaceTrackManager_getTrackName(), Localization.text(RaceTrackManager_getSessionTypeName()))
-    if ui_checkbox(translatedLabel(enabledLabel, 'settings.app.enabled'), appEnabled) then storage.enabled = not storage.enabled end
-    ui_popStyleColor(1)
-    if ui_itemHovered() then ui_setTooltip('Enable the SimOpenTrackDay app for this specific track and session mode.\n\nEach track and session mode type use individually saved settings.') end
-
-    ui_newLine(1)
-
-    -- start the global app-enabled disabled section if the app is disabled
-    if not appEnabled then
-        ui_pushDisabled()
+local drawOperationalContent = function(tab)
+    if tab == 'Overview' then
+        drawLateralOffsetsSection()
+        return
     end
 
-    -- if ui.checkbox('Draw markers on top (no depth test)', storage.drawOnTop) then storage.drawOnTop = not storage.drawOnTop end
-    -- if ui.itemHovered() then ui.setTooltip('If markers are hidden by car bodywork, enable this so text ignores depth testing.') end
+    if tab == 'Behavior' then
+        drawAICarValuesSection()
+        ui_newLine(1)
+        drawBehaviorSection()
+        return
+    end
 
-    -- local comboValueChanged
-    -- storage.yieldSide, comboValueChanged = ui.combo('Yielding Side', storage.yieldSide, ui.ComboFlags.NoPreview, RaceTrackManager.TrackSideStrings)
-    -- if ui.itemHovered() then ui.setTooltip('The track side which AI will yield to when you approach from the rear.') end
-
-    drawLateralOffsetsSection()
-
-    ui_newLine(1)
-    ui_separator()
-
-    drawAICarValuesSection()
-
-    -- storage.maxLateralOffset_normalized =  ui.slider('Max Side offset', storage.maxLateralOffset_normalized, StorageManager_options_min[StorageManager_Options.MaxLateralOffset_normalized], StorageManager_options_max[StorageManager_Options.MaxLateralOffset_normalized])
-    -- if ui.itemHovered() then ui.setTooltip('How far to move towards the chosen side when yielding/overtaking(0.1 barely moving to the side, 1.0 moving as much as possible to the side).') end
-
-    ui_newLine(1)
-    ui_separator()
-
-    drawBehaviorSection()
-
-    ui_newLine(1)
-    ui_separator()
-
-    -- Create the Yielding and Overtaking table with 2 columns
-    local splitBehavior = ui_availableSpaceX() >= 960
-    ui_columns(splitBehavior and 2 or 1, true, "yieldingOvertakingSection")
-    if splitBehavior then ui_setColumnWidth(0, ui.windowWidth() * 0.46) end
+    if tab == 'Yielding' or tab == 'Overtaking' then
+    ui_columns(1, true, "yieldingOvertakingSection")
     --ui.setColumnWidth(1, 260)
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
 
+    if tab == 'Yielding' then
     Section.section('Yielding', function()
     ui_newLine(1)
 
-    local handleYieldingCheckboxColor = handleYielding and Theme.colors.accent or Theme.colors.muted
-    ui_pushStyleColor(ui_StyleColor.Text, handleYieldingCheckboxColor)
     if ui_checkbox('Handle Yielding', storage_Yielding.handleYielding) then storage_Yielding.handleYielding = not storage_Yielding.handleYielding end
-    ui_popStyleColor(1)
     if ui_itemHovered() then ui_setTooltip('If enabled, AI cars will attempt to yield to the specified Yielding Lateral Offset side of the track') end
 
     UIOperations_createDisabledSection(not handleYielding, function()
@@ -425,15 +358,13 @@ SettingsWindow.draw = function()
         end)
     end)
     end)
-    if splitBehavior then ui_nextColumn() end
+    end
 
+    if tab == 'Overtaking' then
     Section.section('Overtaking', function()
     ui_newLine(1)
 
-    local handleOvertakingCheckboxColor = handleOvertaking and Theme.colors.accent or Theme.colors.muted
-    ui_pushStyleColor(ui_StyleColor.Text, handleOvertakingCheckboxColor)
     if ui_checkbox('Handle Overtaking', storage_Overtaking.handleOvertaking) then storage_Overtaking.handleOvertaking = not storage_Overtaking.handleOvertaking end
-    ui_popStyleColor(1)
     if ui_itemHovered() then ui_setTooltip('If enabled, AI cars will attempt to overtake to the specified Overtaking Lateral Offset side of the track') end
     
     UIOperations_createDisabledSection(not handleOvertaking, function()
@@ -464,11 +395,18 @@ SettingsWindow.draw = function()
     end)
     end)
 
-    -- finish two columns
+    end
     ui_columns(1, false)
+    return
+    end
 
-    ui_newLine(1)
-    ui_separator()
+    if tab ~= 'Advanced' then return end
+
+    local advancedOpen = UIState.advancedControlsOpen
+    local advancedToggle = translatedLabel(advancedOpen and 'Hide Advanced Controls' or 'Show Advanced Controls', 'advanced.controls.toggle')
+    if ui_checkbox(advancedToggle, advancedOpen) then advancedOpen = not advancedOpen end
+    UIState.advancedControlsOpen = advancedOpen
+    if not advancedOpen then return end
 
     UIOperations_createDisabledSection(not Constants.ENABLE_ACCIDENT_HANDLING_IN_APP, function()
         local pathWide = ui_availableSpaceX() >= 820
@@ -528,56 +466,16 @@ SettingsWindow.draw = function()
     end)
     ui_separator()
 
-
---[===[
-    ui.separator()
-
-    ui.text('Custom AI Flood')
-
-    if ui.checkbox('Custom AI Flood Enabled', storage.customAIFlood_enabled) then storage.customAIFlood_enabled = not storage.customAIFlood_enabled end
-    if ui.itemHovered() then ui.setTooltip('Master switch for the custom AI flood feature.') end
-
-    storage.customAIFlood_distanceBehindPlayerToCycle_meters = ui.slider('Distance behind player to cycle (m)', storage.customAIFlood_distanceBehindPlayerToCycle_meters, 0, 500)
-    if ui.itemHovered() then ui.setTooltip('Distance behind the player car at which AI cars will start to cycle.') end
-
-    storage.customAIFlood_distanceAheadOfPlayerToCycle_meters = ui.slider('Distance ahead of player to cycle (m)', storage.customAIFlood_distanceAheadOfPlayerToCycle_meters, 0, 500)
-    if ui.itemHovered() then ui.setTooltip('Distance ahead of the player car at which AI cars will start to cycle.') end
-
-    -- storage.distanceToFrontCarToOvertake =  ui.slider('Min distance to front car to overtake (m)', storage.distanceToFrontCarToOvertake, 1.0, 20.0)
-    -- if ui.itemHovered() then ui.setTooltip('Minimum distance to the car in front before an AI car will consider overtaking it.') end
---]===]
-
-    -- Draw the app name and version at the bottom-right of the settings window
-    UIAppNameVersionWidget_drawBottomRight(12)
-
-    ui_popDWriteFont()
-
-    -- Close the global app-enabled disabled section if the app is disabled
-    if not appEnabled then
-        ui_popDisabled()
-    end
-    Style.windowEnd()
 end
 
---[===[
-local settingsWindow = ui.addSettings({
-  icon = ui.Icons.Settings,
-  name = 'Realistic Trackday Settings',
-  id = 'rt_settings',                                    -- your stable ID
-  size = {
-    default = vec2(800, 620),                            -- initial size
-    min     = vec2(600, 420),                            -- smallest allowed
-    max     = vec2(2000, 1400),                          -- largest allowed
-    automatic = false                                    -- don’t autosize content
-  },
-  category = 'settings'
-}, function()
-  SettingsWindow.draw()
-end)
-settingsWindow('open') 
--- ]===]
+SettingsWindow.drawContent = function(tab, operationalAvailable)
+    if not operationalAvailable then ui_pushDisabled() end
+    drawOperationalContent(tab)
+    if not operationalAvailable then ui_popDisabled() end
+end
 
--- ac.setWindowOpen('mainWindow', true) 
--- ac.setWindowOpen('settingsWindow', true)
+SettingsWindow.draw = function()
+    SettingsWindow.drawContent(UIState.activeTab)
+end
 
 return SettingsWindow

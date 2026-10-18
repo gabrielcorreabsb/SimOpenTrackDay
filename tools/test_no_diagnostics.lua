@@ -96,7 +96,10 @@ check(entry:find('ac.onCarCollision(-1', 1, true) and entry:find('ac.onCarJumped
 local manifest = read('manifest.ini')
 local windowCount = 0
 for _ in manifest:gmatch('%[WINDOW_%d+%]') do windowCount = windowCount + 1 end
-check(windowCount == 2, 'P2 retains both manifest windows pending P3')
+check(windowCount == 1, 'manifest exposes exactly one main window')
+check(manifest:find('ID = mainWindow', 1, true) and not manifest:find('[WINDOW_1]', 1, true) and
+  not manifest:find('FUNCTION_SETTINGS', 1, true),
+  'main window retains its ID and no separate Settings callback/window remains')
 check(manifest:find('FUNCTION_MAIN = MANIFEST__FUNCTION_MAIN', 1, true) and
   manifest:find('FUNCTION_ICON = MANIFEST__FUNCTION_ICON', 1, true) and
   manifest:find('UPDATE = MANIFEST__UPDATE', 1, true) and

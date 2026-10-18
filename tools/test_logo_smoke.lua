@@ -122,7 +122,8 @@ local manifest = manifestFile:read('*a')
 manifestFile:close()
 local entryHasCallback = entry:find('function script.MANIFEST__FUNCTION_ICON()', 1, true) ~= nil
 check(entryHasCallback, 'entry point defines MANIFEST__FUNCTION_ICON')
-for _, section in ipairs({ 'WINDOW_0', 'WINDOW_1' }) do
+check(not manifest:find('[WINDOW_1]', 1, true), 'manifest exposes one window rather than a separate Settings window')
+for _, section in ipairs({ 'WINDOW_0' }) do
   local body = manifest:match('%[' .. section .. '%](.-)%[WINDOW_%d+%]') or
     manifest:match('%[' .. section .. '%](.-)%[RENDER_CALLBACKS%]')
   check(body and body:match('FUNCTION_ICON%s*=%s*MANIFEST__FUNCTION_ICON') and entryHasCallback,

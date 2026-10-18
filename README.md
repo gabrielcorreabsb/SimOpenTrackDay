@@ -55,9 +55,9 @@ The recursive clone obtains the compatibility submodule. The CSP SDK is in `lib/
 
 1. Manually install the runtime files and enable SimOpenTrackDay among CSP Lua Apps.
 2. Start an offline session with AI cars on a track with a compatible AI spline. The app does not run online/multiplayer.
-3. Open the app from the Assetto Corsa sidebar. Use the settings window to check whether it is enabled and adjust available options.
+3. Open the single app window from the Assetto Corsa sidebar. Use the global enable control and internal tabs to adjust available options.
 
-The car list and diagnostic options can incur rendering cost. Enable only what is needed for investigation and turn debug options off afterward. Interaction and results must be confirmed in CSP; this guide does not claim visual validation.
+The operational car list is part of the app UI; diagnostic options are not available. Interaction and results must be confirmed in CSP; this guide does not claim visual validation.
 
 ## Project structure
 

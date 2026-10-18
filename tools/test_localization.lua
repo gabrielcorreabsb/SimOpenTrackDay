@@ -71,7 +71,10 @@ for key in pairs(es) do check(en[key] ~= nil, 'no extra es msgid: ' .. key) end
 -- Required msgids from final live UI call sites, plus dynamic values fed into
 -- those templates. This guards inventory coverage independently of catalog size.
 local requiredMsgids = {
-  'Driving lanes', 'AI car list', 'SimOpenTrackDay is not running.',
+  'Overview', 'AI car list', 'SimOpenTrackDay is not running.',
+  'Use the enable control in the header.', 'Adjust driving lane offsets in Overview.',
+  'Behavior', 'Yielding', 'Overtaking', 'Advanced', 'Navigation',
+  'Show Advanced Controls', 'Hide Advanced Controls',
   'Car #%02d - %s', 'Speed: %d km/h | Lane offset: %.3f',
   'yes #%d', '%s v%s by %s', 'Center', 'Left', 'Right',
   'Undefined', 'Practice', 'Qualify', 'Race', 'Hotlap', 'TimeAttack', 'Drift', 'Drag',
@@ -105,10 +108,26 @@ check(uiManagerSource:find("T('Speed: %d km/h | Lane offset: %.3f', math_floor(c
   uiManagerSource:find('ui_textWrapped(statusLine)', 1, true) ~= nil and
   uiManagerSource:find('ui_text(statusLine)', 1, true) ~= nil,
   'car list speed/lane-offset row uses the translated msgid in wrapped and fallback paths')
+local mainWindowSource = readSource('MainWindow.lua')
+check(mainWindowSource:find("Localization.text(tabSources[i])", 1, true) ~= nil and
+  mainWindowSource:find("Localization.label(tabSources[i], 'main.tab.' .. tabIDs[i])", 1, true) ~= nil and
+  mainWindowSource:find("Localization.label('Navigation', 'main.tabs')", 1, true) ~= nil,
+  'all tab labels and compact navigation use localized text with stable IDs')
+check(mainWindowSource:find("Localization.label(storage.enabled and 'Enabled' or 'Disabled', 'settings.app.enabled')", 1, true) ~= nil and
+  mainWindowSource:find("Localization.label('Language', 'settings.language')", 1, true) ~= nil,
+  'global enabled and language controls retain their stable IDs in MainWindow')
+local settingsTabsSource = readSource('SettingsWindow.lua')
+check(settingsTabsSource:find("'Show Advanced Controls'", 1, true) ~= nil and
+  settingsTabsSource:find("'Hide Advanced Controls'", 1, true) ~= nil and
+  settingsTabsSource:find("'advanced.controls.toggle'", 1, true) ~= nil,
+  'advanced-control toggle localizes both states under one stable ID')
 
 for _, localePath in ipairs({ 'lib/i18n/en.lua', 'lib/i18n/pt-BR.lua', 'lib/i18n/es.lua' }) do
   local source = readSource(localePath)
-  for _, duplicatedMsgid in ipairs({ "['Yielding']", "['Overtaking']" }) do
+  for _, duplicatedMsgid in ipairs({
+    "['Overview']", "['Behavior']", "['Yielding']", "['Overtaking']", "['Advanced']",
+    "['Navigation']", "['Show Advanced Controls']", "['Hide Advanced Controls']",
+  }) do
     local _, occurrences = source:gsub(duplicatedMsgid:gsub('([%[%]])', '%%%1'), '')
     check(occurrences == 1, localePath .. ' has exactly one entry for ' .. duplicatedMsgid)
   end
@@ -265,8 +284,8 @@ local settingsSource = readSource('SettingsWindow.lua')
 local literalUICallCount = checkLiteralUIArgs(settingsSource,
   { 'ui_checkbox', 'ui_setTooltip', 'Section.section', 'ui_button', 'ui_text', 'ui_textColored' },
   'SettingsWindow')
-check(literalUICallCount >= 59,
-  'SettingsWindow literal UI inventory remains at 59+ calls after developer controls removal: ' .. literalUICallCount)
+check(literalUICallCount >= 57,
+  'SettingsWindow retains its current 57+ literal UI call inventory after tab extraction: ' .. literalUICallCount)
 
 local sliderCallCount = 0
 for line in settingsSource:gmatch('[^\r\n]+') do
@@ -289,9 +308,23 @@ for line in settingsSource:gmatch('[^\r\n]+') do
   end
 end
 check(sliderCallCount >= 50, 'inventory extracted from live SettingsWindow slider calls')
-check(sourceContains('MainWindow.lua', "Localization.text('Driving lanes')"), 'Driving lanes msgid is present at its live call site')
 check(sourceContains('MainWindow.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
 check(sourceContains('UIManager.lua', "T('SimOpenTrackDay is not running.')"), 'not-running msgid is present at its live call site')
+check(sourceContains('UIManager.lua', "T('Use the enable control in the header.')") and
+  sourceContains('UIManager.lua', "T('Adjust driving lane offsets in Overview.')"),
+  'UIManager guidance uses current header and Overview terminology')
+check(pt['Use the enable control in the header.'] == 'Use o controle de ativação no cabeçalho.' and
+  es['Use the enable control in the header.'] == 'Usa el control de activación de la cabecera.' and
+  pt['Adjust driving lane offsets in Overview.'] == 'Ajuste os deslocamentos das faixas em Visão geral.' and
+  es['Adjust driving lane offsets in Overview.'] == 'Ajusta los desplazamientos de los carriles en Resumen.',
+  'header and Overview guidance has the requested PT-BR and Spanish translations')
+check(en['You can enable the app from the Settings.'] == nil and
+  pt['You can enable the app from the Settings.'] == nil and
+  es['You can enable the app from the Settings.'] == nil and
+  en['These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).'] == nil and
+  pt['These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).'] == nil and
+  es['These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).'] == nil,
+  'superseded Settings guidance msgids are removed from all catalogs')
 check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s by %s'"), 'version widget uses an unformatted template msgid')
 check(sourceContains('UIManager.lua', "T(CarStateMachine.CarStateTypeStrings[state] or '')"), 'car-list display routes state labels through localization')
 check(sourceContains('UIManager.lua', 'T(yieldingSideString)'), 'yielding side display routes side through localization')
