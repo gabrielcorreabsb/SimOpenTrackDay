@@ -5,6 +5,7 @@ SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders P
 This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. Runtime behavior and visual presentation in CSP have not been validated in-game.
 
 - [Manual installation](#manual-installation)
+- [Package and installer guide](docs/INSTALL.md)
 - [Basic usage](#basic-usage)
 - [Local checks](#local-checks)
 - [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Detailed testing](docs/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/plans/PROJECT_ORGANIZATION.md)
@@ -30,6 +31,8 @@ Results depend on the track, session, and APIs available in the installed CSP ve
 The entry point registers required CSP functions and checks compatibility. This README does not specify a minimum CSP version; consult app/CSP warnings and runtime results.
 
 ## Manual installation
+
+For the packaged preview workflow (build, preview, install and rollback), see the [package and installer guide](docs/INSTALL.md). The installer is not executed on the user's behalf.
 
 The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
 

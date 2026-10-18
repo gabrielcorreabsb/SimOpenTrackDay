@@ -93,6 +93,10 @@ Run `luajit tools/test_main_window.lua`, `luajit tools/test_ui_manager.lua`, and
 
 Run `luajit tools/test_version.lua` to check runtime/manifest name, version and author metadata and preservation of the existing MIT license notice. It does not validate CSP or product behavior.
 
+### 2.8 Package/installer checks (pending integration)
+
+`tools/test_package.ps1` and `tools/test_installer.ps1` exercise package and installer behavior with sandbox/mocks. `tools/test_distribution.ps1` is intended to integrate the real source tree with package generation; it is pending implementation/owner validation. Sandbox checks do not establish CSP compatibility or safe behavior in a real Assetto Corsa installation.
+
 ---
 
 ## 3. Before installing in AC
