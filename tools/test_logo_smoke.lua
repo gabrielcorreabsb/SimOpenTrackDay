@@ -109,16 +109,12 @@ local function callbackChunk()
   local prefix = [[
     local script = {}
     local Logo = ...
-    local Logger = select(2, ...)
     local ui = _G.ui
     local math_min = math.min
-    local iconInvalidBoundsLogged = false
   ]]
   local chunk, err = loadstring(prefix .. '\n' .. callbackSource .. '\nreturn script.MANIFEST__FUNCTION_ICON')
   assert(chunk, err)
-  local logger = { messages = {} }
-  logger.log = function(message) logger.messages[#logger.messages + 1] = message end
-  return chunk(Logo, logger), logger
+  return chunk(Logo)
 end
 
 local manifestFile = assert(io.open(root .. '/manifest.ini', 'rb'))
@@ -135,15 +131,15 @@ for _, section in ipairs({ 'WINDOW_0', 'WINDOW_1' }) do
     section .. ' has no legacy ICON metadata key')
 end
 
-local callback, logger = callbackChunk()
+local callback = callbackChunk()
 local upvalues = {}
 for index = 1, math.huge do
   local name = debug.getupvalue(callback, index)
   if not name then break end
   upvalues[name] = true
 end
-check(upvalues.Logo and upvalues.Logger and upvalues.iconInvalidBoundsLogged,
-  'extracted callback closes over the Logo, Logger, and iconInvalidBoundsLogged upvalues')
+check(upvalues.Logo and not upvalues.iconInvalidBoundsLogged and not upvalues.Logger,
+  'extracted callback closes over the logo renderer without diagnostic state or logger')
 
 state.lines, state.dummyCalls, state.getCursorCalls, state.cursorSetCalls = {}, 0, 0, 0
 state.cursor, state.space = vec2(30, 45), vec2(40, 30)
@@ -169,9 +165,6 @@ state.space = vec2(-5, 30)
 callback()
 check(#state.lines == 0 and state.dummyCalls == 0 and state.cursorSetCalls == 0,
   'zero and negative bounds skip drawing and layout mutation')
-check(#logger.messages == 1 and
-  logger.messages[1]:find('[SOTD-ICON] Invalid icon drawing bounds', 1, true) ~= nil,
-  'invalid icon bounds emit one diagnostic across repeated invalid calls')
 
 if failures > 0 then
   io.stderr:write(string.format('Logo smoke failed: %d assertion(s); %d checks.\n', failures, checks))

@@ -72,6 +72,7 @@ for key in pairs(es) do check(en[key] ~= nil, 'no extra es msgid: ' .. key) end
 -- those templates. This guards inventory coverage independently of catalog size.
 local requiredMsgids = {
   'Driving lanes', 'AI car list', 'SimOpenTrackDay is not running.',
+  'Car #%02d - %s', 'Speed: %d km/h | Lane offset: %.3f',
   'yes #%d', '%s v%s by %s', 'Center', 'Left', 'Right',
   'Undefined', 'Practice', 'Qualify', 'Race', 'Hotlap', 'TimeAttack', 'Drift', 'Drag',
   'DrivingNormally', 'EasingInYield', 'StayingOnYieldingLane', 'EasingOutYield',
@@ -96,19 +97,14 @@ local function readSource(path)
   return source
 end
 local uiManagerSource = readSource('UIManager.lua')
-local columnDisplayMap = uiManagerSource:match('local carColumnDisplayNames%s*=%s*(%b{})')
-check(columnDisplayMap ~= nil, 'UIManager display-name map can be isolated as a literal table')
-if columnDisplayMap then
-  local loadMap = loadstring('return ' .. columnDisplayMap)
-  check(loadMap ~= nil, 'UIManager display-name map is safe Lua literal data')
-  if loadMap then
-    local displayNames = loadMap()
-    for sourceName, displayName in pairs(displayNames) do
-      check(en[displayName] == displayName and pt[displayName] ~= nil and es[displayName] ~= nil,
-        'car column display msgid covered in all locales: ' .. sourceName .. ' -> ' .. displayName)
-    end
-  end
-end
+check(uiManagerSource:find("T('Car #%02d - %s', carIndex, stateName)", 1, true) ~= nil and
+  uiManagerSource:find("Localization.label(T('Car #%02d - %s', carIndex, stateName), 'car.row.' .. carIndex)", 1, true) ~= nil,
+  'car list state row uses the translated formatted msgid')
+check(uiManagerSource:find("T('Speed: %d km/h | Lane offset: %.3f', math_floor(car.speedKmh), actualTrackLateralOffset)", 1, true) ~= nil and
+  uiManagerSource:find('if ui_textWrapped then', 1, true) ~= nil and
+  uiManagerSource:find('ui_textWrapped(statusLine)', 1, true) ~= nil and
+  uiManagerSource:find('ui_text(statusLine)', 1, true) ~= nil,
+  'car list speed/lane-offset row uses the translated msgid in wrapped and fallback paths')
 
 for _, localePath in ipairs({ 'lib/i18n/en.lua', 'lib/i18n/pt-BR.lua', 'lib/i18n/es.lua' }) do
   local source = readSource(localePath)
@@ -269,7 +265,8 @@ local settingsSource = readSource('SettingsWindow.lua')
 local literalUICallCount = checkLiteralUIArgs(settingsSource,
   { 'ui_checkbox', 'ui_setTooltip', 'Section.section', 'ui_button', 'ui_text', 'ui_textColored' },
   'SettingsWindow')
-check(literalUICallCount >= 60, 'SettingsWindow literal UI inventory extracted without commented code')
+check(literalUICallCount >= 59,
+  'SettingsWindow literal UI inventory remains at 59+ calls after developer controls removal: ' .. literalUICallCount)
 
 local sliderCallCount = 0
 for line in settingsSource:gmatch('[^\r\n]+') do
@@ -295,10 +292,8 @@ check(sliderCallCount >= 50, 'inventory extracted from live SettingsWindow slide
 check(sourceContains('MainWindow.lua', "Localization.text('Driving lanes')"), 'Driving lanes msgid is present at its live call site')
 check(sourceContains('MainWindow.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
 check(sourceContains('UIManager.lua', "T('SimOpenTrackDay is not running.')"), 'not-running msgid is present at its live call site')
-check(sourceContains('UIManager.lua', 'T("yes #%d", currentlyYieldingCarIndex)'), 'yielding status uses an unformatted template msgid')
-check(sourceContains('UIManager.lua', 'T("yes #%d", currentlyOvertakingCarIndex)'), 'overtaking status uses an unformatted template msgid')
 check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s by %s'"), 'version widget uses an unformatted template msgid')
-check(sourceContains('UIManager.lua', 'T(CarStateMachine.CarStateTypeStrings[state])'), 'car-state table display routes state labels through localization')
+check(sourceContains('UIManager.lua', "T(CarStateMachine.CarStateTypeStrings[state] or '')"), 'car-list display routes state labels through localization')
 check(sourceContains('UIManager.lua', 'T(yieldingSideString)'), 'yielding side display routes side through localization')
 check(sourceContains('UIManager.lua', 'T(defaultDrivingSideString)'), 'default side display routes side through localization')
 

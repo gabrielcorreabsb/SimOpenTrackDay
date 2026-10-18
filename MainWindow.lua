@@ -47,28 +47,19 @@ function MainWindow.draw(shouldAppRun, anyMissingCSPElements, missingCSPElements
     return
   end
 
-  -- Profiler.beginFrame()
-
   -- ui.text(string.format('AI cars yielding to the %s', RaceTrackManager.TrackSideStrings[RaceTrackManager.getYieldingSide()]))
   -- ui.newLine(1)
 
   ui.dwriteText(Localization.text('Driving lanes'), 17)
   ui_separator()
-  -- Profiler.begin('UIManager_drawMainWindowLateralOffsetsSection')
   UIManager_drawMainWindowLateralOffsetsSection()
-  -- Profiler["end"]('UIManager_drawMainWindowLateralOffsetsSection')
 
   ui_newLine(1)
 
   ui.dwriteText(Localization.text('AI car list'), 17)
   ui_separator()
-  -- Profiler.begin('UIManager_drawUICarList')
   UIManager_drawUICarList()
-  -- Profiler["end"]('UIManager_drawUICarList')
 
-  -- Profiler.drawUI()
-
-  -- Profiler.endFrame()
 end
 
 return MainWindow

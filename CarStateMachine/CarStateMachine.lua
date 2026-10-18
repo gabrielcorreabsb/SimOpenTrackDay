@@ -58,14 +58,11 @@ CarStateMachine.CarStateType = const({
   DRIVING_IN_YELLOW_FLAG_ZONE = 16384,
 })
 
-local debug_state = CarStateMachine.CarStateType.DRIVING_NORMALLY
-ac.log(string.format("CarStateMachine debug_state = %d", debug_state))
 --]====]
 
 local StateExitReason = Strings.StringNames[Strings.StringCategories.StateExitReason]
 
 local storage_Yielding = StorageManager.getStorage_Yielding()
-local storage_Debugging = StorageManager.getStorage_Debugging()
 local storage_Overtaking = StorageManager.getStorage_Overtaking()
 local storage = StorageManager.getStorage()
 
@@ -252,28 +249,6 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
       -- Logger.log(string.format("CarStateMachine: Transitioning car %d into new state: %s", carIndex, CarStateMachine.CarStateTypeStrings[newStateToTransitionIntoThisFrame]))
       -- clear the queued transition since we're now taking care of it
       queuedStatesToTransitionInto[carIndex] = nil
-
-      -- If this is not our first state, check if we've been in the previous state for at least some time, otherwise warn because there might be an issue
-      local logFastStateChanges = storage_Debugging.debugLogFastStateChanges
-      if logFastStateChanges then
-        local currentStateBeforeChange = CarStateMachine.getCurrentState(carIndex)
-        if currentStateBeforeChange then
-          local timeInStateBeforeChange = CarManager.cars_timeInCurrentState[carIndex]
-          local previousState = CarStateMachine.getPreviousState(carIndex)
-          if timeInStateBeforeChange < 0.1 then
-            -- local cars_statesExitReason = CarManager.cars_statesExitReason[carIndex][currentStateBeforeChange] or ""
-            local stateExitReason = StringsManager.resolveStringValue(Strings.StringCategories.StateExitReason, CarManager.cars_statesExitReason_NAME[carIndex][previousState]) or ''
-            Logger.warn(string.format(
-            "[CarStateMachine] #%d changing state too quickly: %.3fs in state %s (previous: %s) before changing to %s (%s)",
-            carIndex,
-            timeInStateBeforeChange,
-            CarStateMachine.CarStateTypeStrings[currentStateBeforeChange],
-            CarStateMachine.CarStateTypeStrings[previousState],
-            CarStateMachine.CarStateTypeStrings[newStateToTransitionIntoThisFrame],
-            stateExitReason))
-          end
-        end
-      end
 
       -- change to the new state
       changeState(carIndex, newStateToTransitionIntoThisFrame)

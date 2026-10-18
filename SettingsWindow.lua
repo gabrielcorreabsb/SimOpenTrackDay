@@ -71,16 +71,11 @@ local StorageManager_options_AICarValues_default = SettingsModel.options_AICarVa
 local StorageManager_options_AICarValues_min = SettingsModel.options_AICarValues_min
 local StorageManager_options_AICarValues_max = SettingsModel.options_AICarValues_max
 
-local StorageManager_options_Debugging_default = SettingsModel.options_Debugging_default
-local StorageManager_options_Debugging_min = SettingsModel.options_Debugging_min
-local StorageManager_options_Debugging_max = SettingsModel.options_Debugging_max
-
 local StorageManager_options_PathFinding_default = SettingsModel.options_PathFinding_default
 local StorageManager_options_PathFinding_min = SettingsModel.options_PathFinding_min
 local StorageManager_options_PathFinding_max = SettingsModel.options_PathFinding_max
 
 local StorageManager_Options = SettingsModel.Options
-local StorageManager_Options_Debugging = SettingsModel.Options_Debugging
 local StorageManager_Options_Yielding = SettingsModel.Options_Yielding
 local StorageManager_Options_Overtaking = SettingsModel.Options_Overtaking
 local StorageManager_Options_AICarValues = SettingsModel.Options_AICarValues
@@ -102,7 +97,6 @@ local AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO = Theme.colors.accentSoft
 local storage = SettingsModel.getStorage()
 local storage_Yielding = SettingsModel.getStorage_Yielding()
 local storage_Overtaking = SettingsModel.getStorage_Overtaking()
-local storage_Debugging = SettingsModel.getStorage_Debugging()
 local storage_AICarValues = SettingsModel.getStorage_AICarValues()
 local storage_PathFinding = SettingsModel.getStorage_PathFinding()
 local storage_Behavior = SettingsModel.getStorage_Behavior()
@@ -113,71 +107,6 @@ local function drawLanguageSelector()
     if changed then Localization.setLocale(locales[index] or 'en') end
 end
 
-
----@param storage_Debugging StorageTable_Debugging
-local renderDebuggingSection = function(storage_Debugging)
-    -- ui.text('Debugging')
-    ui_newLine(1)
-    Section.section('Debugging', function()
-    ui_newLine(1)
-
-    local debugWide = ui_availableSpaceX() >= 980
-    ui_columns(debugWide and 3 or 1, false, "debuggingSection")
-
-    if ui_checkbox('Show UI Car List', storage_Debugging.drawCarList) then storage_Debugging.drawCarList = not storage_Debugging.drawCarList end
-    if ui_itemHovered() then ui_setTooltip('Shows a list of all cars in the scene') end
-
-    if ui_checkbox('Show car state overhead text', storage_Debugging.debugShowCarStateOverheadText) then storage_Debugging.debugShowCarStateOverheadText = not storage_Debugging.debugShowCarStateOverheadText end
-    if ui_itemHovered() then ui_setTooltip("Shows the car's current state as text over the car") end
-
-    storage_Debugging.debugCarGizmosDrawistance = UIOperations_renderSlider('##debugCarStateOverheadShowDistance', 'The maximum distance from the camera focused car at which to show the car state overhead text.', storage_Debugging.debugCarGizmosDrawistance, StorageManager_options_Debugging_min[StorageManager_Options_Debugging.DebugCarGizmosDrawistance], StorageManager_options_Debugging_max[StorageManager_Options_Debugging.DebugCarGizmosDrawistance], DEFAULT_SLIDER_WIDTH, 'Car gizmos draw distance: %.0fm', StorageManager_options_Debugging_default[StorageManager_Options_Debugging.DebugCarGizmosDrawistance])
-
-    if ui_checkbox('Show raycasts when driving laterally', storage_Debugging.debugShowRaycastsWhileDrivingLaterally) then storage_Debugging.debugShowRaycastsWhileDrivingLaterally = not storage_Debugging.debugShowRaycastsWhileDrivingLaterally end
-    if ui_itemHovered() then ui_setTooltip('Shows the raycasts used to check for side clearance when driving checking for cars on the side') end
-
-    if ui_checkbox('Draw tyres side offtrack gizmos', storage_Debugging.debugDrawSideOfftrack) then storage_Debugging.debugDrawSideOfftrack = not storage_Debugging.debugDrawSideOfftrack end
-    if ui_itemHovered() then ui_setTooltip('Shows gizmos for the car\'s tyres when offtrack') end
-
-    if debugWide then ui_nextColumn() end
-
-    if ui_checkbox('Log fast AI state changes', storage_Debugging.debugLogFastStateChanges) then storage_Debugging.debugLogFastStateChanges = not storage_Debugging.debugLogFastStateChanges end
-    if ui_itemHovered() then ui_setTooltip('If enabled, will write to the CSP log if an ai car changes from one state to another very quickly') end
-
-    if ui_checkbox('Log car yielding', storage_Debugging.debugLogCarYielding) then storage_Debugging.debugLogCarYielding = not storage_Debugging.debugLogCarYielding end
-    if ui_itemHovered() then ui_setTooltip('If enabled, will write to the CSP log if an ai car is yielding to another car') end
-
-    if ui_checkbox('Log car overtaking', storage_Debugging.debugLogCarOvertaking) then storage_Debugging.debugLogCarOvertaking = not storage_Debugging.debugLogCarOvertaking end
-    if ui_itemHovered() then ui_setTooltip('If enabled, will write to the CSP log if an ai car is overtaking another car') end
-
-    if ui_checkbox('Override player car lateral offset', storage_Debugging.debugOverridePlayerCarLateralOffset) then storage_Debugging.debugOverridePlayerCarLateralOffset = not storage_Debugging.debugOverridePlayerCarLateralOffset end
-    if ui_itemHovered() then ui_setTooltip('If enabled, will force the player car to use a specific lateral offset value.') end
-
-    storage_Debugging.debugOverridePlayerCarLateralOffsetValue = UIOperations_renderSlider('##debugOverridePlayerCarLateralOffsetValue', 'The lateral offset value to force the player car to use when the override is enabled.', storage_Debugging.debugOverridePlayerCarLateralOffsetValue, StorageManager_options_Debugging_min[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue], StorageManager_options_Debugging_max[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue], 300, 'Player car lateral offset override value: %.2f', StorageManager_options_Debugging_default[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue])
-
-    if debugWide then ui_nextColumn() end
-
-    UIOperations_createDisabledSection(not Constants.ENABLE_ACCIDENT_HANDLING_IN_APP, function()
-        -- if ui_button('Simulate accident', ui.ButtonFlags.None) then
-            -- AccidentManager.simulateAccident()
-        -- end
-
-        storage_Debugging.debugSimulateAccidentSplinePosition = UIOperations_renderSlider('##debugSimulateAccidentSplinePosition', 'The spline position to use when simulating an accident.', storage_Debugging.debugSimulateAccidentSplinePosition, StorageManager_options_Debugging_min[StorageManager_Options_Debugging.DebugSimulateAccidentSplinePosition], StorageManager_options_Debugging_max[StorageManager_Options_Debugging.DebugSimulateAccidentSplinePosition], DEFAULT_SLIDER_WIDTH, 'Accident spline position: %.3f', StorageManager_options_Debugging_default[StorageManager_Options_Debugging.DebugSimulateAccidentSplinePosition])
-
-        if ui_button('Simulate accident (manual)', ui.ButtonFlags.None) then
-            AccidentManager.simulateAccident_manual()
-        end
-        if ui_button('Simulate accident (random)', ui.ButtonFlags.None) then
-            AccidentManager.simulateAccident_random()
-        end
-    end)
-
-    -- reset the column layout
-    ui_columns(1, false)
-
-    ui_newLine(1)
-    ui_textColored('Warning: Enabling debugging options may impact performance.', ColorManager.RGBM_Colors.Yellow)
-    end)
-end
 
 local getSliderColorForAICautionWhenSetToZero = function(aiCautionValue)
     return aiCautionValue < 1 and AICAUTION_SLIDERGRAB_COLOR_WHEN_SET_TO_ZERO or DEFAULT_SLIDERGRAB_STYLECOLOR
@@ -599,7 +528,6 @@ SettingsWindow.draw = function()
     end)
     ui_separator()
 
-    renderDebuggingSection(storage_Debugging)
 
 --[===[
     ui.separator()

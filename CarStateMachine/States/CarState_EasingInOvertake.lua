@@ -4,7 +4,6 @@ local ac_getCar = ac.getCar
 local string = string
 local string_format = string.format
 local Logger = Logger
-local Logger_log = Logger.log
 local Logger_error = Logger.error
 local Logger_warn = Logger.warn
 local CarManager = CarManager
@@ -27,10 +26,8 @@ local CarStateMachine_handleShouldWeYieldToBehindCar = CarStateMachine.handleSho
 local CarStateMachine_handleYellowFlagZone = CarStateMachine.handleYellowFlagZone
 local CarStateMachine_setStateExitReason = CarStateMachine.setStateExitReason
 local RaceTrackManager = RaceTrackManager
-local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
 local RaceTrackManager_getOvertakingSide = RaceTrackManager.getOvertakingSide
 local StorageManager = StorageManager
-local StorageManager_getStorage_Debugging = StorageManager.getStorage_Debugging
 local StorageManager_getStorage_Overtaking = StorageManager.getStorage_Overtaking
 local Strings = Strings
 
@@ -67,20 +64,6 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
   -- set the current spline offset to our actual lateral offset so we start easing in from the correct position
   CarManager_setCalculatedTrackLateralOffset(carIndex, CarManager_getActualTrackLateralOffset(carIndex, car.position))
 
-  local storage_Debugging = StorageManager_getStorage_Debugging()
-  if storage_Debugging.debugLogCarOvertaking then
-    local currentlyOvertakingCar = ac_getCar(currentlyOvertakingCarIndex)
-    if currentlyOvertakingCar then
-      local carFrontPosition = currentlyOvertakingCar.position
-      Logger_log(string_format("[EasingInOvertake] #%d overtaking #%d. YieldingSide: %s, CarFrontPosition: %s, CarFrontLateralOffset: %.3f",
-      carIndex,
-      currentlyOvertakingCarIndex,
-      RaceTrackManager_getYieldingSide(),
-      carFrontPosition,
-      CarManager_getActualTrackLateralOffset(currentlyOvertakingCarIndex, carFrontPosition)
-      ))
-    end
-  end
 end
 
 -- UPDATE FUNCTION

@@ -4,7 +4,6 @@ local ac_getCar = ac.getCar
 local string = string
 local string_format = string.format
 local Logger = Logger
-local Logger_log = Logger.log
 local Logger_error = Logger.error
 local CarManager = CarManager
 local CarManager_getActualTrackLateralOffset = CarManager.getActualTrackLateralOffset
@@ -24,9 +23,6 @@ local CarStateMachine_handleYellowFlagZone = CarStateMachine.handleYellowFlagZon
 local CarStateMachine_setStateExitReason = CarStateMachine.setStateExitReason
 local RaceTrackManager = RaceTrackManager
 local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
-local StorageManager = StorageManager
--- local StorageManager_getStorage_Debugging = StorageManager.getStorage_Debugging
--- local StorageManager_getStorage_Yielding = StorageManager.getStorage_Yielding
 local Strings = Strings
 
 
@@ -37,7 +33,6 @@ CarStateMachine.states_minimumTimeInState[STATE] = 0
 
 local StateExitReason = Strings.StringNames[Strings.StringCategories.StateExitReason]
 
-local storage_Debugging = StorageManager.getStorage_Debugging()
 local storage_Yielding = StorageManager.getStorage_Yielding()
 
 -- ENTRY FUNCTION
@@ -70,19 +65,6 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
   local turningLights = RaceTrackManager_getYieldingSide()  == RaceTrackManager.TrackSide.LEFT and ac.TurningLights.Left or ac.TurningLights.Right
   CarOperations_toggleTurningLights(carIndex, turningLights)
 
-  if storage_Debugging.debugLogCarYielding then
-    local currentlyYieldingToCar = ac_getCar(currentlyYieldingToCarIndex)
-    if currentlyYieldingToCar then
-      local carBehindPosition = currentlyYieldingToCar.position
-      Logger_log(string_format("[EasingInYield] #%d yielding to #%d. CarAvgSpeed: %.3f, CarBehindAvgSpeed: %.3f, CarBehindLateralOffset: %.3f",
-      carIndex,
-      currentlyYieldingToCarIndex,
-      CarManager.cars_averageSpeedKmh[carIndex],
-      CarManager.cars_averageSpeedKmh[currentlyYieldingToCarIndex],
-      CarManager_getActualTrackLateralOffset(currentlyYieldingToCarIndex, carBehindPosition)
-      ))
-    end
-  end
 end
 
 -- UPDATE FUNCTION

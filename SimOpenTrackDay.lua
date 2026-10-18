@@ -1,10 +1,6 @@
-if ac and ac.log then ac.log("[RTD-DIAG-0] top of file before Constants require") end
 Constants = require("Constants")
-if ac and ac.log then ac.log("[RTD-DIAG-0a] Constants loaded") end
 Logger = require("Logger")
-if ac and ac.log then ac.log("[RTD-DIAG-0b] Logger loaded") end
 CSPCompatibilityManager = require("lib.AssettoCorsaCSPLuaCompatibilityManager.CSPCompatibilityManager")
-if ac and ac.log then ac.log("[RTD-DIAG-0c] CSPCompatibilityManager loaded") end
 
 CSPCompatibilityManager.addFunction(function() return ac.log end, "ac.log")
 CSPCompatibilityManager.addFunction(function() return ac.warn end, "ac.warn")
@@ -189,8 +185,6 @@ if anyMissingCSPElements then
 end
 --]===]
 
-if ac and ac.log then ac.log("[RTD-DIAG-1] entering mass requires block") end
-
 VecPool = require("VecPool")
 
 DequeManager = require("DataStructures.DequeManager")
@@ -285,81 +279,11 @@ local CarStateMachine_setReasonWhyCantYield = CarStateMachine.setReasonWhyCantYi
 local CarStateMachine_updateCar = CarStateMachine.updateCar
 local CarStateMachine_handleQueuedAccidents = CarStateMachine.handleQueuedAccidents
 local UIManager = UIManager
-local UIManager_drawCarStateOverheadText = UIManager.drawCarStateOverheadText
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
 local RaceFlagManager_removeRaceFlag = RaceFlagManager.removeRaceFlag
 local SettingsWindow = SettingsWindow
 local SettingsWindow_draw = SettingsWindow.draw
-
-local SettingsWindow_memProbeDone = false
-local SettingsWindow_memProbeFirstEntry
-do
-  local function logProbe(message)
-    pcall(function()
-      if ac and ac.log then ac.log('[SOTD-MEM-PROBE] ' .. message) end
-    end)
-  end
-
-  local function functionDetails(label, fn)
-    local result = label .. ' identity=' .. tostring(fn)
-    if type(fn) ~= 'function' then return result .. ' metadata=unavailable' end
-
-    local debugLibrary = debug
-    if type(debugLibrary) ~= 'table' or type(debugLibrary.getinfo) ~= 'function' then
-      return result .. ' metadata=debug.getinfo-unavailable'
-    end
-    local ok, info = pcall(debugLibrary.getinfo, fn, 'S')
-    if not ok or type(info) ~= 'table' then return result .. ' metadata=getinfo-failed' end
-    return result .. ' source=' .. tostring(info.source) ..
-      ' linedefined=' .. tostring(info.linedefined) ..
-      ' lastlinedefined=' .. tostring(info.lastlinedefined) ..
-      ' what=' .. tostring(info.what)
-  end
-
-  local function behaviorFunction(draw)
-    local debugLibrary = debug
-    if type(draw) ~= 'function' or type(debugLibrary) ~= 'table' or
-        type(debugLibrary.getupvalue) ~= 'function' then
-      return nil, 'debug.getupvalue-unavailable'
-    end
-    for index = 1, 256 do
-      local ok, name, value = pcall(debugLibrary.getupvalue, draw, index)
-      if not ok then return nil, 'getupvalue-failed' end
-      if name == nil then break end
-      if name == 'drawBehaviorSection' then return value, 'found' end
-    end
-    return nil, 'drawBehaviorSection-not-found'
-  end
-
-  local function snapshot(stage, callback)
-    local ok, message = pcall(function()
-      local currentDraw = SettingsWindow.draw
-      local loadedDraw
-      if type(package) == 'table' and type(package.loaded) == 'table' and
-          type(package.loaded.SettingsWindow) == 'table' then
-        loadedDraw = package.loaded.SettingsWindow.draw
-      end
-      local behavior, behaviorStatus = behaviorFunction(SettingsWindow_draw)
-      return stage .. ' ' .. functionDetails('alias', SettingsWindow_draw) ..
-        ' alias-equals-local-table-draw=' .. tostring(SettingsWindow_draw == currentDraw) ..
-        ' alias-equals-package-loaded-draw=' .. tostring(SettingsWindow_draw == loadedDraw) ..
-        ' ' .. functionDetails('SettingsWindow.draw', currentDraw) ..
-        ' ' .. functionDetails('package.loaded.SettingsWindow.draw', loadedDraw) ..
-        ' drawBehaviorSection=' .. behaviorStatus .. ' ' .. functionDetails('drawBehaviorSection', behavior) ..
-        ' ' .. functionDetails('settings-callback', callback)
-    end)
-    if ok then logProbe(message) else logProbe(stage .. ' introspection-failed') end
-  end
-
-  SettingsWindow_memProbeFirstEntry = function(callback)
-    snapshot('first-settings-entry', callback)
-  end
-  snapshot('alias-receipt', nil)
-end
-
-
-
 
 -- local ENABLE_CUSTOM_AI_FLOOD_MANAGER = false
 
@@ -367,7 +291,6 @@ local CAN_APP_RUN = Constants.CAN_APP_RUN
 
 
 local storage = StorageManager.getStorage()
-local storage_Debugging = StorageManager.getStorage_Debugging()
 
 local math_huge = math.huge
 
@@ -412,12 +335,10 @@ local function awake()
     -- Logger.log(string.format('Original #%d AI Difficulty Level: %.3f', i, originalCarAILevel))
   end
 end
-if ac and ac.log then ac.log("[RTD-DIAG] entering awake() at top-level") end
 local awakeOk, awakeErr = xpcall(awake, function(err) return tostring(err) .. "\n" .. debug.traceback() end)
 if not awakeOk then
-  if ac and ac.error then ac.error("[RTD-DIAG] awake() failed: " .. tostring(awakeErr)) end
+  if ac and ac.error then ac.error("App initialization failed: " .. tostring(awakeErr)) end
 end
-if ac and ac.log then ac.log("[RTD-DIAG] post-awake, defining MANIFEST callbacks") end
 
 local function shouldAppRun()
     -- local storage = StorageManager.getStorage()
@@ -508,22 +429,14 @@ function script.MANIFEST__FUNCTION_MAIN(dt)
   MainWindow.draw(shouldAppRun, anyMissingCSPElements, missingCSPElementsErrorMessage)
   end, function(e) return tostring(e) .. "\n" .. debug.traceback() end)
   if not ok and ac and ac.error then
-    ac.error("[RTD-DIAG] draw error: " .. tostring(err))
+    ac.error("UI draw failed: " .. tostring(err))
   end
 end
-
-local iconInvalidBoundsLogged = false
 
 function script.MANIFEST__FUNCTION_ICON()
   local p = ui.getCursor()
   local size = math_min(20, ui.availableSpaceX(), ui.availableSpaceY())
-  if not (size > 0) then
-    if not iconInvalidBoundsLogged then
-      Logger.log('[SOTD-ICON] Invalid icon drawing bounds; skipping vector icon.')
-      iconInvalidBoundsLogged = true
-    end
-    return
-  end
+  if not (size > 0) then return end
   Logo.draw(size, p)
 end
 
@@ -645,68 +558,6 @@ function script.MANIFEST__UPDATE(dt)
 
   RaceTrackManager_updateYellowFlagZones()
 
-  if storage_Debugging.debugOverridePlayerCarLateralOffset then
-      local debugOverridePlayerCarLateralOffsetValue = storage_Debugging.debugOverridePlayerCarLateralOffsetValue
-      local playerCar = ac_getCar(0)
-      if playerCar then
-        CarOperations.driveSafelyToSide(0, dt, playerCar, debugOverridePlayerCarLateralOffsetValue, 500, true, false, false)  -- empty storage since we don't need to save anything for the player car
-      end
-  end
-
-  if not storage_Debugging.debugOverridePlayerCarLateralOffset then
-    -- if Constants.FRENET_DEBUGGING then
-      -- frenetOffsets = FrenetAvoid.computeOffsetsForAll(sortedCars, dt, frenetOffsets)
-
-      -- local playerCar = ac_getCar(Constants.FRENET_DEBUGGING_CAR_INDEX)
-      -- if playerCar then -- if-block only to satisfty the linter because player 0 car always exists
-        -- --local offset = FrenetAvoid.computeOffset(sortedCars, playerCar, dt)
-        -- local offset = frenetOffsets[Constants.FRENET_DEBUGGING_CAR_INDEX+1]
-        -- -- Logger.log(string_format("Setting player car frenet offset to %.2f", offset))
-        -- local sideCheck = false
-        -- CarOperations.driveSafelyToSide(Constants.FRENET_DEBUGGING_CAR_INDEX, dt, playerCar, offset, 500, true, sideCheck, false)  -- empty storage since we don't need to save anything for the player car
-        -- -- Logger.log(string_format("Player car frenet offset set to %.2f", offset))
-      -- end
-    -- end
-
-    if Constants.PATHFINDING_DEBUGGING then
-      -- Pathfinding.calculatePath(Constants.FRENET_DEBUGGING_CAR_INDEX)
-      -- Pathfinding.calculatePath(Constants.FRENET_DEBUGGING_CAR_INDEX)
-
-      -- for i = 1, totalCars do
-        -- local car = sortedCars[i]
-        -- local carIndex = car.index
-        -- if carIndex == Constants.FRENET_DEBUGGING_CAR_INDEX then
-          -- Pathfinding.calculatePath(sortedCars, i)
-          -- break
-        -- end
-      -- end
-
-      for i = 1, totalCars do
-        local car = sortedCars[i]
-        local carIndex = car.index
-        if carIndex == Constants.PATHFINDING_DEBUGGING_CAR_INDEX then
-            local offset = Pathfinding.calculatePathAndGetBestLateralOffset(sortedCars, i)
-            local carForNavigation = ac_getCar(Constants.PATHFINDING_DEBUGGING_CAR_INDEX)
-            if carForNavigation and offset then
-              local sideCheck = false
-              -- local rampSpeed = 500
-              local rampSpeed = 2.5
-              CarOperations.driveSafelyToSide(Constants.PATHFINDING_DEBUGGING_CAR_INDEX, dt, carForNavigation, offset, rampSpeed, true, sideCheck, false)  -- empty storage since we don't need to save anything for the player car
-            end
-          break
-        end
-      end
-
-      -- -- local offset = Pathfinding.getBestLateralOffset(Constants.FRENET_DEBUGGING_CAR_INDEX)
-      -- local offset = Pathfinding.calculatePathAndGetBestLateralOffset(Constants.FRENET_DEBUGGING_CAR_INDEX)
-      -- local playerCar = ac_getCar(Constants.FRENET_DEBUGGING_CAR_INDEX)
-      -- if playerCar then
-        -- local sideCheck = false
-        -- CarOperations.driveSafelyToSide(Constants.FRENET_DEBUGGING_CAR_INDEX, dt, playerCar, offset, 500, true, sideCheck, false)  -- empty storage since we don't need to save anything for the player car
-      -- end
-    end
-  end
-
   -- local sessionType = sim.raceSessionType
   -- if sessionType == ac.SessionType.Race then
     -- local isSessionStarted = sim.isSessionStarted
@@ -714,155 +565,11 @@ function script.MANIFEST__UPDATE(dt)
   -- end
 end
 
---[====[
---Andreas: experimenting with drawing a 3D overhead text label above the player car that respects geometry occlusion
--- a small canvas we’ll draw the string into
-local nameplate = ui.ExtraCanvas(256, 64)
-
--- draw/update the text (do this once now; call again whenever text changes)
-local function setNameplate(text, color)
-  nameplate:update(function()
-    ui.beginTransparentWindow("np", vec2(0,0), vec2(256,64), true, false)
-      ui.drawRectFilled(vec2(0,0), vec2(256,64), rgbm(0,0,0,0))     -- fully transparent
-      ui.setCursor(vec2(10,10))
-      ui.textColored(text, color or rgbm(1,1,1,1))
-    ui.endTransparentWindow()
-  end)
-end
-
-setNameplate("AI #12", rgbm(1,1,1,1))   -- example label; re-call when you want a new string
-
--- minimal shadered quad descriptor (camera-facing billboard)
-local plate = {
-  textures = { tx = nameplate },
-  shader   = [[ float4 main(PS_IN pin){ return pin.ApplyFog(tx.Sample(samAnisotropic, pin.Tex)); } ]]
-}
--- draw after opaque geometry so the depth buffer is ready
-render.on('main.root.transparent', function()
-  -- Logger.log("Drawing nameplate")
-  -- depth: read-only (respect geometry), blend: regular alpha
-  render.setDepthMode(render.DepthMode.ReadOnlyLessEqual)
-  render.setBlendMode(render.BlendMode.AlphaBlend)
-
-  -- position a little above the car roof; size in meters
-  local car = ac.getCar(0)                           -- pick your car index
-  local pos = car.position + vec3(0, 1.8, 0)
-  plate.pos    = pos
-  plate.width  = 0.7                                 -- world width (m)
-  plate.height = 0.18                                -- world height (m)
-  plate.up     = vec3(0,1,0)                         -- keep upright
-
-  render.shaderedQuad(plate)
-end)
---]====]
-
 ---
 -- wiki: called when transparent objects are finished rendering
 ---
 function script.MANIFEST__TRANSPARENT(dt)
   if (not shouldAppRun()) then return end
-  -- local storage_Debugging = StorageManager.getStorage_Debugging()
-
-  if storage_Debugging.debugDrawSideOfftrack then
-    for i, car in ac_iterateCars() do
-      local carIndex = car.index
-      CarOperations.renderCarSideOffTrack(carIndex)
-    end
-  end
-  UIManager_drawCarStateOverheadText()
-
-  -- render.debugSphere(playerCarPosition, 1, rgbm(1, 0, 0, 1))
-  -- render.debugBox(playerCarPosition + vec3(0, 1, 0), vec3(1, 1, 1), rgbm(0, 1, 0, 1))
-  -- render.debugCross(playerCarPosition + vec3(0, 2, 0), 1.0, rgbm(0, 0, 1, 1))
-  -- render.debugArrow(playerCarPosition + vec3(0, 3, 0), playerCarPosition + vec3(0, 3, 5), 0.7, rgbm(0.2, 0.2, 1.0, 1))
-  -- render.debugLine(playerCarPosition + vec3(0, 1, 0), playerCarPosition + vec3(0, 1, 5), rgbm(1.0, 0.2, 0.2, 1))
-  -- render.debugLine(playerCarPosition + vec3(0, 0, 0), playerCarPosition + (playerCarSide * 2), rgbm(1.0, 0.2, 0.2, 1))
-
-
-  -- ----------------------------------------------------------------
-  -- -- Draw car block check rays for player car for debugging purposes
-  -- CarOperations.drawSideAnchorPoints(0)
-  -- local carBlocked, carOnSideDirection, carOnSideDistance = CarOperations.checkIfCarIsBlockedByAnotherCarAndSaveAnchorPoints(0)
-  -- if carBlocked then
-    -- -- ui.textColored(string.format("Player car side is BLOCKED on %s (distance %.2f m)", tostring(carOnSideDirection), carOnSideDistance or -1), rgbm(1.0, 0.2, 0.2, 1.0))
-    -- Logger.log(string.format("Player Car left side is BLOCKED (hit at %s, distance %.2f m)", CarOperations.CarDirectionsStrings[carOnSideDirection], carOnSideDistance or -1))
-  -- end
-
---[=====[
-  local car = ac.getCar(0)
-  local carIndex = car.index
-  local carPosition = car.position
-  local carForward  = car.look
-  local carLeft     = car.side
-  local carUp       = car.up
-  local halfAABBSize = CarManager.cars_HALF_AABSIZE[carIndex]
-  local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize, CarOperations._reusableSideAnchorTable)  -- returns left/right dirs too
-  local pLeftDirection = p.leftDirection
-  local pRightDirection = p.rightDirection
-  local pRearLeft  = p.rearLeft
-  local pRearRight = p.rearRight
-  local sideGap = 1.0
-  local leftOffset  = pLeftDirection  * sideGap
-  local rightOffset = pRightDirection * sideGap
-  local ray1_pos  = pRearLeft + leftOffset
-  local ray1_dir  = carForward
-  local ray1_len  = (halfAABBSize.z * 2)-- + 3
-  local ray2_pos  = pRearRight + rightOffset
-  --local ray2_dir  = p.frontRight + rightOffset
-  local ray2_dir  = carForward
-  local ray2_len  = halfAABBSize.z*2
-  CarManager.cars_totalSideBlockRaysData[0] = 2
-  -- CarManager.cars_sideBlockRaysData[0] = {
-    -- ray1_pos, ray1_dir, ray1_len,
-    -- ray2_pos, ray2_dir, ray2_len
-  -- }
-  CarManager.cars_sideBlockRaysData[0] = {}
-  CarManager.cars_sideBlockRaysData[0][0] = ray1_pos
-  CarManager.cars_sideBlockRaysData[0][1] = ray1_dir
-  CarManager.cars_sideBlockRaysData[0][2] = ray1_len
-  CarManager.cars_sideBlockRaysData[0][3] = ray2_pos
-  CarManager.cars_sideBlockRaysData[0][4] = ray2_dir
-  CarManager.cars_sideBlockRaysData[0][5] = ray2_len
-
-  -- CarOperations.renderCarBlockCheckRays_PARALLELLINES(0)
-  CarOperations.renderCarBlockCheckRays_NEWDoDAPPROACH(0)
---]=====]
--- CarOperations.checkIfCarIsBlockedByAnotherCarAndSaveSideBlockRays(0, RaceTrackManager.TrackSide.LEFT)
-  -- ----------------------------------------------------------------
-  
-
-  if storage_Debugging.debugShowRaycastsWhileDrivingLaterally then
-    local debugCarStateOverheadShowDistance = storage_Debugging.debugCarGizmosDrawistance
-    local debugCarStateOverheadShowDistanceSqr = debugCarStateOverheadShowDistance * debugCarStateOverheadShowDistance
-    local cameraFocusedCarIndex = CameraManager_getFocusedCarIndex()
-    local cameraFocusedCar = ac_getCar(cameraFocusedCarIndex)
-    if cameraFocusedCar then
-      local cameraFocusedCarPosition = cameraFocusedCar.position
-      for i, car in ac_iterateCars() do
-        local carIndex = car.index
-        local distanceFromCameraFocusedCarToThisCarSqr = MathHelpers.distanceBetweenVec3sSqr(car.position, cameraFocusedCarPosition)
-        local isThisCarCloseToCameraFocusedCar = distanceFromCameraFocusedCarToThisCarSqr < debugCarStateOverheadShowDistanceSqr
-        if isThisCarCloseToCameraFocusedCar then
-          CarOperations.renderCarBlockCheckRays_NEWDoDAPPROACH(carIndex)
-        end
-      end
-    end
-  end
-
-  -- if Constants.FRENET_DEBUGGING then
-    -- FrenetAvoid.debugDraw(Constants.FRENET_DEBUGGING_CAR_INDEX)
-  -- end
-
-  if Constants.PATHFINDING_DEBUGGING then
-    Pathfinding.drawPaths(Constants.PATHFINDING_DEBUGGING_CAR_INDEX)
-      for i, car in ac_iterateCars() do
-        Pathfinding.renderCarAABB(car, ColorManager.RGBM_Colors.Yellow)
-      end
-    
-    -- Pathfinding.drawObstacleAABBsForHits(Constants.PATHFINDING_DEBUGGING_CAR_INDEX, CarManager.currentSortedCarsList)
-  end
-
-  -- render.setDepthMode(render.DepthMode.Normal)
 end
 
 ---
@@ -870,13 +577,6 @@ end
 ---
 function script.MANIFEST__FUNCTION_SETTINGS()
   -- if (not CAN_APP_RUN) then return end
-
-  if not SettingsWindow_memProbeDone then
-    SettingsWindow_memProbeDone = true
-    if SettingsWindow_memProbeFirstEntry then
-      SettingsWindow_memProbeFirstEntry(script.MANIFEST__FUNCTION_SETTINGS)
-    end
-  end
   SettingsWindow_draw()
 end
 

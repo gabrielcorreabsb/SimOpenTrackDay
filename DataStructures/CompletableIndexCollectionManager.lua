@@ -41,7 +41,6 @@ CompletableIndexCollectionManager.updateFirstNonResolvedIndex = function(indexIn
     local lastIndexCreated = collections_lastIndexCreated[indexIndex]
     for i = firstNonResolvedIndex, lastIndexCreated do
         if resolvedCollection[i] == false then
-            Logger.log(string.format("[CompletableIndexCollectionManager] #%d Setting first non-resolved index to %d", indexIndex, i))
             collections_firstNonResolvedIndex[indexIndex] = i
             break
         end

@@ -139,8 +139,9 @@ assert(#errors == 0, 'successful extracted callback does not log a draw error')
 
 MainWindow.draw = function() error('injected main-window draw failure') end
 callback(0)
-assert(#errors == 1 and errors[1]:find('[RTD-DIAG] draw error:', 1, true) and
-  errors[1]:find('injected main-window draw failure', 1, true),
+assert(#errors == 1 and errors[1]:find('UI draw failed:', 1, true) and
+  errors[1]:find('injected main-window draw failure', 1, true) and
+  errors[1]:find('stack traceback:', 1, true),
   'entry xpcall catches injected MainWindow failure and reports established diagnostic')
 MainWindow.draw = originalDraw
 

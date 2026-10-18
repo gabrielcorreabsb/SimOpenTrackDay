@@ -85,6 +85,10 @@ This test checks locale/catalog parity, placeholders, stable UI IDs, strict stor
 
 An optional comparison may set `RTD_BASELINE_SETTINGS` to a locally available source baseline before running `tools/test_ui_smoke.lua`. The versioned fixture remains the default and is not regenerated automatically; do not include personal paths in documentation or issues.
 
+### 2.6 Focused entry, manager, and diagnostics checks
+
+Run `luajit tools/test_main_window.lua`, `luajit tools/test_ui_manager.lua`, and `luajit tools/test_no_diagnostics.lua` for isolated entry, operational car-list, and static no-diagnostics contracts. These checks are bounded/headless; they do not validate CSP rendering or runtime behavior. `luajit tools/test_settings_model.lua` covers the settings model independently.
+
 ---
 
 ## 3. Before installing in AC
@@ -115,7 +119,7 @@ This is a minimal manual smoke test to run after installing a test copy. CSP run
 
 ### If required CSP APIs are missing
 
-If CSP functions are missing, inspect compatibility messages and CSP logs, including `[RTD-DIAG-*]` records and the latest available compatibility message. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the diagnostic modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
+If CSP functions are missing, inspect operational compatibility messages and CSP logs. Diagnostic probes and `[RTD-DIAG-*]` records were removed by an authorized project change; do not expect them. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the compatibility error modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
 
 - If required APIs are unavailable, update CSP through a trusted channel or disable the app in Lua Apps until compatibility is resolved.
 
@@ -123,18 +127,17 @@ If CSP functions are missing, inspect compatibility messages and CSP logs, inclu
 
 ## 5. In-game validation scenarios (pending for this fork)
 
-Use these scenarios to validate features after manually installing a test copy. They are planned checks, not results already observed in this fork. When useful, enable the debug table (`storage_Debugging.drawCarList = true`) to inspect car states.
+Use these scenarios to validate features after manually installing a test copy. They are planned checks, not results already observed in this fork. The operational car list is visible while the app is running and shows each car's ID, state, speed, and lane offset; there are no diagnostic controls or flags to enable it.
 
 ### Scenario 1: Track 1 — simulation resumes
 
 - Drive five laps at Nordschleife.
 - **Expected:** AI cars keep moving (do not “freeze”).
-- **Expected:** each car's lateral indicator appears in the debug table.
+- **Expected:** the operational car list shows car state, speed, and lane offset.
 - **Bug if:** AI cars stop moving or become inert NPCs.
 
 ### Scenario 2: Track 2 — performance
 
-- Enable `storage_Debugging.drawCarList = true` to show the car table.
 - Drive with 20–30 AI cars on track.
 - **Expected:** stable frame rate (above 60 fps on most setups).
 - **Bug if:** frame rate falls below 30 fps with a moderate AI count.
@@ -178,17 +181,9 @@ Use these scenarios to validate features after manually installing a test copy. 
 
 ---
 
-## 6. Debugging checklist
+## 6. Operational troubleshooting
 
-If something appears wrong, enable the following flags (in `Storage`/`storage_Debugging`) and reproduce it:
-
-1. `storage_Debugging.drawCarList = true` — displays the car table.
-2. `storage_Debugging.debugShowCarStateOverheadText = true` — draws floating text above each car.
-3. `storage_Debugging.debugShowRaycastsWhileDrivingLaterally = true` — draws lateral-detection raycasts.
-4. `storage_Debugging.debugDrawSideOfftrack = true` — draws off-track detection.
-5. `Constants.PATHFINDING_DEBUGGING = true` (in `Constants.lua`) — enables experimental pathfinding.
-
-Remember to **turn off** these flags before measuring performance (Scenario 2); they add rendering/debug overhead.
+Use compatibility messages and CSP logs for operational errors. Diagnostic probes, overlays, traces, and development actions are not available; legacy debug storage schemas may remain inert. Preserve error reports when sharing a problem, but do not expect a diagnostic modal or debug flags.
 
 ---
 

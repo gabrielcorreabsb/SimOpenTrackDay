@@ -318,10 +318,14 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition, initialLoca
 
   local chunk, err = loadfile(settingsFile)
   assert(chunk, err)
+  local getDebuggingStorage = storageManager.getStorage_Debugging
+  storageManager.getStorage_Debugging = function()
+    error('SettingsWindow must not read persisted debugging preferences', 2)
+  end
   local settings = chunk()
   state.storage = storageManager.getStorage()
   state.behavior = storageManager.getStorage_Behavior()
-  state.debugging = storageManager.getStorage_Debugging()
+  state.debugging = getDebuggingStorage()
   state.yielding = storageManager.getStorage_Yielding()
   state.overtaking = storageManager.getStorage_Overtaking()
   state.ai = storageManager.getStorage_AICarValues()
@@ -511,7 +515,8 @@ print(string.format('Scroll background probe: scroll=(%.0f, %.0f), first fill=%s
   scrollState.scroll.x, scrollState.scroll.y, scrollFill and string.format('(%.1f,%.1f)-(%.1f,%.1f)', scrollFill.x, scrollFill.y, scrollFill.right, scrollFill.bottom) or 'missing'))
 
 local settings, storageManager, state = setUp(currentPath, true)
-state.debugging.showBehaviorAdvanced = false
+state.debugging.drawCarList = true
+state.debugging.debugShowCarStateOverheadText = true
 state.storage.enabled = true
 local appEnabledLabel = 'SimOpenTrackDay Enabled for: Mock Track (Mode: Practice)'
 state.hoverLabel = appEnabledLabel
@@ -522,6 +527,25 @@ check(table.concat(state.tooltips, '\n'):find('Enable the SimOpenTrackDay app', 
   'settings enable tooltip uses current app branding')
 check(state.lastDWriteSize == 12, 'settings footer uses the established 12px version widget')
 check(state.combos.Language and not state.combos.Language.disabled, 'language selector remains available before app controls')
+check(state.checkboxes['Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)'] ~= nil,
+  'operational accident handling control remains in Settings')
+check(state.sliders['Distance from accident to see yellow flag (m)'] and
+  state.sliders['Distance from accident to see yellow flag (m)'].disabled,
+  'operational accident-avoidance slider remains disabled until accident handling is enabled')
+check(state.storage.handleAccidents == false, 'legacy debugging flags do not enable accident handling')
+for _, removedDeveloperControl in ipairs({
+  'Show UI Car List', 'Show car state overhead text', 'Show raycasts when driving laterally',
+  'Draw tyres side offtrack gizmos', 'Log fast AI state changes', 'Log car yielding',
+  'Log car overtaking', 'Override player car lateral offset',
+}) do
+  check(state.checkboxes[removedDeveloperControl] == nil,
+    'removed developer control is absent from Settings: ' .. removedDeveloperControl)
+end
+check(state.sliders['##debugCarStateOverheadShowDistance'] == nil and
+  state.sliders['##debugOverridePlayerCarLateralOffsetValue'] == nil and
+  state.sliders['##debugSimulateAccidentSplinePosition'] == nil,
+  'removed developer sliders are absent from Settings')
+check(next(state.buttonLabels) == nil, 'removed developer action buttons are absent from Settings')
 local profileCombo = state.combos['AI Behavior Profile']
 check(profileCombo and profileCombo.options[1] == 'Casual' and profileCombo.options[2] == 'Realistic' and profileCombo.options[3] == 'Competitive',
   'profile combo items are localized display text, never labels with hidden IDs')
@@ -541,11 +565,8 @@ localization.setLocale('pt-BR')
 draw(settings, state)
 check(state.controlIDs['Deslocamento lateral padrão [-1..1]'] == offsetControlID,
   'Portuguese label changes while retaining the source-English slider ID')
-check(table.concat(state.dwriteTexts or {}, '\n'):find('Depuração', 1, true) ~= nil,
-  'section and control labels render translated text without ID suffixes')
-check(state.sliders['##debugCarStateOverheadShowDistance'] and
-  state.sliders['##debugCarStateOverheadShowDistance'].format == 'Distância dos indicadores dos carros: %.0fm',
-  'slider value format strings are localized before ui.slider')
+check(table.concat(state.dwriteTexts or {}, '\n'):find('Cautela', 1, true) ~= nil,
+  'Settings section labels render translated text without ID suffixes')
 localization.setLocale('es')
 draw(settings, state)
 check(state.controlIDs['Desplazamiento lateral predeterminado [-1..1]'] == offsetControlID,
@@ -634,11 +655,13 @@ check(state.sliders['Default Lateral Offset [-1..1]'].disabled == false,
 
 state.pendingCheckbox['Show Advanced Behavior Sliders'] = true
 draw(settings, state)
-check(state.debugging.showBehaviorAdvanced == false, 'advanced visibility does not alter debugging storage')
+check(state.debugging.drawCarList == true and state.debugging.debugShowCarStateOverheadText == true,
+  'advanced visibility leaves legacy debugging flags untouched')
 check(state.sliders['Entry blend time'] ~= nil, 'advanced sliders visible on enabling draw')
 state.pendingCheckbox['Hide Advanced Behavior Sliders'] = true
 draw(settings, state)
-check(state.debugging.showBehaviorAdvanced == false, 'closing advanced visibility leaves storage unchanged')
+check(state.debugging.drawCarList == true and state.debugging.debugShowCarStateOverheadText == true,
+  'advanced visibility remains transient and leaves legacy debugging flags untouched')
 check(state.sliders['Entry blend time'] == nil, 'advanced sliders are removed from layout when collapsed')
 
 local profile = storageManager.Profile.Competitive
@@ -667,11 +690,6 @@ check(state.behavior.mode == storageManager.BehaviorMode.TrackDay,
 check(state.behavior.entryBlendTime_s == 1.5 and state.behavior.pointBySpeedDeltaKmh == 15 and
   state.behavior.humanErrorEnabled == false, 'Realistic profile defaults remain unchanged')
 
-local overrideLabel = 'Override player car lateral offset'
-state.pendingCheckbox[overrideLabel] = true
-draw(settings, state)
-check(state.debugging.debugOverridePlayerCarLateralOffset == true, 'player AI offset override toggles on')
-
 state.storage.overrideAiAwareness = false
 state.pendingCheckbox['Override AI awareness'] = true
 draw(settings, state)
@@ -695,17 +713,15 @@ local footerText = table.concat(state.dwriteTexts or {}, '\n')
 check(footerText:find('SimOpenTrackDay v0.9.8 by dreasgrech', 1, true) ~= nil,
   'real version footer displays app name, version, and author credit')
 
-local function accidentSliderIsDisabled(enabled)
-  local s, _, snapshot = setUp(currentPath, enabled)
-  snapshot.storage.enabled = true
-  draw(s, snapshot)
-  local slider = snapshot.sliders['##debugSimulateAccidentSplinePosition']
-  return slider and slider.disabled, slider ~= nil
-end
-local accidentOffDisabled, accidentOffPresent = accidentSliderIsDisabled(false)
-local accidentOnDisabled, accidentOnPresent = accidentSliderIsDisabled(true)
-check(accidentOffPresent and accidentOffDisabled == true, 'accident feature off disables manual accident controls')
-check(accidentOnPresent and accidentOnDisabled == false, 'accident feature on enables manual accident controls')
+local accidentSettings, _, accidentState = setUp(currentPath, true)
+accidentState.storage.enabled = true
+draw(accidentSettings, accidentState)
+accidentState.pendingCheckbox['Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)'] = true
+draw(accidentSettings, accidentState)
+check(accidentState.storage.handleAccidents == true, 'operational accident handling remains selectable')
+check(accidentState.sliders['Distance from accident to see yellow flag (m)'] and
+  accidentState.sliders['Distance from accident to see yellow flag (m)'].disabled == false,
+  'operational accident-avoidance controls enable when accident handling is enabled')
 
 local overtakingSettings, _, overtakingState = setUp(currentPath, true)
 overtakingState.storage.enabled = true

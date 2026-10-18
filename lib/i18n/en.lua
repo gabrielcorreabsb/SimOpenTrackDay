@@ -16,6 +16,7 @@ return {
   ['Playing Online: '] = 'Playing Online: ', ['yes'] = 'yes', ['no'] = 'no',
   ['no limit'] = 'no limit', ['Current velocity'] = 'Current velocity',
   ['Yielding status'] = 'Yielding status', ['Overtaking status'] = 'Overtaking status',
+  ['Car #%02d - %s'] = 'Car #%02d - %s', ['Speed: %d km/h | Lane offset: %.3f'] = 'Speed: %d km/h | Lane offset: %.3f',
   ['Previous state'] = 'Previous state', ['Current state'] = 'Current state',
   ['Reason for last state exit'] = 'Reason for last state exit',
   ["Reason why the car can't yield"] = "Reason why the car can't yield",

@@ -15,11 +15,4 @@ Constants.ENABLE_ACCIDENT_HANDLING_IN_APP = true -- disable accident handling fo
 -- blocking one side of a car. Represents the typical lateral lane width to probe for a blocking car.
 Constants.SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING = 1.5
 
--- Constants.FRENET_DEBUGGING  = false
--- Constants.FRENET_DEBUGGING_CAR_INDEX = 0
-
--- Constants.PATHFINDING_DEBUGGING  = true
-Constants.PATHFINDING_DEBUGGING  = false
-Constants.PATHFINDING_DEBUGGING_CAR_INDEX = 0
-
 return Constants

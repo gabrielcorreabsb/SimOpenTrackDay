@@ -16,6 +16,7 @@ return {
   ['Playing Online: '] = 'Jugando en línea: ', ['yes'] = 'sí', ['no'] = 'no',
   ['no limit'] = 'sin límite', ['Current velocity'] = 'Velocidad actual',
   ['Yielding status'] = 'Estado al ceder el paso', ['Overtaking status'] = 'Estado de adelantamiento',
+  ['Car #%02d - %s'] = 'Coche #%02d - %s', ['Speed: %d km/h | Lane offset: %.3f'] = 'Velocidad: %d km/h | Desplazamiento lateral: %.3f',
   ['Previous state'] = 'Estado anterior', ['Current state'] = 'Estado actual',
   ['Reason for last state exit'] = 'Motivo de la última salida de estado',
   ["Reason why the car can't yield"] = 'Motivo por el que el coche no puede ceder el paso',

@@ -1,4 +1,4 @@
-﻿local CarOperations = {}
+local CarOperations = {}
 
 -- bindings
 local ac = ac
@@ -51,8 +51,6 @@ local StorageManager_getStorage_Overtaking = StorageManager.getStorage_Overtakin
 local StorageManager_getStorage_Yielding = StorageManager.getStorage_Yielding
 local render = render
 local render_createRay = render.createRay
-local render_debugBox = render.debugBox
-local render_debugLine = render.debugLine
 local VecPool_getTempVec3 = VecPool.getTempVec3
 local table_clear = table.clear
 
@@ -1030,64 +1028,6 @@ CarOperations.getTrackSideFromCarDirection = function(carDirection)
   return nil
 end
 
-CarOperations.renderCarBlockCheckRays_NEWDoDAPPROACH = function(carIndex)
-  local totalSideBlockRaysData = CarManager.cars_totalSideBlockRaysData[carIndex]
-  if not totalSideBlockRaysData then
-    return
-  end
-
-  local sideBlockRaysData = CarManager.cars_sideBlockRaysData[carIndex]
-  for i = 0, totalSideBlockRaysData - 1 do
-    local pos = sideBlockRaysData[(i*4)]
-    local dir = sideBlockRaysData[(i*4)+1]
-    local len = sideBlockRaysData[(i*4)+2]
-    local hit = sideBlockRaysData[(i*4)+3]
-
-    -- Logger.log(string.format("CarOperations.renderCarBlockCheckRays_NEWDoDAPPROACH: car #%d pos: %s, dir: %s, len: %s", carIndex, tostring(pos), tostring(dir), tostring(len)))
-    local color = hit and RENDER_CAR_BLOCK_CHECK_RAYS_HIT_COLOR or RENDER_CAR_BLOCK_CHECK_RAYS_NON_HIT_COLOR
-    render_debugLine(pos, pos + dir * len, color)
-  end
-end
-
-CarOperations.renderCarSideOffTrack = function(carIndex)
-  local car = ac_getCar(carIndex)
-  if not car then return end
-
-  local carWheels = car.wheels
-  local carOffTrackLeft = CarManager_isCarOffTrack(car, RaceTrackManager.TrackSide.LEFT)
-  local carOffTrackRight = CarManager_isCarOffTrack(car, RaceTrackManager.TrackSide.RIGHT)
-  -- local carOffTrack = carOffTrackLeft or carOffTrackRight
-
-  for w = 0, 3 do
-    local wheel = carWheels[w]
-    local wheelPosition = wheel.position
-    local tyreWidth = wheel.tyreWidth
-    local tyreRadius = wheel.tyreRadius
-    local debugBoxSize = VecPool_getTempVec3(tyreWidth, tyreRadius, tyreRadius)-- * 0.5
-    -- local color
-    -- if w == 0 then
-      -- color = ColorManager.RGBM_Colors.Red
-    -- elseif w == 1 then
-      -- color = ColorManager.RGBM_Colors.Green
-    -- elseif w == 2 then
-      -- color = ColorManager.RGBM_Colors.Blue
-    -- else
-      -- color = ColorManager.RGBM_Colors.Yellow
-    -- end
-
-    -- local color = carOffTrack and ColorManager.RGBM_Colors.Red or ColorManager.RGBM_Colors.LimeGreen
-
-    local color = ColorManager.RGBM_Colors.LimeGreen
-    if carOffTrackLeft and (w == CarManager.CAR_WHEELS_INDEX.FRONT_LEFT or w == CarManager.CAR_WHEELS_INDEX.REAR_LEFT) then
-      color = ColorManager.RGBM_Colors.Red
-    elseif carOffTrackRight and (w == CarManager.CAR_WHEELS_INDEX.FRONT_RIGHT or w == CarManager.CAR_WHEELS_INDEX.REAR_RIGHT) then
-      color = ColorManager.RGBM_Colors.Red
-    end
-
-    render_debugBox(wheelPosition, debugBoxSize, color)
-  end
-end
-
 --- Calculates the maximum top speed of the car by checking all gears.
 --- Andreas: This is a bit pointless because family cars were returning higher speeds than gt3 cars with this
 ---@param carIndex integer
@@ -1104,126 +1044,5 @@ CarOperations.calculateMaxTopSpeed = function(carIndex)
   end
   return maxSpeed
 end
-
--- CarOperations.renderCarBlockCheckRays_PARALLELLINES = function(carIndex)
-  -- local car = ac.getCar(carIndex)
-  -- if not car then return end
-
-  -- -- Build fresh anchors (front/rear on each side + directions)
-  -- local carPosition = car.position
-  -- local carForward  = car.look
-  -- local carLeft     = car.side
-  -- local carUp       = car.up
-  -- local halfAABBSize = CarManager.cars_HALF_AABSIZE[carIndex]
-  -- local p = CarOperations.getSideAnchorPoints(carPosition, carForward, carLeft, carUp, halfAABBSize)  -- returns left/right dirs too
-  -- -- p has: frontLeft, rearLeft, frontRight, rearRight, leftDirection, rightDirection, etc.  
-
-  -- -- How far to place the parallel lines from the car’s sides (meters).
-  -- -- You can expose this in UI and store it in storage.parallelLinesSideGap or CarManager.sideParallelLinesGap.
-  -- -- local storage = (StorageManager and StorageManager.getStorage) and StorageManager.getStorage() or nil
-  -- local sideGap = 
-              -- -- (storage and storage.parallelLinesSideGap)
-               -- -- or CarManager.sideParallelLinesGap
-               -- -- or 
-               -- 1.0
-
-  -- -- Offset vectors away from body
-  -- local leftOffset  = p.leftDirection  * sideGap
-  -- local rightOffset = p.rightDirection * sideGap
-
-  -- -- Draw two long parallel lines, rear→front, one on each side
-  -- render.debugLine(p.rearLeft  + leftOffset,  p.frontLeft  + leftOffset,  RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)   -- blue by your constants 
-  -- render.debugLine(p.rearRight + rightOffset, p.frontRight + rightOffset, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)  -- red
--- end
-
-
---[=====[
-CarOperations.renderCarBlockCheckRays = function(carIndex)
--- CarOperations.renderCarBlockCheckRays = function(car)
-  -- local car = ac.getCar(carIndex)
-  -- if not car then return end
-
-  -- local carAnchorPoints = CarOperations.getSideAnchorPoints(carIndex,car)
-  local carAnchorPoints = CarManager.cars_anchorPoints[carIndex]
-  if not carAnchorPoints then
-    -- Logger.log(string.format("CarOperations.renderCarBlockCheckRays: Car %d has no anchor points calculated", carIndex))
-    return
-  end
-
-  -- CarOperations.logCarAnchorPoints(carIndex, carAnchorPoints)
-
-  render.debugLine(carAnchorPoints.frontLeft,  carAnchorPoints.frontLeft  + carAnchorPoints.leftDirection  * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)
-  render.debugLine(carAnchorPoints.centerLeft, carAnchorPoints.centerLeft + carAnchorPoints.leftDirection  * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)
-  render.debugLine(carAnchorPoints.rearLeft,   carAnchorPoints.rearLeft   + carAnchorPoints.leftDirection  * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)
-
-  render.debugLine(carAnchorPoints.frontRight,  carAnchorPoints.frontRight  + carAnchorPoints.rightDirection * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)
-  render.debugLine(carAnchorPoints.centerRight, carAnchorPoints.centerRight + carAnchorPoints.rightDirection * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)
-  render.debugLine(carAnchorPoints.rearRight,   carAnchorPoints.rearRight   + carAnchorPoints.rightDirection * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)
-
-  -- Angled fork rays (45° towards forward)
-  local leftAngledDirFront  = carAnchorPoints.leftDirection  * INV_SQRT2 + carAnchorPoints.forwardDirection * INV_SQRT2
-  local leftAngledDirRear   = carAnchorPoints.leftDirection  * INV_SQRT2 - carAnchorPoints.forwardDirection * INV_SQRT2
-  local rightAngledDirFront = carAnchorPoints.rightDirection * INV_SQRT2 + carAnchorPoints.forwardDirection * INV_SQRT2
-  local rightAngledDirRear  = carAnchorPoints.rightDirection * INV_SQRT2 - carAnchorPoints.forwardDirection * INV_SQRT2
-
-  render.debugLine(carAnchorPoints.frontLeft,  carAnchorPoints.frontLeft  + leftAngledDirFront  * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)
-  render.debugLine(carAnchorPoints.rearLeft,   carAnchorPoints.rearLeft   + leftAngledDirRear   * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_LEFT_COLOR)
-
-  render.debugLine(carAnchorPoints.frontRight, carAnchorPoints.frontRight + rightAngledDirFront * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)
-  render.debugLine(carAnchorPoints.rearRight,  carAnchorPoints.rearRight  + rightAngledDirRear  * SIDE_DISTANCE_TO_CHECK_FOR_BLOCKING, RENDER_CAR_BLOCK_CHECK_RAYS_RIGHT_COLOR)
-end
---]=====]
-
---[=====[
-CarOperations.drawSideAnchorPoints = function(carIndex)
-  local car = ac.getCar(carIndex)
-  if not car then
-    return
-  end
-
-  -- local p = CarOperations.getSideAnchorPoints(carIndex, car)
-  local p = CarManager.cars_anchorPoints[carIndex]
-  if not p then
-    Logger.log(string.format("CarOperations.drawSideAnchorPoints: Car %d has no anchor points calculated", carIndex))
-    return
-  end
-
-  local gizmoColor_left = rgbm(0,0,1,1) -- blue
-  local gizmoColor_right = rgbm(1,0,0,1) -- right
-
-  render.debugSphere(p.frontLeft,   0.15, gizmoColor_left)
-  render.debugSphere(p.centerLeft,  0.15, gizmoColor_left)
-  render.debugSphere(p.rearLeft,    0.15, gizmoColor_left)
-
-  render.debugSphere(p.frontRight,  0.15, gizmoColor_right)
-  render.debugSphere(p.centerRight, 0.15, gizmoColor_right)
-  render.debugSphere(p.rearRight,   0.15, gizmoColor_right)
-
-  render.debugSphere(p.center,      0.12, rgbm(0,1,0,1))
-
-  -- Optional: draw short axis arrows to verify directions in-game
-  -- render.debugLine(p.center, p.center + p.forwardDirection * 2.0, rgbm(0,1,0,1)) -- forward
-  -- render.debugLine(p.center, p.center + -p.leftDirection   * 2.0, rgbm(0,0,1,1)) -- left
-  -- render.debugLine(p.center, p.center + p.upDirection      * 2.0, rgbm(1,1,0,1)) -- up
-end
---]=====]
-
---[=====[
-CarOperations.logCarAnchorPoints = function(carIndex, carAnchorPoints)
-  Logger.log(string.format(
-    "Car %d anchor points: frontLeft=(%.2f, %.2f, %.2f), centerLeft=(%.2f, %.2f, %.2f), rearLeft=(%.2f, %.2f, %.2f), frontRight=(%.2f, %.2f, %.2f), centerRight=(%.2f, %.2f, %.2f), rearRight=(%.2f, %.2f, %.2f), forwardDirection=(%.2f, %.2f, %.2f), leftDirection=(%.2f, %.2f, %.2f), upDirection=(%.2f, %.2f, %.2f)",
-    carIndex,
-    carAnchorPoints.frontLeft.x, carAnchorPoints.frontLeft.y, carAnchorPoints.frontLeft.z,
-    carAnchorPoints.centerLeft.x, carAnchorPoints.centerLeft.y, carAnchorPoints.centerLeft.z,
-    carAnchorPoints.rearLeft.x, carAnchorPoints.rearLeft.y, carAnchorPoints.rearLeft.z,
-    carAnchorPoints.frontRight.x, carAnchorPoints.frontRight.y, carAnchorPoints.frontRight.z,
-    carAnchorPoints.centerRight.x, carAnchorPoints.centerRight.y, carAnchorPoints.centerRight.z,
-    carAnchorPoints.rearRight.x, carAnchorPoints.rearRight.y, carAnchorPoints.rearRight.z,
-    carAnchorPoints.forwardDirection.x, carAnchorPoints.forwardDirection.y, carAnchorPoints.forwardDirection.z,
-    carAnchorPoints.leftDirection.x, carAnchorPoints.leftDirection.y, carAnchorPoints.leftDirection.z,
-    carAnchorPoints.upDirection.x, carAnchorPoints.upDirection.y, carAnchorPoints.upDirection.z
-  ))
-end
---]=====]
 
 return CarOperations
