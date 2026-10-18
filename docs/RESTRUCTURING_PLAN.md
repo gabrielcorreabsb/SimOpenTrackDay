@@ -6,7 +6,7 @@ Plano atual e fonte única de direção para as próximas etapas. Substitui prop
 
 - Base B foi alterada localmente, sem commit e sem redesenho executado. Há novos `MainWindow`, `SettingsModel` e `UIState`; `UIStorage` preexistente está não rastreado. `Localization`, `StorageManager`, `SimOpenTrackDay`, `SettingsWindow` e ferramentas de teste também têm alterações locais.
 - Esses módulos não estão publicados. Antes de trabalho compartilhado, consolidar apenas dependências necessárias, revisar os diffs e preservar alterações alheias; não presumir que a base está coerente.
-- Estado: P0 pendente de validação/publicação; base B local, P1–P5 pendentes. Implementação P1–P4 começa após commit/push de P0, dentro do escopo abaixo. P5 trata da criação do pacote seguro; execução em instalação real não está autorizada. Permanecem vedados reset de armazenamento e mudanças em vendor/submódulos ou configuração OpenCode.
+- Estado: P0 publicado em `origin/main` no commit `64e3d69476d99a52dc58108505e64f896ba1b878`; base B local, P1–P5 pendentes. Implementação P1–P4 pode começar dentro do escopo abaixo. P5 trata da criação do pacote seguro; execução em instalação real não está autorizada. Permanecem vedados reset de armazenamento e mudanças em vendor/submódulos ou configuração OpenCode.
 - Usuário autorizou em 18/10/2026 a remoção de diagnósticos e, posteriormente, uma janela com abas internas. A direção UX abaixo foi orientada pelo designer; ainda não está implementada.
 - Commit/push por unidade validada, com staging explícito. Coordenador e git-release revisam/publicam; preservar arquivos dirty não relacionados, sem force push ou reescrita de histórico. Se push falhar, resolver antes da etapa seguinte.
 
@@ -34,7 +34,10 @@ Plano atual e fonte única de direção para as próximas etapas. Substitui prop
 - Em telas estreitas, abas fazem wrap ou viram seletor com rótulos completos, sem clipping em PT/ES; conteúdo usa uma coluna como fallback. Validar larguras/escala no CSP. Texto essencial visível, tooltip complementar; distinguir desligado de indisponível por online/compatibilidade sem depender de cor.
 - Perfil é inferência parcial de três campos; preservar aplicação explícita e não inventar `storage.profile`.
 - Alvo técnico: remover `WINDOW_1` e callback/routing de Settings coordenadamente em manifest/UIManager; manter `WINDOW_0`/`mainWindow`, entry point raiz, `ICON`/`RENDER`/`UPDATE`. `MainWindow` compõe apresentação; `SettingsWindow` pode virar renderização de conteúdo, não segunda janela. `SettingsModel` concentra queries/actions; `UIState.activeTab` é transitório, sem storage key.
-- Aceite: controles operacionais acessíveis nas abas, layouts/idiomas validados, remover contrato da segunda janela e preservar IDs/callbacks restantes. P2 e P3 só podem ser combinados se não houver entrega intermediária coerente; validar e commitar cada unidade distinguível antes da seguinte.
+- Direção visual: paleta azul, amarelo e verde, com hierarquia tipográfica e espaçamento modernos, atualizando as cores do Theme e reaproveitando Logo e componentes existentes. Usar amarelo/verde moderadamente para não competir com o azul de ação/seleção; estados devem ter texto, não depender só da cor.
+- Pares de referência: fundo `#101820` / texto `#EAF0F6`; superfície `#192631` / borda `#344554`; texto secundário `#A8B6C5`; ação/seleção azul `#2463EB`; atenção amarelo `#F4C95D`; confirmação verde `#49B879`; texto desabilitado `#82909D`. Em botão primário/seleção azul, usar rótulo `#FFFFFF`.
+- Contraste sRGB calculado como referência: texto `#EAF0F6` sobre fundo `#101820` 15.59:1; branco sobre azul `#2463EB` 5.17:1. Isto não substitui validação visual/acessibilidade no CSP.
+- Aceite: controles operacionais acessíveis nas abas, layouts/idiomas e contraste de referência validados, remover contrato da segunda janela e preservar IDs/callbacks restantes. P2 e P3 só podem ser combinados se não houver entrega intermediária coerente; validar e commitar cada unidade distinguível antes da seguinte.
 
 ### P4 — Identidade e versão 0.1 | pendente
 
