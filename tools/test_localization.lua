@@ -325,6 +325,19 @@ check(en['You can enable the app from the Settings.'] == nil and
   pt['These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).'] == nil and
   es['These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).'] == nil,
   'superseded Settings guidance msgids are removed from all catalogs')
+local orphanedBrandMsgids = {
+  'Realistic Trackday not running.',
+  '[Error] Missing CSP elements needed to run Realistic Trackday app',
+  'Realistic Trackday may not run as expected because some required Custom Shaders Patch elements are missing.',
+}
+for _, orphanedMsgid in ipairs(orphanedBrandMsgids) do
+  check(en[orphanedMsgid] == nil and pt[orphanedMsgid] == nil and es[orphanedMsgid] == nil,
+    'orphaned legacy-brand msgid removed symmetrically: ' .. orphanedMsgid)
+  check(not sourceContains('MainWindow.lua', orphanedMsgid) and
+    not sourceContains('UIManager.lua', orphanedMsgid) and
+    not sourceContains('SimOpenTrackDay.lua', orphanedMsgid),
+    'no active runtime caller remains for orphaned msgid: ' .. orphanedMsgid)
+end
 check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s by %s'"), 'version widget uses an unformatted template msgid')
 check(sourceContains('UIManager.lua', "T(CarStateMachine.CarStateTypeStrings[state] or '')"), 'car-list display routes state labels through localization')
 check(sourceContains('UIManager.lua', 'T(yieldingSideString)'), 'yielding side display routes side through localization')

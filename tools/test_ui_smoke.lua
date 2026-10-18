@@ -226,7 +226,7 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition, initialLoca
   _G.ui = ui
   _G.vec2 = newVec2
   _G.rgbm = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
-  _G.Constants = { ENABLE_ACCIDENT_HANDLING_IN_APP = accidentsEnabled, APP_VERSION = '0.9.8', APP_AUTHOR = 'dreasgrech', APP_NAME = 'SimOpenTrackDay' }
+  _G.Constants = { ENABLE_ACCIDENT_HANDLING_IN_APP = accidentsEnabled, APP_VERSION = '0.1', APP_AUTHOR = 'dreasgrech', APP_NAME = 'SimOpenTrackDay' }
   _G.Logger = { log = function() end }
   _G.ac = {
     getSim = function() return { raceSessionType = 'practice' } end,
@@ -437,21 +437,12 @@ local function emitFixture(data)
   print('}')
 end
 
-local externalBaselinePath = os.getenv('RTD_BASELINE_SETTINGS')
-if externalBaselinePath and os.getenv('RTD_DUMP_BASELINE_FIXTURE') == '1' then
+local externalBaselinePath = os.getenv('SOTD_BASELINE_SETTINGS')
+if externalBaselinePath and os.getenv('SOTD_DUMP_BASELINE_FIXTURE') == '1' then
   emitFixture(inventory(externalBaselinePath, true))
   os.exit(0)
 end
 
-local function normalizeBrandLabel(label)
-  label = label:gsub('^SimOpenTrackDay ', 'Realistic Trackday ')
-  return (label:gsub(' Enabled for:', ' Disabled for:'))
-end
-local function normalizedSet(source)
-  local result = {}
-  for label in pairs(source) do result[normalizeBrandLabel(label)] = true end
-  return result
-end
 local current = inventory(currentPath, true)
 local expected = baselineFixture
 if externalBaselinePath then
@@ -477,8 +468,7 @@ for label, row in pairs(expected.sliders) do
 end
 for label in pairs(current.sliders) do check(expected.sliders[label] ~= nil, 'no un-baselined active slider: ' .. label) end
 
-local function compareLabels(kind, actualSource, normalize)
-  local actual = normalize and normalizedSet(actualSource) or actualSource
+local function compareLabels(kind, actual)
   local total = 0
   for label in pairs(expected[kind]) do total = total + 1; check(actual[label], 'baseline active ' .. kind .. ' retained: ' .. label) end
   for label in pairs(actual) do check(expected[kind][label], 'no un-baselined active ' .. kind .. ': ' .. label) end
@@ -495,7 +485,7 @@ for label, value in pairs(current.checkboxes) do
     currentBaselineCheckboxes[label] = value
   end
 end
-checkboxCount = compareLabels('checkboxes', currentBaselineCheckboxes, true)
+checkboxCount = compareLabels('checkboxes', currentBaselineCheckboxes)
 local baselineCombos = {}
 for label, value in pairs(current.combos) do if label ~= 'Language' then baselineCombos[label] = value end end
 local comboCount = compareLabels('combos', baselineCombos)

@@ -83,11 +83,15 @@ luajit tools/test_localization.lua
 
 This test checks locale/catalog parity, placeholders, stable UI IDs, strict storage access, and selected source call sites. It does not validate CSP rendering. Mock coverage of widths/layout is bounded and does not establish the complete CSP UI or main callback.
 
-An optional comparison may set `RTD_BASELINE_SETTINGS` to a locally available source baseline before running `tools/test_ui_smoke.lua`. The versioned fixture remains the default and is not regenerated automatically; do not include personal paths in documentation or issues.
+An optional comparison may set `SOTD_BASELINE_SETTINGS` to a locally available source baseline before running `tools/test_ui_smoke.lua`. The versioned fixture is the default and remains unchanged. `SOTD_DUMP_BASELINE_FIXTURE=1` emits a candidate Lua fixture to stdout for inspection only; it does not save or regenerate the versioned fixture. Updating the fixture requires a separate deliberate, reviewed change. Do not include personal paths in documentation or issues.
 
 ### 2.6 Focused entry, manager, and diagnostics checks
 
 Run `luajit tools/test_main_window.lua`, `luajit tools/test_ui_manager.lua`, and `luajit tools/test_no_diagnostics.lua` for isolated entry, operational car-list, and static no-diagnostics contracts. These checks are bounded/headless; they do not validate CSP rendering or runtime behavior. `luajit tools/test_settings_model.lua` covers the settings model independently.
+
+### 2.7 Version and license metadata
+
+Run `luajit tools/test_version.lua` to check runtime/manifest name, version and author metadata and preservation of the existing MIT license notice. It does not validate CSP or product behavior.
 
 ---
 
@@ -119,7 +123,7 @@ This is a minimal manual smoke test to run after installing a test copy. CSP run
 
 ### If required CSP APIs are missing
 
-If CSP functions are missing, inspect operational compatibility messages and CSP logs. Diagnostic probes and `[RTD-DIAG-*]` records were removed by an authorized project change; do not expect them. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the compatibility error modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
+If CSP functions are missing, inspect operational compatibility messages and CSP logs. Startup diagnostics were removed by an authorized project change; do not expect them. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the compatibility error modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
 
 - If required APIs are unavailable, update CSP through a trusted channel or disable the app in Lua Apps until compatibility is resolved.
 

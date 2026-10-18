@@ -2,20 +2,20 @@
 
 SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders Patch (CSP). It helps AI-controlled cars yield and overtake during track-day sessions instead of staying on the racing line at all times.
 
-This is an independent derivative project under development. It is neither a ground-up rewrite nor a published or certified build. `VERSION = 0.9.8` in the manifest is inherited metadata, not an indication of a stable release. Runtime behavior and visual presentation in CSP have not been validated in-game.
+This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. Runtime behavior and visual presentation in CSP have not been validated in-game.
 
 - [Manual installation](#manual-installation)
 - [Basic usage](#basic-usage)
 - [Local checks](#local-checks)
-- [Documentation index](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Detailed testing](docs/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/plans/PROJECT_ORGANIZATION.md)
+- [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Detailed testing](docs/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/plans/PROJECT_ORGANIZATION.md)
 - [Report an issue](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
 
 ## What the app provides
 
 - Yield and overtake logic for AI cars, with configurable lateral offsets.
-- Behavior profiles and driving options in `SettingsWindow.lua`.
+- Behavior profiles and driving options rendered through `SettingsWindow.lua` content.
 - Track- and session-specific settings through `StorageManager`.
-- A main window with a car list and diagnostic tools; settings are in a separate window.
+- One main window with five tabs: Overview, Behavior, Yielding, Overtaking, and Advanced; the operational car list is in Overview.
 - UI presentation is localized in English, Brazilian Portuguese, and Spanish; see the [localization reference](docs/LOCALIZATION.md).
 
 Results depend on the track, session, and APIs available in the installed CSP version. Consult [Testing](docs/TESTING.md) before experimenting; headless checks are not in-game validation.
@@ -64,11 +64,15 @@ The operational car list is part of the app UI; diagnostic options are not avail
 ```text
 SimOpenTrackDay.lua       entry point and manifest callbacks
 SettingsWindow.lua        settings interface
+MainWindow.lua            single-window tabs and shared header
+SettingsModel.lua         settings queries and actions
+UIState.lua               transient UI selections/expansions
+UIStorage.lua             shared UI preference schema
 StorageManager.lua        options, profiles, track/session storage
 CarManager.lua            AI car state/cache
 CarOperations.lua         yield/overtake operations and physics calls
 CarStateMachine/          car behavior states
-UIManager.lua              car list and debug views
+UIManager.lua              operational car list
 lib/uilib/                 project-owned UI components
 lib/ac_apps/               distributed CSP SDK
 lib/AssettoCorsaCSPLuaCompatibilityManager/
@@ -88,14 +92,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
 luajit tools/test_ui_smoke.lua
 luajit tools/test_logo_smoke.lua
 luajit tools/test_localization.lua
+luajit tools/test_version.lua
 ```
 
-The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `RTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. The versioned fixture remains the default and is not automatically updated.
+The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `SOTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. By default, the versioned fixture remains unchanged. `SOTD_DUMP_BASELINE_FIXTURE=1` only emits a candidate Lua fixture to stdout for inspection; it does not save or regenerate the versioned fixture. Updating that fixture requires a separate deliberate, reviewed change.
 
 The localization command is included above. See [Testing](docs/TESTING.md) for command scope and limitations. CSP runtime and visual validation remain pending.
 
 ## Credits and license
 
-SimOpenTrackDay is an independent derivative project based on [Assetto Corsa Realistic Trackday](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), created by [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech). The original project is distributed under the MIT license, copyright © 2025 Andreas Grech; see [`LICENSE`](LICENSE). Git history and original credits are preserved.
+SimOpenTrackDay is an independent derivative project based on the [original app](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), created by [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech). The original project is distributed under the MIT license, copyright © 2025 Andreas Grech; see [`LICENSE`](LICENSE). Git history and original credits are preserved.
 
 The [AssettoCorsaCSPLuaCompatibilityManager](https://github.com/dreasgrech/AssettoCorsaCSPLuaCompatibilityManager) submodule and CSP SDK have their own origins/licenses; keep their files and license notices intact.

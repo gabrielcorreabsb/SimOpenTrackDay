@@ -143,7 +143,7 @@ _G.SettingsWindow = {
     event('content', tab)
   end,
 }
-_G.Constants = { APP_NAME = 'SimOpenTrackDay', APP_VERSION = '0.9.8', APP_AUTHOR = 'dreasgrech' }
+_G.Constants = { APP_NAME = 'SimOpenTrackDay', APP_VERSION = '0.1', APP_AUTHOR = 'dreasgrech' }
 
 package.loaded.Localization = nil
 package.loaded.UIManager = nil
@@ -217,8 +217,8 @@ mainWindowSourceFile:close()
 check(not mainWindowSource:find('openSettingsWindow', 1, true),
   'single MainWindow no longer opens or delegates to a separate Settings window')
 local footer = table.concat(state.wrapped, '\n')
-check(footer:find('SimOpenTrackDay v0.9.8 by dreasgrech', 1, true) ~= nil,
-  'MainWindow footer formats the existing app-name/version/author constants')
+check(footer:find('SimOpenTrackDay v0.1 by dreasgrech', 1, true) ~= nil,
+  'MainWindow footer formats the current app-name/version/author constants')
 
 -- The measured selected-label marker participates in navigation width, including gaps.
 state.availableWidth = 1200
