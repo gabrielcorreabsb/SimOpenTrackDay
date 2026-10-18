@@ -93,9 +93,9 @@ Run `luajit tools/test_main_window.lua`, `luajit tools/test_ui_manager.lua`, and
 
 Run `luajit tools/test_version.lua` to check runtime/manifest name, version and author metadata and preservation of the existing MIT license notice. It does not validate CSP or product behavior.
 
-### 2.8 Package/installer checks (pending integration)
+### 2.8 Package/installer checks
 
-`tools/test_package.ps1` and `tools/test_installer.ps1` exercise package and installer behavior with sandbox/mocks. `tools/test_distribution.ps1` is intended to integrate the real source tree with package generation; it is pending implementation/owner validation. Sandbox checks do not establish CSP compatibility or safe behavior in a real Assetto Corsa installation.
+`tools/test_package.ps1`, `tools/test_installer.ps1` and `tools/test_distribution.ps1` exercise package, installer and real-source integration under a sandbox under `%LOCALAPPDATA%\Temp\opencode`. They do not establish CSP compatibility or safe behavior in a real Assetto Corsa installation. When launching `install.bat` or `installer.ps1` in Preview or Rollback, the console window closes immediately after printing — that is normal PowerShell behavior, not an error. Run it from an open terminal or capture the output (e.g. `*> "D:\preview.txt"`) so you can read the plan.
 
 ---
 

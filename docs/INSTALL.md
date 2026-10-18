@@ -21,6 +21,31 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1"
 
 Revise o plano, caminhos e conflitos. Preview não escreve arquivos de instalação.
 
+### Como ler a saída (a janela fecha em duplo clique)
+
+O instalador é um script PowerShell invocado por `powershell.exe -File`. Em duplo clique no `install.bat` ou no `installer.ps1`, o Windows abre a janela do console, executa e fecha imediatamente após a última linha — comportamento padrão do PowerShell quando não há prompt interativo. Apenas o modo Install pausa para a confirmação `YES`; Preview e Rollback encerram logo depois de imprimir o resultado.
+
+Para conseguir ler a saída, escolha uma das opções:
+
+- **Salvar em arquivo de log** (mais simples para revisar depois):
+
+  ```powershell
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1" -Mode Preview -AssettoCorsaRoot "$acRoot" *> "D:\preview.txt"
+  notepad "D:\preview.txt"
+  ```
+
+  `*>` redireciona stdout e stderr para o mesmo arquivo.
+
+- **Abrir o PowerShell manualmente** (Win+R → `powershell.exe` → Enter) e rodar o comando direto; a janela fica aberta durante a execução e você rola para cima para ver tudo.
+
+- **Manter a saída na mesma janela** usando `Start-Process -Wait -NoNewWindow`:
+
+  ```powershell
+  Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"$package\installer.ps1",'-Mode','Preview','-AssettoCorsaRoot',"$acRoot" -Wait -NoNewWindow
+  ```
+
+Em todas as três formas, o instalador continua sendo o mesmo; o que muda é só como você captura/visualiza a saída. Erros são sempre impressos em stderr antes de fechar.
+
 ## 2. Instalar (após revisão e backup)
 
 `-BackupRoot` é opcional; sem ele, o instalador escolhe uma pasta de backup no perfil do usuário. O journal fica no backup por padrão. Informe caminho explícito se desejado. A raiz AC precisa conter `acs.exe` ou `acs_x86.exe` e `apps`; o destino é `<raiz>\apps\lua\SimOpenTrackDay`.
@@ -53,4 +78,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\build_package.p
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\build_package.ps1" -OutputPath "D:\deliveries\SimOpenTrackDay-0.1" -Build
 ```
 
-`tools/test_package.ps1` e `tools/test_installer.ps1` usam sandbox/mocks sob `%LOCALAPPDATA%\Temp\opencode`; não validam instalação real nem CSP. `tools/test_distribution.ps1` é o teste de integração com arquivos-fonte reais e permanece pendente de implementação/execução. Rendering e comportamento CSP permanecem para validação manual pelo usuário, preservando instalações e settings existentes.
+`tools/test_package.ps1`, `tools/test_installer.ps1` e `tools/test_distribution.ps1` usam sandbox/mocks sob `%LOCALAPPDATA%\Temp\opencode`; `test_distribution.ps1` integra o pacote com a fonte real. Nenhum deles valida instalação real nem CSP. Rendering e comportamento CSP permanecem para validação manual pelo usuário, preservando instalações e settings existentes.

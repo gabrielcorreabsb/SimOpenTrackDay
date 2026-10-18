@@ -32,7 +32,7 @@ The entry point registers required CSP functions and checks compatibility. This 
 
 ## Manual installation
 
-For the packaged preview workflow (build, preview, install and rollback), see the [package and installer guide](docs/INSTALL.md). The installer is not executed on the user's behalf.
+For the packaged preview workflow (build, preview, install and rollback), see the [package and installer guide](docs/INSTALL.md). The installer is not executed on the user's behalf. When launching the installer in Preview or Rollback, run it from an open terminal or redirect the output (e.g. `*> "D:\preview.txt"`) — the window closes immediately after printing, which is normal PowerShell behavior.
 
 The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
 
