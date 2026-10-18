@@ -9,6 +9,8 @@ local ac_isWindowOpen = ac.isWindowOpen
 local ac_overrideCarControls = ac.overrideCarControls
 local ac_getTrackAISplineSides = ac.getTrackAISplineSides
 local ui = ui
+local Localization = require('Localization')
+local function T(source, ...) return Localization.text(source, ...) end
 local ui_columns = ui.columns
 local ui_setColumnWidth = ui.setColumnWidth
 local ui_nextColumn = ui.nextColumn
@@ -104,12 +106,12 @@ local carTableColumns_tooltip = { }
 
 -- this table is only used to set the data to the actual data holders i.e. the tables named carTableColumns_xxx
 local carTableColumns_dataBeforeDoD = {
-  { name = '#', orderDirection = 0, width = 35, tooltip='Car ID' },
+  { name = '#', orderDirection = 0, width = 35, tooltip='Car ID', id = 'car.id' },
   -- { name = 'Distance (m)', orderDirection = -1, width = 100, tooltip='Distance to player' },
-  { name = 'SplinePosition', orderDirection = 0, width = 50, tooltip='Spline Position' },
-  { name = 'SplineSides', orderDirection = 0, width = 75, tooltip='Spline Sides' },
+  { name = 'SplinePosition', orderDirection = 0, width = 50, tooltip='Spline Position', id = 'car.splinePosition' },
+  { name = 'SplineSides', orderDirection = 0, width = 75, tooltip='Spline Sides', id = 'car.splineSides' },
   -- { name = 'MaxSpeed', orderDirection = 0, width = 70, tooltip='Max Speed' },
-  { name = 'Speed', orderDirection = 0, width = 70, tooltip='Current velocity' },
+  { name = 'Speed', orderDirection = 0, width = 70, tooltip='Current velocity', id = 'car.speed' },
   { name = 'AvgSpeed', orderDirection = 0, width = 75, tooltip='Average speed' },
   { name = 'ActualOffset', orderDirection = 0, width = 88, tooltip='Actual Lateral offset from centerline' },
   { name = 'CalculatedOffset', orderDirection = 0, width = 110, tooltip='Lateral offset from centerline' },
@@ -138,6 +140,18 @@ local carTableColumns_dataBeforeDoD = {
   { name = 'PreviousStateExitReason', orderDirection = 0, width = 250, tooltip='Reason for last state exit' },
   { name = "CantYieldReason", orderDirection = 0, width = 220, tooltip="Reason why the car can't yield" },
   { name = "CantOvertakeReason", orderDirection = 0, width = 260, tooltip="Reason why the car can't overtake" },
+}
+
+local carColumnDisplayNames = {
+  SplinePosition = 'Spline Position', SplineSides = 'Spline Sides', AvgSpeed = 'Average speed',
+  ActualOffset = 'Actual Lateral offset', CalculatedOffset = 'Lateral offset', TargetOffset = 'Desired lateral offset',
+  ['Pedals (C,B,G)'] = 'Pedal positions', ThrottlePedalLimit = 'Max throttle pedal limit',
+  TopSpeedLimit = 'AI top speed limit', AICaution = 'AI caution level', AIAggression = 'AI aggression level',
+  AIDifficultyLevel = 'AI difficulty level', Grip = 'AI grip level', ClosingSpeed = 'Closing speed',
+  TimeToCollide = 'Time to collide', FrontCarDistance = 'Distance to car in front', PreviousState = 'Previous state',
+  CurrentState = 'Current state', TimeInState = 'Time in current state', Yielding = 'Yielding status',
+  Overtaking = 'Overtaking status', PreviousStateExitReason = 'Reason for last state exit',
+  CantYieldReason = "Reason why the car can't yield", CantOvertakeReason = "Reason why the car can't overtake",
 }
 
 local uiCarListSelectedIndex = 0
@@ -198,8 +212,8 @@ UIManager.drawUICarList = function()
 
   if not storage_Debugging.drawCarList then
     ui_newLine(1)
-    ui_textColored('To understand exactly what each AI car is doing, enable the "Show the UI Car List" option in the Debugging settings.', ColorManager.RGBM_Colors.Aquamarine)
-    ui_textColored('A table of all the cars will then be displayed here showing all kinds of data about the cars and the kinds of decisions they are taking.', ColorManager.RGBM_Colors.Aquamarine)
+    ui_textColored(T('To understand exactly what each AI car is doing, enable the "Show the UI Car List" option in the Debugging settings.'), ColorManager.RGBM_Colors.Aquamarine)
+    ui_textColored(T('A table of all the cars will then be displayed here showing all kinds of data about the cars and the kinds of decisions they are taking.'), ColorManager.RGBM_Colors.Aquamarine)
     return
   end
 
@@ -211,8 +225,10 @@ UIManager.drawUICarList = function()
     if not uiCarListSetDefaultColumnWidths then
       ui_setColumnWidth(col-1, carTableColumns_width[col])
     end
-    UIOperations_addTooltipOnTableColumnHeader(carTableColumns_tooltip[col], '##carListTableHeaderTip', col)
-    ui_columnSortingHeader(carTableColumns_name[col], carTableColumns_orderDirection[col])
+    UIOperations_addTooltipOnTableColumnHeader(T(carTableColumns_tooltip[col]), '##carListTableHeaderTip', col)
+    local sourceName = carTableColumns_name[col]
+    local displayName = carColumnDisplayNames[sourceName] or sourceName
+    ui_columnSortingHeader(Localization.label(T(displayName), 'car.column.' .. sourceName), carTableColumns_orderDirection[col])
   end
 
   uiCarListSetDefaultColumnWidths = true  -- only set the default column widths once
@@ -225,13 +241,13 @@ UIManager.drawUICarList = function()
     if car and CarManager.cars_initialized[carIndex] then
       -- local distShown = order[n].d or CarManager.cars_distanceFromPlayerToCar[carIndex]
       local state = CarStateMachine_getCurrentState(carIndex)
-      local throttleLimitString = (not (CarManager.cars_throttleLimit[carIndex] == 1)) and string_format('%.2f', CarManager.cars_throttleLimit[carIndex]) or 'no limit'
-      local aiTopSpeedString = (not (CarManager.cars_aiTopSpeed[carIndex] == math.huge)) and string_format('%d km/h', CarManager.cars_aiTopSpeed[carIndex]) or 'no limit'
+      local throttleLimitString = (not (CarManager.cars_throttleLimit[carIndex] == 1)) and string_format('%.2f', CarManager.cars_throttleLimit[carIndex]) or T('no limit')
+      local aiTopSpeedString = (not (CarManager.cars_aiTopSpeed[carIndex] == math.huge)) and string_format('%d km/h', CarManager.cars_aiTopSpeed[carIndex]) or T('no limit')
       -- local cantYieldReason = CarManager.cars_reasonWhyCantYield[carIndex] or ''
       -- local cantYieldReason = Strings.StringValues[Strings.StringCategories.ReasonWhyCantYield][CarManager.cars_reasonWhyCantYield_NAME[carIndex]] or ''
       -- local cantOvertakeReason = CarManager.cars_reasonWhyCantOvertake[carIndex] or ''
-      local cantYieldReason = StringsManager_resolveStringValue(Strings.StringCategories.ReasonWhyCantYield, CarManager.cars_reasonWhyCantYield_NAME[carIndex]) or ''
-      local cantOvertakeReason = StringsManager_resolveStringValue(Strings.StringCategories.ReasonWhyCantOvertake, CarManager.cars_reasonWhyCantOvertake_NAME[carIndex]) or ''
+      local cantYieldReason = T(StringsManager_resolveStringValue(Strings.StringCategories.ReasonWhyCantYield, CarManager.cars_reasonWhyCantYield_NAME[carIndex]) or '')
+      local cantOvertakeReason = T(StringsManager_resolveStringValue(Strings.StringCategories.ReasonWhyCantOvertake, CarManager.cars_reasonWhyCantOvertake_NAME[carIndex]) or '')
       local uiColor = CARSTATES_TO_CARLIST_ROW_TEXT_COLOR_CURRENTSTATE[state] or ColorManager.RGBM_Colors.White
       if car.index == 0 then
         uiColor = CARLIST_ROW_TEXT_COLOR_LOCALPLAYER
@@ -262,7 +278,7 @@ UIManager.drawUICarList = function()
       -- local previousCarState = CarStateMachine.cars_previousState[carIndex]
       local previousCarState = CarStateMachine_getPreviousState(carIndex)
       -- local lastStateExitReason = CarManager.cars_statesExitReason[carIndex][previousCarState] or ''
-      local lastStateExitReason = StringsManager_resolveStringValue(Strings.StringCategories.StateExitReason, CarManager.cars_statesExitReason_NAME[carIndex][previousCarState]) or ''
+      local lastStateExitReason = T(StringsManager_resolveStringValue(Strings.StringCategories.StateExitReason, CarManager.cars_statesExitReason_NAME[carIndex][previousCarState]) or '')
 
       -- local isMidCorner, distanceToUpcomingTurn = CarManager.isCarMidCorner(carIndex)
 
@@ -317,7 +333,7 @@ UIManager.drawUICarList = function()
       ui_setCursorScreenPos(rowTop)
 
       -- Row cells
-      ui_textColored(string_format("#%02d", carIndex), uiColor); ui_nextColumn()
+         ui_textColored(string_format("#%02d", carIndex), uiColor); ui_nextColumn()
       -- if ui.itemHovered() then ui.setTooltip(carTableColumns_tooltip[1]) end
       -- ui.textColored(string_format("%.3f", distShown or 0), uiColor); ui.nextColumn()
       ui_textColored(string_format("%.3f", carSplinePosition), uiColor); ui_nextColumn()
@@ -343,23 +359,23 @@ UIManager.drawUICarList = function()
       ui_textColored(string_format("%.2f m", distanceToFrontCar), uiColor); ui_nextColumn()
       -- ui.textColored(tostring(CarManager.cars_aiStopCounter[carIndex] or 0), uiColor); ui.nextColumn()
       -- ui.textColored(tostring(CarManager.cars_gentleStop[carIndex]), uiColor); ui.nextColumn()
-      ui_textColored(CarStateMachine.CarStateTypeStrings[previousCarState], uiColor); ui_nextColumn()
-      ui_textColored(CarStateMachine.CarStateTypeStrings[state], uiColor); ui_nextColumn()
+       ui_textColored(T(CarStateMachine.CarStateTypeStrings[previousCarState]), uiColor); ui_nextColumn()
+       ui_textColored(T(CarStateMachine.CarStateTypeStrings[state]), uiColor); ui_nextColumn()
       ui_textColored(string_format("%.1fs", CarManager.cars_timeInCurrentState[carIndex]), uiColor); ui_nextColumn()
       -- if CarManager.cars_currentlyYielding[carIndex] then
       if currentlyYielding then
         -- ui.textColored(string_format("yes (%.1fs)", CarManager.cars_yieldTime[carIndex] or 0), uiColor)
-        ui_textColored(string_format("yes #%d", currentlyYieldingCarIndex), uiColor)
+         ui_textColored(T("yes #%d", currentlyYieldingCarIndex), uiColor)
       else
-        ui_textColored("no", uiColor)
+        ui_textColored(T("no"), uiColor)
       end
       ui_nextColumn()
       if currentlyOvertaking then
         -- ui.textColored(string_format("yes (%.1fs)", CarManager.cars_yieldTime[i] or 0), uiColor)
         -- ui.textColored(string_format("yes"), uiColor)
-        ui_textColored(string_format("yes #%d", currentlyOvertakingCarIndex), uiColor)
+         ui_textColored(T("yes #%d", currentlyOvertakingCarIndex), uiColor)
       else
-        ui_textColored("no", uiColor)
+        ui_textColored(T("no"), uiColor)
       end
       ui_nextColumn()
 
@@ -492,8 +508,9 @@ UIManager.drawMainWindowLateralOffsetsSection = function()
     -- ui.dwriteText('Driving Lanes', 15)
     -- ui.newLine(1)
 
-    ui_columns(2, false, "mainWindow_lateralsSection")
-    ui_setColumnWidth(0, 260)
+    local wide = ui.availableSpaceX() >= 700
+    ui_columns(wide and 2 or 1, false, "mainWindow_lateralsSection")
+    if wide then ui_setColumnWidth(0, 260) end
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
@@ -507,52 +524,52 @@ UIManager.drawMainWindowLateralOffsetsSection = function()
 
     ui_newLine(1)
     if handleOvertaking then
-      ui_text(string_format('Overtaking Lateral Offset: %.3f (%s)', storage.overtakingLateralOffset, overtakingSideString))
+      ui_text(T('Overtaking Lateral Offset: %.3f (%s)', storage.overtakingLateralOffset, T(overtakingSideString)))
       ui_newLine(1)
     end
-    ui_text(string_format('Default Lateral Offset: %.3f (%s)', storage.defaultLateralOffset, defaultDrivingSideString))
+    ui_text(T('Default Lateral Offset: %.3f (%s)', storage.defaultLateralOffset, T(defaultDrivingSideString)))
     if handleYielding then
       ui_newLine(1)
-      ui_text(string_format('Yielding Lateral Offset: %.3f (%s)', storage.yieldingLateralOffset, yieldingSideString))
+      ui_text(T('Yielding Lateral Offset: %.3f (%s)', storage.yieldingLateralOffset, T(yieldingSideString)))
     end
 
-    ui_nextColumn()
+    if wide then ui_nextColumn() else ui_newLine(1) end
 
     UILateralOffsetsImageWidget_draw(storage)
     --ui.textColored(string_format('Yielding side: %s, Overtaking side: %s', yieldingSideString, overtakingSideString), ColorManager.RGBM_Colors.LightSeaGreen)
 
     if yieldingSide == overtakingSide then
-      ui_textColored('Yielding side and overtaking side are the same!', ColorManager.RGBM_Colors.Yellow)
+      ui_textColored(T('Yielding side and overtaking side are the same!'), ColorManager.RGBM_Colors.Yellow)
     end
 
     -- end the table
     ui_columns(1, false)
     ui_newLine(1)
     ui_textColored(
-      "These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings).", 
+      T("These lateral offsets for the AI cars dictate the side of the track they should drive on depending on what they are currently doing (modifyable from the Settings)."),
       ColorManager.RGBM_Colors.DarkGray)
 end
 
 UIManager.drawAppNotRunningMessageInMainWindow = function()
     local isOnline = Constants.IS_ONLINE
 
-    ui_textColored(string_format('Realistic Trackday not running.', tostring(storage.enabled), tostring(Constants.IS_ONLINE)), ColorManager.RGBM_Colors.Red)
+    ui_textColored(T('SimOpenTrackDay is not running.'), ColorManager.RGBM_Colors.Red)
     if not isOnline then
       -- ui_textColored('You can enable the app from the Settings', ColorManager.RGBM_Colors.Red)
-      ui_text('You can enable the app from the Settings.')
+      ui_text(T('You can enable the app from the Settings.'))
     end
     ui_newLine(1)
 
     local appEnabled = storage.enabled
-    ui_text('App Enabled: ')
+    ui_text(T('App Enabled: '))
     ui_sameLine()
     local appEnabledColor = appEnabled and ColorManager.RGBM_Colors.Green or ColorManager.RGBM_Colors.Red
-    ui_textColored(string_format('%s', appEnabled and "yes" or "no"), appEnabledColor)
+    ui_textColored(T(appEnabled and 'yes' or 'no'), appEnabledColor)
 
-    ui_text('Playing Online: ')
+    ui_text(T('Playing Online: '))
     ui_sameLine()
     local isOnlineColor = isOnline and ColorManager.RGBM_Colors.Red or ColorManager.RGBM_Colors.Green
-    ui_textColored(string_format('%s', isOnline and "yes" or "no"), isOnlineColor)
+    ui_textColored(T(isOnline and 'yes' or 'no'), isOnlineColor)
 end
 
 ---Opens or closes the specified window.

@@ -636,11 +636,13 @@ local storageTable_Behavior = {
 
 ---@class StorageTable_Global
 ---@field appRanFirstTime boolean
+---@field uiLanguage string
 
 ---@type StorageTable_Global
 local storageTable_Global = {
     appRanFirstTime = false,
     usingAppVersion = Constants.APP_VERSION,  -- to determine if the user updated the app version
+    uiLanguage = 'en',
 }
 
 

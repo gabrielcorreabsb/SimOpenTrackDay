@@ -1,46 +1,47 @@
 # SimOpenTrackDay
 
-SimOpenTrackDay é um app em Lua para Assetto Corsa, executado pelo Custom Shaders Patch (CSP). O projeto ajuda os carros controlados pela IA a ceder passagem e ultrapassar em sessões de track day, em vez de permanecerem sempre na linha de corrida.
+SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders Patch (CSP). It helps AI-controlled cars yield and overtake during track-day sessions instead of staying on the racing line at all times.
 
-Este é um projeto derivado independente, em desenvolvimento. Não é uma versão reescrita do zero nem um build publicado ou homologado. O `VERSION = 0.9.8` ainda presente no manifest é metadado herdado, não uma indicação de release estável. O comportamento em runtime e a apresentação visual no CSP ainda não foram validados in-game.
+This is an independent derivative project under development. It is neither a ground-up rewrite nor a published or certified build. `VERSION = 0.9.8` in the manifest is inherited metadata, not an indication of a stable release. Runtime behavior and visual presentation in CSP have not been validated in-game.
 
-- [Instalação manual](#instalação-manual)
-- [Uso básico](#uso-básico)
-- [Testes locais](#testes-locais)
-- [Contribuição](CONTRIBUTING.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Testes detalhados](docs/TESTING.md) · [Onboarding](docs/AGENT.md)
-- [Reportar um problema](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
+- [Manual installation](#manual-installation)
+- [Basic usage](#basic-usage)
+- [Local checks](#local-checks)
+- [Documentation index](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Detailed testing](docs/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/plans/PROJECT_ORGANIZATION.md)
+- [Report an issue](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
 
-## O que o app oferece
+## What the app provides
 
-- Lógica de yield e overtake para carros IA, com offsets laterais configuráveis.
-- Perfis de comportamento e opções de condução em `SettingsWindow.lua`.
-- Configurações associadas à pista e ao tipo de sessão por meio de `StorageManager`.
-- Janela principal com lista de carros e ferramentas de diagnóstico; a interface de configurações é separada.
+- Yield and overtake logic for AI cars, with configurable lateral offsets.
+- Behavior profiles and driving options in `SettingsWindow.lua`.
+- Track- and session-specific settings through `StorageManager`.
+- A main window with a car list and diagnostic tools; settings are in a separate window.
+- UI presentation is localized in English, Brazilian Portuguese, and Spanish; see the [localization reference](docs/LOCALIZATION.md).
 
-O resultado depende da pista, da sessão e das APIs disponíveis na versão instalada do CSP. Consulte [Testing](docs/TESTING.md) antes de experimentar e não trate os checks headless como validação in-game.
+Results depend on the track, session, and APIs available in the installed CSP version. Consult [Testing](docs/TESTING.md) before experimenting; headless checks are not in-game validation.
 
-## Requisitos
+## Requirements
 
-- Assetto Corsa para PC.
-- Custom Shaders Patch (CSP) instalado e habilitado para Lua Apps.
-- Uso somente em sessões offline; o app não é executável em sessões online/multiplayer.
-- LuaJIT 2.1 é necessário para executar os checks locais; o app é carregado pelo ambiente Lua do CSP.
+- Assetto Corsa for PC.
+- Custom Shaders Patch (CSP) installed with Lua Apps enabled.
+- Offline sessions only; the app cannot run in online/multiplayer sessions.
+- LuaJIT 2.1 is required for local checks; the app runs in CSP's Lua environment.
 
-O entry point registra funções CSP exigidas pelo app e verifica compatibilidade. Este README não fixa uma versão mínima de CSP; consulte os avisos do app/CSP e os resultados em runtime.
+The entry point registers required CSP functions and checks compatibility. This README does not specify a minimum CSP version; consult app/CSP warnings and runtime results.
 
-## Instalação manual
+## Manual installation
 
-O repositório contém o código-fonte na raiz; a pasta de instalação do app é `apps/lua/SimOpenTrackDay/`. Faça uma cópia manual do payload de runtime:
+The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
 
-- arquivos `.lua` de runtime na raiz, incluindo `SimOpenTrackDay.lua`;
-- `manifest.ini` e `LICENSE`;
-- pastas `CarStateMachine/`, `DataStructures/`, `Strings/` e `lib/`.
+- Runtime `.lua` files at the root, including `SimOpenTrackDay.lua`;
+- `manifest.ini` and `LICENSE`;
+- `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/` directories.
 
-A instalação deve conter `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua` — o nome do diretório e o do entry point devem corresponder. Não copie os metadados do Git (diretórios `.git/` ou arquivos `.git`), `tools/`, `docs/`, `artifacts/` ou arquivos `*.bak`. O código do submódulo de compatibilidade em `lib/AssettoCorsaCSPLuaCompatibilityManager/` faz parte do runtime; não copie os metadados Git do submódulo.
+The installation must contain `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; the directory and entry-point names must match. Do not copy Git metadata (`.git/` directories or `.git` files), `tools/`, `docs/`, `artifacts/`, or `*.bak` files. The compatibility submodule at `lib/AssettoCorsaCSPLuaCompatibilityManager/` is part of runtime; do not copy the submodule's Git metadata.
 
-Preserve instalações e configurações existentes. Use uma pasta de app separada para testar; não remova ou substitua diretórios antigos nem redefina dados do usuário como parte da instalação ou rollback.
+Preserve existing installations and settings. Use a separate app directory for testing; do not remove or replace old directories or reset user data during installation or rollback.
 
-### Clonar para desenvolvimento
+### Clone for development
 
 ```sh
 git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git
@@ -48,52 +49,53 @@ cd SimOpenTrackDay
 git submodule update --init --recursive
 ```
 
-A cópia recursiva obtém o submodule de compatibilidade. O SDK CSP está em `lib/ac_apps/`; ele é código vendor e não deve ser editado como código do app.
+The recursive clone obtains the compatibility submodule. The CSP SDK is in `lib/ac_apps/`; it is vendor code and must not be edited as app code.
 
-## Uso básico
+## Basic usage
 
-1. Instale manualmente os arquivos de runtime e habilite SimOpenTrackDay entre as Lua Apps do CSP.
-2. Inicie uma sessão offline com carros IA em uma pista compatível com AI spline. O app não roda online/multiplayer.
-3. Abra a janela do app pelo sidebar do Assetto Corsa. Use a janela de configurações para conferir o estado de habilitação e ajustar opções disponíveis.
+1. Manually install the runtime files and enable SimOpenTrackDay among CSP Lua Apps.
+2. Start an offline session with AI cars on a track with a compatible AI spline. The app does not run online/multiplayer.
+3. Open the app from the Assetto Corsa sidebar. Use the settings window to check whether it is enabled and adjust available options.
 
-A lista de carros e opções de diagnóstico podem ter custo de renderização. Para investigação, habilite apenas o que for necessário e desative as opções de debug ao terminar. A interação e os resultados precisam ser confirmados no CSP; este guia não afirma validação visual.
+The car list and diagnostic options can incur rendering cost. Enable only what is needed for investigation and turn debug options off afterward. Interaction and results must be confirmed in CSP; this guide does not claim visual validation.
 
-## Estrutura do projeto
+## Project structure
 
 ```text
-SimOpenTrackDay.lua       entry point e callbacks do manifest
-SettingsWindow.lua        interface de configurações
-StorageManager.lua        opções, perfis e storage por pista/sessão
-CarManager.lua            estado/cache dos carros IA
-CarOperations.lua         operações de yield/overtake e chamadas physics
-CarStateMachine/          estados de comportamento dos carros
-UIManager.lua              lista de carros e visualizações de debug
-lib/uilib/                 componentes de UI próprios do projeto
-lib/ac_apps/               SDK CSP distribuído
+SimOpenTrackDay.lua       entry point and manifest callbacks
+SettingsWindow.lua        settings interface
+StorageManager.lua        options, profiles, track/session storage
+CarManager.lua            AI car state/cache
+CarOperations.lua         yield/overtake operations and physics calls
+CarStateMachine/          car behavior states
+UIManager.lua              car list and debug views
+lib/uilib/                 project-owned UI components
+lib/ac_apps/               distributed CSP SDK
 lib/AssettoCorsaCSPLuaCompatibilityManager/
-                           submodule de compatibilidade
-Strings/ DataStructures/  suporte de texto e estruturas
-tools/ docs/               checks e documentação
+                            compatibility submodule
+Strings/ DataStructures/  text support and data structures
+tools/ docs/               checks and documentation
 ```
 
-Veja [Architecture](docs/ARCHITECTURE.md) para o fluxo de módulos e [State machine](docs/STATE_MACHINE.md) para os estados documentados.
+See [Architecture](docs/ARCHITECTURE.md) for module flow and [State machine](docs/STATE_MACHINE.md) for documented states.
 
-## Testes locais
+## Local checks
 
-A partir da raiz do repositório, com LuaJIT no `PATH`:
+From the repository root, with LuaJIT on `PATH`:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
 luajit tools/test_ui_smoke.lua
 luajit tools/test_logo_smoke.lua
+luajit tools/test_localization.lua
 ```
 
-O checker aceita `-LuaJitPath` e `-Root` opcionais. Os smoke tests usam mocks e verificam apenas os caminhos exercitados; não carregam Assetto Corsa/CSP nem validam rendering real. A comparação contra baseline original é opcional: defina `RTD_BASELINE_SETTINGS` com o caminho local do arquivo-fonte baseline antes de rodar `test_ui_smoke.lua`. A fixture versionada local continua sendo o padrão e não é atualizada automaticamente.
+The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `RTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. The versioned fixture remains the default and is not automatically updated.
 
-Os últimos resultados headless registrados são sintaxe 66, UI mock 542, logo mock 21 e comparação opcional com baseline 607. Esses números descrevem execuções anteriores, não uma garantia futura nem um teste in-game. Runtime CSP e validação visual permanecem pendentes.
+The localization command is included above. See [Testing](docs/TESTING.md) for command scope and limitations. CSP runtime and visual validation remain pending.
 
-## Créditos e licença
+## Credits and license
 
-SimOpenTrackDay é um projeto derivado independente baseado em [Assetto Corsa Realistic Trackday](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), criado por [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech). O projeto original é distribuído sob a licença MIT, copyright © 2025 Andreas Grech; consulte [`LICENSE`](LICENSE). O histórico Git e os créditos originais são preservados.
+SimOpenTrackDay is an independent derivative project based on [Assetto Corsa Realistic Trackday](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), created by [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech). The original project is distributed under the MIT license, copyright © 2025 Andreas Grech; see [`LICENSE`](LICENSE). Git history and original credits are preserved.
 
-O submodule [AssettoCorsaCSPLuaCompatibilityManager](https://github.com/dreasgrech/AssettoCorsaCSPLuaCompatibilityManager) e o SDK CSP têm suas próprias origens/licenças; mantenha seus arquivos e avisos de licença intactos.
+The [AssettoCorsaCSPLuaCompatibilityManager](https://github.com/dreasgrech/AssettoCorsaCSPLuaCompatibilityManager) submodule and CSP SDK have their own origins/licenses; keep their files and license notices intact.

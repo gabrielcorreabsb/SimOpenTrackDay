@@ -1,85 +1,80 @@
-# Máquina de Estados (FSM) dos Carros IA — SimOpenTrackDay
+# AI Car State Machine (FSM) — SimOpenTrackDay
 
-Documento descreve a **Finite State Machine (FSM)** que governa o comportamento
-de cada carro IA: estados, o que fazem, transições e como adicionar novos.
+This document describes the **Finite State Machine (FSM)** that governs each AI car's behavior: its states, what they do, transitions, and how to add new states.
 
-- **Arquivo central:** `CarStateMachine/CarStateMachine.lua`
-- **Estados:** `CarStateMachine/States/CarState_<Nome>.lua`
+- **Central file:** `CarStateMachine/CarStateMachine.lua`
+- **States:** `CarStateMachine/States/CarState_<Name>.lua`
 - **Template:** `CarStateMachine/CarState_TEMPLATE.lua`
-- **Enum:** `CarStateMachine.CarStateType` em `CarStateMachine/CarStateMachine.lua`
+- **Enum:** `CarStateMachine.CarStateType` in `CarStateMachine/CarStateMachine.lua`
 
 ---
 
-## 1. Visão geral
+## 1. Overview
 
-Cada carro IA é uma **FSM** com três peças de estado por carro:
+Each AI car is an **FSM** with three per-car state values:
 
-| Dado | Tabela | Conteúdo |
+| Data | Table | Contents |
 | --- | --- | --- |
-| Estado atual | `cars_state[carIndex]` | valor do enum `CarStateType` |
-| Estado anterior | `CarStateMachine.cars_previousState[carIndex]` | de onde viemos |
-| Tempo no estado | `CarManager.cars_timeInCurrentState[carIndex]` | segundos acumulados |
+| Current state | `cars_state[carIndex]` | `CarStateType` enum value |
+| Previous state | `CarStateMachine.cars_previousState[carIndex]` | The state we came from |
+| Time in state | `CarManager.cars_timeInCurrentState[carIndex]` | Accumulated seconds |
 
-### Enum `CarStateType` (bitmask)
+### `CarStateType` enum (bitmask)
 
-Cada estado é uma **potência de 2** (bitmask), mas a FSM usa um valor por vez.
+Each state is a **power of 2** (bitmask), but the FSM uses one value at a time.
 
-| Valor | Estado | Valor | Estado |
+| Value | State | Value | State |
 | --- | --- | --- | --- |
 | 1 | `DRIVING_NORMALLY` | 1024 | `EASING_IN_OVERTAKE` |
 | 4 | `EASING_IN_YIELD` | 2048 | `STAYING_ON_OVERTAKING_LANE` |
 | 8 | `STAYING_ON_YIELDING_LANE` | 4096 | `EASING_OUT_OVERTAKE` |
 | 32 | `EASING_OUT_YIELD` | 8192 | `NAVIGATING_AROUND_ACCIDENT` |
-| 64 | `WAITING_AFTER_ACCIDENT` (só enum) | 16384 | `DRIVING_IN_YELLOW_FLAG_ZONE` |
+| 64 | `WAITING_AFTER_ACCIDENT` (enum only) | 16384 | `DRIVING_IN_YELLOW_FLAG_ZONE` |
 | 128 | `COLLIDED_WITH_TRACK` | 32768 | `AFTER_CUSTOMAIFLOOD_TELEPORT` |
 | 256 | `COLLIDED_WITH_CAR` | 65536 | `DEFENDING_POSITION` |
 | 512 | `ANOTHER_CAR_COLLIDED_INTO_ME` | | |
 
-> `WAITING_AFTER_ACCIDENT` existe só no enum; sem arquivo nem funções (legado).
+> `WAITING_AFTER_ACCIDENT` exists only in the enum; it has no file or functions (legacy).
 
-### Contrato das 4 funções
+### Four-function contract
 
-Todo estado registra **4 funções** em **tabelas paralelas** indexadas pelo valor
-do estado:
+Each state registers **4 functions** in **parallel tables** indexed by the state value:
 
-| Tabela | Função | Papel |
+| Table | Function | Role |
 | --- | --- | --- |
-| `states_entryFunctions` | `entry` | uma vez, ao entrar |
-| `states_updateFunctions` | `update` | todo frame no estado |
-| `states_transitionFunctions` | `transition` | decide o próximo estado (ou `nil`) |
-| `states_exitFunctions` | `exit` | limpeza, ao sair |
+| `states_entryFunctions` | `entry` | once, on entry |
+| `states_updateFunctions` | `update` | every frame in the state |
+| `states_transitionFunctions` | `transition` | chooses the next state (or `nil`) |
+| `states_exitFunctions` | `exit` | cleanup on exit |
 
-`states_minimumTimeInState[state]` define o tempo mínimo (s) antes de poder sair.
+`states_minimumTimeInState[state]` defines the minimum time (s) before the state can be exited.
 
-### Dispatch de `updateCar`
+### `updateCar` dispatch
 
 `CarStateMachine.updateCar(carIndex, dt, sortedCarsList, sortedCarsListIndex)`
-(`CarStateMachine/CarStateMachine.lua`) roda por frame nesta ordem:
+(`CarStateMachine/CarStateMachine.lua`) runs each frame in this order:
 
-1. **Transição enfileirada:** se há `queuedStatesToTransitionInto`, faz
-   `changeState` e chama a `entry` do novo estado.
-2. **Update:** chama `states_updateFunctions[state]`.
-3. **Incrementa** `cars_timeInCurrentState += dt`.
-4. **Tempo mínimo:** se `currentTimeInState < minimumTimeInState`, `return`.
-5. **Transição:** chama `states_transitionFunctions[state]`; se retornar um
-   estado, chama a `exit` atual e **enfileira** a transição.
+1. **Queued transition:** if `queuedStatesToTransitionInto` exists, call `changeState` and run the new state's `entry`.
+2. **Update:** call `states_updateFunctions[state]`.
+3. **Increment** `cars_timeInCurrentState += dt`.
+4. **Minimum time:** if `currentTimeInState < minimumTimeInState`, `return`.
+5. **Transition:** call `states_transitionFunctions[state]`; if it returns a state, call the current `exit` and **queue** the transition.
 
-Ou seja: `entry` ocorre no frame seguinte ao `transition`; `exit` é imediato
-quando o `transition` decide mudar.
+In other words: `entry` runs in the frame after `transition`; `exit` is immediate when `transition` decides to change state.
 
 ---
 
-## 2. Diagrama de transições (ASCII)
+## 2. Transition diagram (ASCII)
 
 ```
                           +---------------------+
-                          |  DRIVING_NORMALLY   |  <- estado inicial/default
+                          |  DRIVING_NORMALLY   |  <- initial/default state
                           +----------+----------+
                                      |
         +----------------------------+----------------------------+
         |                    |                    |               |
-   [yield carro        [overtake carro       [bandeira        [acidente
-    atrás]              à frente]             amarela]         à frente]
+   [car behind         [car ahead         [yellow flag       [accident
+    requests yield]     to overtake]        ahead]             ahead]
         |                    |                    |               |
         v                    v                    v               |
 +-------+---------+  +-------+----------+  +------+-------+       |
@@ -104,292 +99,210 @@ quando o `transition` decide mudar.
           +---------------------+
 ```
 
-### Estados especiais (fora do fluxo principal)
+### Special states (outside the main flow)
 
 ```
 +---------------------+------------------------------------------------------+
-| DEFENDING_POSITION  | mantém a linha de corrida por defenseDuration_s sob  |
-|                     | pressão; ao expirar -> EASING_IN_YIELD.              |
+| DEFENDING_POSITION  | holds the racing line for defenseDuration_s under   |
+|                     | pressure; when it expires -> EASING_IN_YIELD.       |
 +---------------------+------------------------------------------------------+
-| DRIVING_IN_YELLOW_  | entra em zona de acidente: reduz velocidade,         |
-| FLAG_ZONE           | hazards ligados, colisões desativadas.               |
+| DRIVING_IN_YELLOW_  | enters an accident zone: reduces speed,             |
+| FLAG_ZONE           | hazards on, collisions disabled.                    |
 +---------------------+------------------------------------------------------+
-| NAVIGATING_AROUND_  | desvia de carro parado/acidentado via                |
+| NAVIGATING_AROUND_  | avoids a stopped/crashed car via                    |
 | ACCIDENT            | CollisionAvoidanceManager.computeDesiredLateralOffset|
 +---------------------+------------------------------------------------------+
-| COLLIDED_WITH_TRACK | stubs: apenas desligam o carro. Sem transição.       |
+| COLLIDED_WITH_TRACK | stubs: only stop the car. No transition.            |
 | COLLIDED_WITH_CAR   |                                                      |
-| ANOTHER_CAR_COLLIDED| (este tem minimumTimeInState = 10s)                  |
+| ANOTHER_CAR_COLLIDED| (this state has minimumTimeInState = 10s)           |
 | _INTO_ME            |                                                      |
 +---------------------+------------------------------------------------------+
-| AFTER_CUSTOMAIFLOOD | pós-respawn do AI Flood: reinicia fuel/RPM/gear e   |
-| _TELEPORT           | reativa o carro. Transição vazia (comentada).        |
+| AFTER_CUSTOMAIFLOOD | after AI Flood respawn: resets fuel/RPM/gear and    |
+| _TELEPORT           | reactivates the car. Empty transition (commented).  |
 +---------------------+------------------------------------------------------+
 ```
 
 ---
 
-## 3. Contrato de cada estado
+## 3. Contract for each state
 
-Formato: arquivo, `minimumTimeInState (min)`, `entry`, `update`, transições e
-`exit`.
+Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `exit`.
 
 ### 3.1 DRIVING_NORMALLY
-- **Arquivo:** `CarStateMachine/States/CarState_DrivingNormally.lua` — **min:** `0`
-- **Entry:** sincroniza offset calculado com o real; alvo =
-  `storage.defaultLateralOffset`; limpa refs de overtake/yield; setas off;
-  restaura aggression/difficulty/grip/caution padrão; reseta throttle.
+- **File:** `CarStateMachine/States/CarState_DrivingNormally.lua` — **min:** `0`
+- **Entry:** synchronizes the calculated offset with the actual offset; target = `storage.defaultLateralOffset`; clears overtake/yield references; turning lights off; restores default aggression/difficulty/grip/caution; resets throttle.
 - **Update:** `driveSafelyToSide(car, targetOffset, 1000, storage.overrideAiAwareness, true, false)`.
-- **Transições:** `handleYellowFlagZone` -> `DRIVING_IN_YELLOW_FLAG_ZONE` /
-  `NAVIGATING_AROUND_ACCIDENT`; `handleShouldWeYieldToBehindCar` ->
-  `EASING_IN_YIELD`; `handleShouldWeOvertakeFrontCar` -> `EASING_IN_OVERTAKE`.
-- **Exit:** `ReasonWhyCantYield = None`. Ignora nos pits ou dentro de
-  `storage.deferTimeAfterSessionStart`.
+- **Transitions:** `handleYellowFlagZone` -> `DRIVING_IN_YELLOW_FLAG_ZONE` / `NAVIGATING_AROUND_ACCIDENT`; `handleShouldWeYieldToBehindCar` -> `EASING_IN_YIELD`; `handleShouldWeOvertakeFrontCar` -> `EASING_IN_OVERTAKE`.
+- **Exit:** `ReasonWhyCantYield = None`. Ignored in the pits or during `storage.deferTimeAfterSessionStart`.
 
 ### 3.2 EASING_IN_YIELD
-- **Arquivo:** `CarStateMachine/States/CarState_EasingInYield.lua` — **min:** `0`
-- **Entry:** valida `cars_currentlyYieldingCarToIndex` (setado pelo estado
-  anterior); offset calculado a partir do real; seta para o lado de yield.
-- **Update:** `yieldSafelyToSide(...)`; sem brecha -> `setAIThrottleLimit(0.4)` +
-  `setPedalPosition(Brake, 0.2)`.
-- **Transições:** perseguidor claramente à frente (`clearAhead_meters`) ->
-  `EASING_OUT_YIELD`; chegou ao offset de yield -> `STAYING_ON_YIELDING_LANE`.
-- **Exit:** reseta brake, throttle limit e setas.
+- **File:** `CarStateMachine/States/CarState_EasingInYield.lua` — **min:** `0`
+- **Entry:** validates `cars_currentlyYieldingCarToIndex` (set by the previous state); calculated offset starts at the actual offset; signals the yielding side.
+- **Update:** `yieldSafelyToSide(...)`; with no gap -> `setAIThrottleLimit(0.4)` + `setPedalPosition(Brake, 0.2)`.
+- **Transitions:** pursuer clearly ahead (`clearAhead_meters`) -> `EASING_OUT_YIELD`; reached the yielding offset -> `STAYING_ON_YIELDING_LANE`.
+- **Exit:** resets brake, throttle limit, and turning lights.
 
 ### 3.3 STAYING_ON_YIELDING_LANE
-- **Arquivo:** `CarStateMachine/States/CarState_StayingOnYieldingLane.lua` — **min:** `0`
-- **Entry:** valida o carro perseguidor; `ReasonWhyCantYield = None`.
-- **Update:** `setAICaution(AICaution_Yielding)`; agressão/dificuldade de yield
-  opcionais; se perseguidor perto (`distanceToOvertakingCarToLimitSpeed`) limita
-  throttle/top-speed, senão reseta; `yieldSafelyToSide`.
-- **Transições (todas -> `EASING_OUT_YIELD`):** perseguidor não existe, está
-  claramente à frente, claramente atrás, somos mais rápidos (leeway `20` km/h)
-  ou saiu da faixa de overtake.
-- **Exit:** caution, agressão/dificuldade padrão, top-speed, pedais, throttle,
-  setas.
+- **File:** `CarStateMachine/States/CarState_StayingOnYieldingLane.lua` — **min:** `0`
+- **Entry:** validates the pursuing car; `ReasonWhyCantYield = None`.
+- **Update:** `setAICaution(AICaution_Yielding)`; optional yielding aggression/difficulty; if the pursuer is nearby (`distanceToOvertakingCarToLimitSpeed`), limits throttle/top speed, otherwise resets them; `yieldSafelyToSide`.
+- **Transitions (all -> `EASING_OUT_YIELD`):** pursuer does not exist, is clearly ahead, is clearly behind, we are faster (leeway `20` km/h), or it has left the overtaking lane.
+- **Exit:** caution, default aggression/difficulty, top speed, pedals, throttle, and turning lights.
 
 ### 3.4 EASING_OUT_YIELD
-- **Arquivo:** `CarStateMachine/States/CarState_EasingOutYield.lua` — **min:** `0`
-- **Entry:** seta offset calculado; reseta throttle/top-speed/caution; seta
-  invertida (voltando ao centro).
+- **File:** `CarStateMachine/States/CarState_EasingOutYield.lua` — **min:** `0`
+- **Entry:** sets the calculated offset; resets throttle/top speed/caution; signals the opposite direction (returning to center).
 - **Update:** `driveSafelyToSide(..., storage_Yielding.rampRelease_mps, ...)`.
-- **Transições:** `handleShouldWeYieldToBehindCar` -> `EASING_IN_YIELD` (novo
-  carro); chegou ao offset normal (lado de overtake) -> limpa
-  `cars_currentlyYieldingCarToIndex` e vai para `DRIVING_NORMALLY`.
-- **Exit:** setas.
+- **Transitions:** `handleShouldWeYieldToBehindCar` -> `EASING_IN_YIELD` (new car); reached the normal offset (overtaking side) -> clears `cars_currentlyYieldingCarToIndex` and enters `DRIVING_NORMALLY`.
+- **Exit:** turning lights.
 
 ### 3.5 EASING_IN_OVERTAKE
-- **Arquivo:** `CarStateMachine/States/CarState_EasingInOvertake.lua` — **min:** `0`
-- **Entry:** valida `cars_currentlyOvertakingCarIndex`; seta offset calculado.
-- **Update:** `calculateAICautionAggressionDifficultyWhileOvertaking`
-  (aplica caution/agressão/dificuldade) e `overtakeSafelyToSide(...)`.
-- **Transições:** ultrapassado inválido -> `EASING_OUT_OVERTAKE`; carro atrás
-  (≠ ultrapassado) pede yield -> `EASING_IN_YIELD`; chegou ao offset ->
-  `STAYING_ON_OVERTAKING_LANE`.
-- **Exit:** caution, agressão/dificuldade padrão, setas.
+- **File:** `CarStateMachine/States/CarState_EasingInOvertake.lua` — **min:** `0`
+- **Entry:** validates `cars_currentlyOvertakingCarIndex`; sets the calculated offset.
+- **Update:** `calculateAICautionAggressionDifficultyWhileOvertaking` (applies caution/aggression/difficulty) and `overtakeSafelyToSide(...)`.
+- **Transitions:** invalid target -> `EASING_OUT_OVERTAKE`; a car behind (≠ target) requests yield -> `EASING_IN_YIELD`; reached the offset -> `STAYING_ON_OVERTAKING_LANE`.
+- **Exit:** caution, default aggression/difficulty, turning lights.
 
 ### 3.6 STAYING_ON_OVERTAKING_LANE
-- **Arquivo:** `CarStateMachine/States/CarState_StayingOnOvertakingLane.lua` — **min:** `0`
-- **Entry:** vazia.
-- **Update:** recalcula caution/agressão/dificuldade de overtake e
-  `overtakeSafelyToSide` para manter a faixa.
-- **Transições:** ultrapassado inválido -> `EASING_OUT_OVERTAKE`;
-  `handleOvertakeNextCarWhileAlreadyOvertaking` -> permanece; claramente à
-  frente do ultrapassado -> `EASING_OUT_OVERTAKE`; ultrapassado claramente à
-  frente (`clearAhead_meters + 40`) -> `EASING_OUT_OVERTAKE`; carro atrás
-  (≠ ultrapassado) pede yield -> `EASING_IN_YIELD`.
-- **Exit:** caution, dificuldade/agressão padrão, setas.
+- **File:** `CarStateMachine/States/CarState_StayingOnOvertakingLane.lua` — **min:** `0`
+- **Entry:** empty.
+- **Update:** recalculates overtake caution/aggression/difficulty and calls `overtakeSafelyToSide` to remain in the lane.
+- **Transitions:** invalid target -> `EASING_OUT_OVERTAKE`; `handleOvertakeNextCarWhileAlreadyOvertaking` -> remain; clearly ahead of the target -> `EASING_OUT_OVERTAKE`; target clearly ahead (`clearAhead_meters + 40`) -> `EASING_OUT_OVERTAKE`; a car behind (≠ target) requests yield -> `EASING_IN_YIELD`.
+- **Exit:** caution, default difficulty/aggression, turning lights.
 
 ### 3.7 EASING_OUT_OVERTAKE
-- **Arquivo:** `CarStateMachine/States/CarState_EasingOutOvertake.lua` — **min:** `0`
-- **Entry:** valida `cars_currentlyOvertakingCarIndex`; seta offset calculado.
+- **File:** `CarStateMachine/States/CarState_EasingOutOvertake.lua` — **min:** `0`
+- **Entry:** validates `cars_currentlyOvertakingCarIndex`; sets the calculated offset.
 - **Update:** `driveSafelyToSide(..., storage_Overtaking.overtakeRampRelease_mps, ...)`.
-- **Transições:** ultrapassado inválido -> `DRIVING_NORMALLY`; carro atrás
-  (≠ ultrapassado) pede yield -> `EASING_IN_YIELD`;
-  `handleOvertakeNextCarWhileAlreadyOvertaking` -> `EASING_IN_OVERTAKE`; chegou
-  ao offset normal (lado de yield) -> limpa ref e vai para `DRIVING_NORMALLY`.
-- **Exit:** setas.
+- **Transitions:** invalid target -> `DRIVING_NORMALLY`; a car behind (≠ target) requests yield -> `EASING_IN_YIELD`; `handleOvertakeNextCarWhileAlreadyOvertaking` -> `EASING_IN_OVERTAKE`; reached the normal offset (yielding side) -> clears the reference and enters `DRIVING_NORMALLY`.
+- **Exit:** turning lights.
 
 ### 3.8 DEFENDING_POSITION
-- **Implementação ativa:** inline em `CarStateMachine/CarStateMachine.lua` — **min:** `0`.
-  `CarStateMachine/States/CarState_DefendingPosition.lua` também existe, mas não é
-  requerido pelo entry point atual.
-- **Entry:** sorteia `defenseDuration_s` em `[defenseDurationMin_s,
-  defenseDurationMax_s]` (default `1.0`–`3.0` s de `getStorage_Behavior`);
-  `StateExitReason.YieldingToCar`.
-- **Update:** decrementa o timer e chama
-  `driveSafelyToSide(car, storage.defaultLateralOffset, 1000, true, false, false)`.
-- **Transições:** timer `<= 0` -> `EASING_IN_YIELD`; carro de trás não pressiona
-  mais -> `DRIVING_NORMALLY`. Pressão = distância `<= 30 m` **e** velocidade
-  relativa `carBehind - our >= 5 km/h`.
-- **Exit:** limpa `cars_defenseRemainingTime_s[carIndex]`.
-- **Nota:** definido, mas **ainda sem transição de entrada** a partir de outros
-  estados; pronto para ser conectado.
+- **Active implementation:** inline in `CarStateMachine/CarStateMachine.lua` — **min:** `0`.
+  `CarStateMachine/States/CarState_DefendingPosition.lua` also exists, but is not required by the current entry point.
+- **Entry:** randomly selects `defenseDuration_s` in `[defenseDurationMin_s, defenseDurationMax_s]` (default `1.0`–`3.0` s from `getStorage_Behavior`); `StateExitReason.YieldingToCar`.
+- **Update:** decrements the timer and calls `driveSafelyToSide(car, storage.defaultLateralOffset, 1000, true, false, false)`.
+- **Transitions:** timer `<= 0` -> `EASING_IN_YIELD`; if the car behind no longer applies pressure -> `DRIVING_NORMALLY`. Pressure = distance `<= 30 m` **and** relative speed `carBehind - our >= 5 km/h`.
+- **Exit:** clears `cars_defenseRemainingTime_s[carIndex]`.
+- **Note:** defined, but **there is still no transition into it** from other states; ready to be connected.
 
 ### 3.9 DRIVING_IN_YELLOW_FLAG_ZONE
-- **Arquivo:** `CarStateMachine/States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
-- **Entry:** vazia.
-- **Update:** `setAITopSpeed(50)`, `toggleTurningLights(Hazards)`,
-  `toggleCarCollisions(false)`.
-- **Transições:** `isCarComingUpToAccident` dentro de
-  `distanceToStartNavigatingAroundCarInAccident_meters` ->
-  `NAVIGATING_AROUND_ACCIDENT`; saiu da zona -> `DRIVING_NORMALLY`.
-- **Exit:** top-speed e setas.
+- **File:** `CarStateMachine/States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
+- **Entry:** empty.
+- **Update:** `setAITopSpeed(50)`, `toggleTurningLights(Hazards)`, `toggleCarCollisions(false)`.
+- **Transitions:** `isCarComingUpToAccident` within `distanceToStartNavigatingAroundCarInAccident_meters` -> `NAVIGATING_AROUND_ACCIDENT`; left the zone -> `DRIVING_NORMALLY`.
+- **Exit:** top speed and turning lights.
 
 ### 3.10 NAVIGATING_AROUND_ACCIDENT
-- **Arquivo:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
-- **Entry:** vazia.
-- **Update:** `setAICaution(0)`, `setAITopSpeed(30)`; recalcula acidente mais
-  próximo; offset via `CollisionAvoidanceManager.computeDesiredLateralOffset`;
-  `driveSafelyToSide(..., 5, true, false)`; `preventAIFromRetiring`;
-  `toggleCarCollisions(false)`.
-- **Transições:** sem índice de acidente, acidente resolvido, carro não
-  encontrado, ou já passamos e estamos a `> 10 m` -> `DRIVING_NORMALLY`;
-  acidente mais próximo detectado -> permanece.
-- **Exit:** caution, top-speed, pedais e `cars_navigatingAroundAccidentIndex = 0`.
+- **File:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
+- **Entry:** empty.
+- **Update:** `setAICaution(0)`, `setAITopSpeed(30)`; recalculates the nearest accident; offset via `CollisionAvoidanceManager.computeDesiredLateralOffset`; `driveSafelyToSide(..., 5, true, false)`; `preventAIFromRetiring`; `toggleCarCollisions(false)`.
+- **Transitions:** no accident index, accident resolved, car not found, or we have passed it and are `> 10 m` away -> `DRIVING_NORMALLY`; nearest accident detected -> remain.
+- **Exit:** caution, top speed, pedals, and `cars_navigatingAroundAccidentIndex = 0`.
 
 ### 3.11 COLLIDED_WITH_TRACK
-- **Arquivo:** `CarStateMachine/States/CarState_CollidedWithTrack.lua` — **min:** `0`
-- **Entry/Exit:** vazias. **Update:** `stopCarAfterAccident(carIndex)`.
-- **Transição:** vazia — **estado terminal**.
+- **File:** `CarStateMachine/States/CarState_CollidedWithTrack.lua` — **min:** `0`
+- **Entry/Exit:** empty. **Update:** `stopCarAfterAccident(carIndex)`.
+- **Transition:** empty — **terminal state**.
 
 ### 3.12 COLLIDED_WITH_CAR
-- **Arquivo:** `CarStateMachine/States/CarState_CollidedWithCar.lua` — **min:** `0`
-- **Entry/Exit:** vazias. **Update:** `stopCarAfterAccident(carIndex)` +
-  `toggleCarCollisions(false)`.
-- **Transição:** vazia — **estado terminal**.
+- **File:** `CarStateMachine/States/CarState_CollidedWithCar.lua` — **min:** `0`
+- **Entry/Exit:** empty. **Update:** `stopCarAfterAccident(carIndex)` + `toggleCarCollisions(false)`.
+- **Transition:** empty — **terminal state**.
 
 ### 3.13 ANOTHER_CAR_COLLIDED_INTO_ME
-- **Arquivo:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `10`
-- **Entry:** `ac.overrideCarControls` (horn comentado).
+- **File:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `10`
+- **Entry:** `ac.overrideCarControls` (horn commented out).
 - **Update:** `stopCarAfterAccident(carIndex)` + `toggleCarCollisions(false)`.
-- **Transição:** vazia — **estado terminal** (o min de 10 s não leva a lugar
-  algum). **Exit:** vazia.
+- **Transition:** empty — **terminal state** (the 10 s minimum does not lead anywhere). **Exit:** empty.
 
 ### 3.14 AFTER_CUSTOMAIFLOOD_TELEPORT
-- **Arquivo:** `CarStateMachine/States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
-- **Entry:** `setCarFuel(100)`, `engageGear(3)`, `setEngineRPM(5000)`,
-  `setAIStopCounter(0)`.
-- **Update:** `setGentleStop(false)`, `setAICaution(0)`, `awakeCar`,
-  `setAINoInput(false, false)`, `setAIStopCounter(0)`.
-- **Transição:** vazia (condições comentadas) — permanece. **Exit:**
-  `setAICaution(1)`, reset gas, `cars_doNoResetAfterNextCarJump = false`.
+- **File:** `CarStateMachine/States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
+- **Entry:** `setCarFuel(100)`, `engageGear(3)`, `setEngineRPM(5000)`, `setAIStopCounter(0)`.
+- **Update:** `setGentleStop(false)`, `setAICaution(0)`, `awakeCar`, `setAINoInput(false, false)`, `setAIStopCounter(0)`.
+- **Transition:** empty (conditions commented out) — remains. **Exit:** `setAICaution(1)`, reset gas, `cars_doNoResetAfterNextCarJump = false`.
 
 ### 3.15 TEMPLATE
-- **Arquivo:** `CarStateMachine/CarState_TEMPLATE.lua`
-- Modelo para novos estados: define `STATE`, string, tempo mínimo e as 4
-  funções vazias. Não registrar no enum — é só ponto de partida.
+- **File:** `CarStateMachine/CarState_TEMPLATE.lua`
+- Model for new states: defines `STATE`, string, minimum time, and the 4 empty functions. Do not register it in the enum — it is only a starting point.
 
 ---
 
-## 4. Transições importantes (regras)
+## 4. Important transitions (rules)
 
-As decisões de yield/overtake ficam em
-  `CarStateMachine.handleShouldWeYieldToBehindCar` e
-`CarStateMachine.handleShouldWeOvertakeFrontCar` em `CarStateMachine/CarStateMachine.lua`.
+Yield/overtake decisions are handled by `CarStateMachine.handleShouldWeYieldToBehindCar` and `CarStateMachine.handleShouldWeOvertakeFrontCar` in `CarStateMachine/CarStateMachine.lua`.
 
 ### 4.1 `handleShouldWeYieldToBehindCar`
 
-Percorre os carros atrás dentro de `detectCarBehind_meters` e retorna
-`EASING_IN_YIELD` só quando **todas** passam:
+Iterates over cars behind within `detectCarBehind_meters` and returns `EASING_IN_YIELD` only when **all** conditions pass:
 
-- carro de trás não está nos pits;
-- está dentro de `detectCarBehind_meters`;
-- está de fato atrás (`isFirstCarBehindSecondCar`);
-- somos mais lentos que ele (`yieldingCarSpeed < overtakingCarSpeed`);
-- se `requireOvertakingCarToBeOnOvertakingLane`, está na faixa de overtake.
+- the car behind is not in the pits;
+- it is within `detectCarBehind_meters`;
+- it is actually behind (`isFirstCarBehindSecondCar`);
+- we are slower than it (`yieldingCarSpeed < overtakingCarSpeed`);
+- if `requireOvertakingCarToBeOnOvertakingLane`, it is in the overtaking lane.
 
-Senão, registra um `ReasonWhyCantYield` (ex.: `TargetSideBlocked`,
-`OvertakingCarTooFarBehind`, `WeAreFasterThanOvertakingCar`) e retorna `nil`.
+Otherwise, records a `ReasonWhyCantYield` (e.g. `TargetSideBlocked`, `OvertakingCarTooFarBehind`, `WeAreFasterThanOvertakingCar`) and returns `nil`.
 
 ### 4.2 `handleShouldWeOvertakeFrontCar`
 
-Retorna `EASING_IN_OVERTAKE` quando:
+Returns `EASING_IN_OVERTAKE` when:
 
-- há carro à frente e ele não está nos pits;
-- distância `<= detectCarAhead_meters`;
-- somos mais rápidos (`averageSpeedKmh` comparado);
-- se `requireYieldingCarToBeOnYieldingLane`, ele está na faixa de yield;
-- o carro atrás (se existir) não está a menos de 5 m.
+- there is a car ahead and it is not in the pits;
+- distance `<= detectCarAhead_meters`;
+- we are faster (compared using `averageSpeedKmh`);
+- if `requireYieldingCarToBeOnYieldingLane`, it is in the yielding lane;
+- the car behind (if any) is not within 5 m.
 
-Senão registra `ReasonWhyCantOvertake` (ex.: `YieldingCarIsFaster`,
-`YieldingCarTooFarAhead`, `AnotherCarBehindTooClose`) e retorna `nil`.
+Otherwise, records a `ReasonWhyCantOvertake` (e.g. `YieldingCarIsFaster`, `YieldingCarTooFarAhead`, `AnotherCarBehindTooClose`) and returns `nil`.
 
-### 4.3 Regras resumidas por situação
+### 4.3 Summary by situation
 
-- **Em `DRIVING_NORMALLY`:** carro atrás claramente mais rápido ->
-  `EASING_IN_YIELD`; carro à frente mais lento e elegível ->
-  `EASING_IN_OVERTAKE`; zona amarela / acidente -> estados correspondentes.
-- **Yield em andamento:** qualquer sinal de que o perseguidor não precisa mais
-  da faixa (à frente, atrás demais, nós mais rápidos, fora da faixa) ->
-  `EASING_OUT_YIELD`.
-- **Overtake em andamento:** terminamos ou o ultrapassado volta à frente ->
-  `EASING_OUT_OVERTAKE`; novo carro à frente elegível -> continua ultrapassando
-  (`handleOvertakeNextCarWhileAlreadyOvertaking`).
-- **`DEFENDING_POSITION`:** timer não zerou e há pressão -> mantém a linha;
-  timer zerou -> `EASING_IN_YIELD`; pressão acabou -> `DRIVING_NORMALLY`.
+- **In `DRIVING_NORMALLY`:** clearly faster car behind -> `EASING_IN_YIELD`; slower, eligible car ahead -> `EASING_IN_OVERTAKE`; yellow zone / accident -> corresponding states.
+- **Yield in progress:** any sign that the pursuing car no longer needs the lane (ahead, too far behind, we are faster, or it is out of lane) -> `EASING_OUT_YIELD`.
+- **Overtake in progress:** overtake completed or target moves ahead again -> `EASING_OUT_OVERTAKE`; eligible new car ahead -> continue overtaking (`handleOvertakeNextCarWhileAlreadyOvertaking`).
+- **`DEFENDING_POSITION`:** while the timer has not expired and pressure remains -> hold the line; timer expires -> `EASING_IN_YIELD`; pressure ends -> `DRIVING_NORMALLY`.
 
 ---
 
-## 5. Como adicionar um novo estado (workflow)
+## 5. How to add a new state (workflow)
 
-1. **Bitflag** no enum `CarStateType` em `CarStateMachine/CarStateMachine.lua`, próxima potência
-   de 2 livre (ex.: `MY_STATE = 131072`).
-2. **String** em `CarStateTypeStrings[MY_STATE] = "MyState"`.
-3. **Tempo mínimo:** `states_minimumTimeInState[MY_STATE] = 0` (use `0` salvo
-   motivo forte).
-4. **Registrar as 4 funções:** `states_entryFunctions`,
-   `states_updateFunctions`, `states_transitionFunctions`,
-   `states_exitFunctions`.
-5. **Criar** `CarStateMachine/States/CarState_<Nome>.lua` espelhando
-   `CarStateMachine/CarState_TEMPLATE.lua` e adicioná-lo ao carregamento no entry point.
-6. Mantenha uma implementação ativa por estado; `DEFENDING_POSITION` é atualmente
-   implementado inline no módulo central, e seu arquivo separado não é carregado.
-7. **Adicionar transições de/para** esse estado nas funções `transition` dos
-   estados relevantes.
-8. **Expor no debug/UI** se necessário (nome legível já vem do passo 2).
+1. Add a **bit flag** to the `CarStateType` enum in `CarStateMachine/CarStateMachine.lua`, using the next available power of 2 (e.g. `MY_STATE = 131072`).
+2. Add a **string** in `CarStateTypeStrings[MY_STATE] = "MyState"`.
+3. **Minimum time:** `states_minimumTimeInState[MY_STATE] = 0` (use `0` unless there is a strong reason not to).
+4. **Register the 4 functions:** `states_entryFunctions`, `states_updateFunctions`, `states_transitionFunctions`, and `states_exitFunctions`.
+5. **Create** `CarStateMachine/States/CarState_<Name>.lua` based on `CarStateMachine/CarState_TEMPLATE.lua` and add it to the entry-point load sequence.
+6. Keep one active implementation per state; `DEFENDING_POSITION` is currently implemented inline in the central module, and its separate file is not loaded.
+7. **Add transitions to/from** this state in the `transition` functions of relevant states.
+8. **Expose it in debug/UI** if needed (a readable name is already provided by step 2).
 
 ---
 
-## 6. Pontos de cautela
+## 6. Cautions
 
-- **Tempo mínimo longo prende a IA.** Use `minimumTimeInState = 0` na maioria;
-  `10` é o maior usado (`ANOTHER_CAR_COLLIDED_INTO_ME`).
-- **Dependências circulares sem escape.** Se A vai para B e B para A, garanta um
-  timer/condição de saída (ex.: o timer de `DEFENDING_POSITION`).
-- **Estados terminais são intencionais** (`COLLIDED_*`): transição vazia mantém
-  o carro parado. Não adicione transições sem revisar `AccidentManager`.
-- **Refs salvas pelo estado anterior.** `EASING_IN_YIELD` e
-  `EASING_IN_OVERTAKE` dependem de `cars_currentlyYieldingCarToIndex` /
-  `cars_currentlyOvertakingCarIndex` definidos antes da entrada.
-- **`changeState` reseta `cars_timeInCurrentState`** — não confie no tempo
-  anterior após transição.
-- **Transições são enfileiradas:** a `entry` roda no início do próximo
-  `updateCar`, não no frame que decidiu.
-- **Sem `entry` registrada**, `updateCar` loga erro e aborta o update daquele carro
-  (`CarStateMachine/CarStateMachine.lua`).
+- **A long minimum time can trap the AI.** Use `minimumTimeInState = 0` in most cases; `10` is the largest value used (`ANOTHER_CAR_COLLIDED_INTO_ME`).
+- **Circular dependencies need an escape.** If A transitions to B and B to A, ensure an exit timer/condition (e.g. the `DEFENDING_POSITION` timer).
+- **Terminal states are intentional** (`COLLIDED_*`): an empty transition keeps the car stopped. Do not add transitions without reviewing `AccidentManager`.
+- **References saved by the previous state.** `EASING_IN_YIELD` and `EASING_IN_OVERTAKE` depend on `cars_currentlyYieldingCarToIndex` / `cars_currentlyOvertakingCarIndex` being set before entry.
+- **`changeState` resets `cars_timeInCurrentState`** — do not rely on the previous time after a transition.
+- **Transitions are queued:** `entry` runs at the start of the next `updateCar`, not in the frame that made the decision.
+- **Without a registered `entry`**, `updateCar` logs an error and aborts that car's update (`CarStateMachine/CarStateMachine.lua`).
 
 ---
 
-## 7. Camadas transversais (não são estados)
+## 7. Cross-cutting layers (not states)
 
 ```
-+-------- BehaviorPolish (não é estado; condiciona transições) --------------+
-| phase blend:      fade in/out das laterais em N segundos                   |
-| hesitação:        delay aleatório antes de agir                            |
-| look-ahead ruído: antecipação com confiança gaussiana                      |
++-------- BehaviorPolish (loaded helper module; no current call sites) --------+
+| defines phase-blend, hesitation, and look-ahead helper functions             |
+| these helpers are not integrated into the current FSM/runtime flow           |
 +----------------------------------------------------------------------------+
 
-+-------- HumanErrorManager (transversal, não é estado) ---------------------+
-| dispara physics.setAIBrakeMistake / setAITractionMistake com cooldown      |
-| padrão de 7 s (errorCooldown_s)                                            |
++-------- HumanErrorManager (cross-cutting, not a state) ---------------------+
+| triggers physics.setAIBrakeMistake / setAITractionMistake with a cooldown    |
+| default 7 s (errorCooldown_s)                                               |
 +----------------------------------------------------------------------------+
 ```
 
-- **BehaviorPolish** (`BehaviorPolish.lua`): módulo puro com `lerp` (blend de
-  fases), `shouldReactNow` (hesitação) e `confidenceFromPaceObservations`
-  (look-ahead com ruído ~5%). Não usa `ac.*`/`physics.*`.
-- **HumanErrorManager** (`HumanErrorManager.lua`): atualizado por frame
-  (`HumanErrorManager.update(dt, sortedCars, storage_Behavior, gameTime_s)`);
-  injeta erros humanos de brake/traction com cooldown (`errorCooldown_s`,
-  default `7.0`).
+- **BehaviorPolish** (`BehaviorPolish.lua`): loaded pure module defining `lerp` (phase blending), `shouldReactNow` (hesitation), and `confidenceFromPaceObservations` (noisy look-ahead, ~5%). These helpers have no call sites in the current FSM/runtime flow and therefore do not currently blend phases, delay transitions, or influence look-ahead. The module does not use `ac.*`/`physics.*`.
+- **HumanErrorManager** (`HumanErrorManager.lua`): updated each frame (`HumanErrorManager.update(dt, sortedCars, storage_Behavior, gameTime_s)`); injects human braking/traction errors with a cooldown (`errorCooldown_s`, default `7.0`).

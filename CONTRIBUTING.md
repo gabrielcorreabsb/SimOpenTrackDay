@@ -1,8 +1,8 @@
-# Contribuir
+# Contributing
 
-SimOpenTrackDay é um projeto derivado independente em desenvolvimento. Leia o [README](README.md) e os [créditos/licença](README.md#créditos-e-licença) antes de alterar ou redistribuir o projeto; preserve os avisos MIT do original e os créditos das dependências.
+SimOpenTrackDay is an independent derivative project under development. Read the [README](README.md), [documentation index](docs/README.md), and [credits/license](README.md#credits-and-license) before changing or redistributing the project; preserve the original MIT notices and dependency credits.
 
-## Preparar o checkout
+## Prepare the checkout
 
 ```sh
 git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git
@@ -10,24 +10,25 @@ cd SimOpenTrackDay
 git submodule update --init --recursive
 ```
 
-O payload do app fica na raiz do checkout. `apps/lua/SimOpenTrackDay/` é o caminho de instalação, não uma pasta a criar dentro do repositório. A cópia para o Assetto Corsa é manual; veja [Instalação no README](README.md#instalação-manual) e preserve instalações/configurações existentes.
+The app payload is at the checkout root. `apps/lua/SimOpenTrackDay/` is the installation path, not a directory to create inside the repository. Copying to Assetto Corsa is manual; see [installation in the README](README.md#manual-installation) and preserve existing installations/settings.
 
-## Fluxo de contribuição
+## Contribution workflow
 
-- Faça alterações focadas; preserve os nove registros `[RTD-DIAG-*]`, contratos de storage e comportamento de compatibilidade sem evidência para removê-los.
-- Mantenha o submodule `lib/AssettoCorsaCSPLuaCompatibilityManager/` e o SDK em `lib/ac_apps/` conforme suas origens e licenças. O SDK é vendor: não edite como código do app.
-- Para bugs deste projeto, use o [issue tracker SimOpenTrackDay](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues). O [repositório upstream](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday) é referência de origem/crédito; não use releases upstream como releases deste projeto nem envie alterações ao upstream sem autorização própria.
+- Keep changes focused; preserve the nine `[RTD-DIAG-*]` records, storage contracts, and compatibility behavior unless there is evidence supporting a change.
+- Keep the `lib/AssettoCorsaCSPLuaCompatibilityManager/` submodule and SDK in `lib/ac_apps/` consistent with their origins and licenses. The SDK is vendor code; do not edit it as app code.
+- Report project bugs in the [SimOpenTrackDay issue tracker](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues). The [upstream repository](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday) is an origin/credit reference; do not present upstream releases as this project's releases or submit upstream changes without separate authorization.
 
-## Verificações locais
+## Local checks
 
-Com LuaJIT 2.1 disponível no `PATH`, execute da raiz:
+With LuaJIT 2.1 available on `PATH`, run these commands from the repository root:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
 luajit tools/test_ui_smoke.lua
 luajit tools/test_logo_smoke.lua
+luajit tools/test_localization.lua
 ```
 
-O checker aceita `-LuaJitPath` e `-Root`. Os testes UI/logo são headless com mocks; não validam o runtime nem o rendering do CSP. Para comparação opcional, `RTD_BASELINE_SETTINGS` pode apontar para um arquivo-fonte baseline disponível localmente antes de executar o smoke UI; não use caminhos pessoais em documentação ou issues. A fixture versionada é o padrão e não se atualiza a partir do código corrente.
+The checker accepts `-LuaJitPath` and `-Root`. UI/logo tests use headless mocks and do not validate runtime or CSP rendering. `test_localization.lua` checks catalogs and localization contracts; none of these checks validates the complete CSP UI, main callback, or in-game behavior. For an optional comparison, `RTD_BASELINE_SETTINGS` may point to a locally available source baseline before the UI smoke test; do not include personal paths in documentation or issues. The versioned fixture is the default and is not regenerated from current code.
 
-Antes de compartilhar uma alteração, revise o diff e registre apenas checks realmente executados. Não declare validação in-game sem realizá-la. Este fluxo não configura remotes, faz commit/push, instala o app ou publica releases automaticamente.
+Before sharing a change, review the diff and report only checks actually run. Do not claim in-game validation without performing it. This workflow does not configure remotes, commit/push, install the app, or publish releases automatically.

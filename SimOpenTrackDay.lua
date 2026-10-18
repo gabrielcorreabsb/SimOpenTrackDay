@@ -34,7 +34,6 @@ CSPCompatibilityManager.addFunction(function() return ui.newLine end, "ui.newLin
 CSPCompatibilityManager.addFunction(function() return ui.text end, "ui.text")
 CSPCompatibilityManager.addFunction(function() return ui.drawRect end, "ui.drawRect")
 CSPCompatibilityManager.addFunction(function() return ui.drawRectFilled end, "ui.drawRectFilled")
-CSPCompatibilityManager.addFunction(function() return ui.availableSpaceX end, "ui.availableSpaceX")
 CSPCompatibilityManager.addFunction(function() return ui.availableSpaceY end, "ui.availableSpaceY")
 CSPCompatibilityManager.addFunction(function() return ui.beginGroup end, "ui.beginGroup")
 CSPCompatibilityManager.addFunction(function() return ui.endGroup end, "ui.endGroup")
@@ -92,6 +91,7 @@ CSPCompatibilityManager.addFunction(function() return ui.dwriteText end, "ui.dwr
 CSPCompatibilityManager.addFunction(function() return ui.checkbox end, "ui.checkbox")
 CSPCompatibilityManager.addFunction(function() return ui.MouseButton end, "ui.MouseButton")
 CSPCompatibilityManager.addFunction(function() return ui.mouseClicked end, "ui.mouseClicked")
+CSPCompatibilityManager.addFunction(function() return ui.availableSpaceX end, "ui.availableSpaceX")
 
 CSPCompatibilityManager.addFunction(function() return physics.overrideRacingFlag end, "physics.overrideRacingFlag")
 CSPCompatibilityManager.addFunction(function() return physics.setAIThrottleLimit end, "physics.setAIThrottleLimit")
@@ -257,6 +257,7 @@ local ac_getSim = ac.getSim
 local ac_iterateCars = ac.iterateCars
 local ui = ui
 local ui_textColored = ui.textColored
+local Localization = require('Localization')
 local ui_newLine = ui.newLine
 local ui_separator = ui.separator
 local ui_button = ui.button
@@ -446,7 +447,12 @@ end)
 ---
 function script.MANIFEST__FUNCTION_MAIN(dt)
   local ok, err = xpcall(function()
-  ui_textColored("SimOpenTrackDay allows you to alter the AI cars' behavior to act more like humans driving during a track day event by yielding to faster cars and overtaking slower cars.", ColorManager.RGBM_Colors.WhiteSmoke)
+  ui_textColored(Localization.text("SimOpenTrackDay allows you to alter the AI cars' behavior to act more like humans driving during a track day event by yielding to faster cars and overtaking slower cars."), ColorManager.RGBM_Colors.WhiteSmoke)
+  ui_newLine(1)
+  local localeIndexes = { en = 1, ['pt-BR'] = 2, es = 3 }
+  local locales = { 'en', 'pt-BR', 'es' }
+  local localeIndex, localeChanged = ui.combo(Localization.label('Language', 'settings.language'), localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
+  if localeChanged then Localization.setLocale(locales[localeIndex] or 'en') end
   ui_newLine(1)
 
   -- Show the missing CSP elements error message if needed
@@ -459,7 +465,9 @@ function script.MANIFEST__FUNCTION_MAIN(dt)
 
   AppIconRenderer_draw()
 
-  if ui_button('Modify Settings', vec2(120, 40)) then
+  local settingsButtonText = Localization.text('Modify Settings')
+  local settingsButtonWidth = math.min(ui.availableSpaceX(), math.max(120, ui.measureDWriteText(settingsButtonText, 14, -1).x + 24))
+  if ui_button(Localization.label('Modify Settings', 'main.settings'), vec2(settingsButtonWidth, 40)) then
     UIManager_toggleSettingsWindow()
   end
   ui_newLine(1)
@@ -475,12 +483,16 @@ function script.MANIFEST__FUNCTION_MAIN(dt)
   -- ui.text(string.format('AI cars yielding to the %s', RaceTrackManager.TrackSideStrings[RaceTrackManager.getYieldingSide()]))
   -- ui.newLine(1)
 
+  ui.dwriteText(Localization.text('Driving lanes'), 17)
+  ui.separator()
   -- Profiler.begin('UIManager_drawMainWindowLateralOffsetsSection')
   UIManager_drawMainWindowLateralOffsetsSection()
   -- Profiler["end"]('UIManager_drawMainWindowLateralOffsetsSection')
 
   ui_newLine(1)
 
+  ui.dwriteText(Localization.text('AI car list'), 17)
+  ui.separator()
   -- Profiler.begin('UIManager_drawUICarList')
   UIManager_drawUICarList()
   -- Profiler["end"]('UIManager_drawUICarList')

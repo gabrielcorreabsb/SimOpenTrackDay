@@ -3,6 +3,7 @@ local ui = ui
 local Theme = require('lib/uilib/Theme')
 local Style = require('lib/uilib/Style')
 local vec2 = vec2
+local Localization = require('Localization')
 
 -- Uses a restrained heading/divider treatment rather than an overlaying draw-list
 -- background, so native controls always remain visible and first-frame sizing is safe.
@@ -15,7 +16,7 @@ Section.section = function(label, callback, opts)
   ui.setCursor(vec2(left.x + Theme.spacing.md, left.y + Theme.spacing.sm))
   ui.beginGroup()
   Style.push(ui.StyleColor.Text, Theme.colors.accent)
-  ui.dwriteText(label, Theme.type.section)
+  ui.dwriteText(Localization.text(label), Theme.type.section)
   Style.pop()
   ui.setCursor(vec2(left.x + Theme.spacing.md, left.y + headerHeight + Theme.spacing.sm))
   if callback then callback() end

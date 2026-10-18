@@ -5,9 +5,11 @@ local ui = ui
 local ui_drawRectFilled = ui.drawRectFilled
 local ui_drawLine = ui.drawLine
 local ui_getCursor = ui.getCursor
+local ui_availableSpaceX = ui.availableSpaceX
 local ui_drawRect = ui.drawRect
 local ui_drawTextClipped = ui.drawTextClipped
 local ui_dwriteDrawText = ui.dwriteDrawText
+local Localization = require('Localization')
 local ui_invisibleButton = ui.invisibleButton
 local math = math
 local math_abs = math.abs
@@ -122,7 +124,8 @@ function UILateralOffsetsImageWidget.draw(storage)
   -- Reserve block area from current cursor
   local cursor = ui_getCursor()
   local tl = vec2(cursor.x, cursor.y)
-  local br = vec2(cursor.x + PREVIEW_WIDTH, cursor.y + PREVIEW_HEIGHT)
+  local previewWidth = math.min(PREVIEW_WIDTH, math.max(150, ui_availableSpaceX()))
+  local br = vec2(cursor.x + previewWidth, cursor.y + PREVIEW_HEIGHT)
 
   -- Card
   ui_drawRectFilled(tl, br, COLOR_CARD_BG, CARD_ROUNDING)
@@ -194,19 +197,19 @@ function UILateralOffsetsImageWidget.draw(storage)
 
   -- Captions under each marker
   if SHOW_CAPTIONS then
-    ui_dwriteDrawText(CAPTION_DEFAULT_TEXT,  CAPTION_FONT_SIZE, vec2(xDefault  - 20, yDefault  + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
+      ui_dwriteDrawText(Localization.text(CAPTION_DEFAULT_TEXT), CAPTION_FONT_SIZE, vec2(xDefault  - 20, yDefault  + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
 
     if handleYielding then
-        ui_dwriteDrawText(CAPTION_YIELDING_TEXT, CAPTION_FONT_SIZE, vec2(xYielding - 13, yYielding + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
+        ui_dwriteDrawText(Localization.text(CAPTION_YIELDING_TEXT), CAPTION_FONT_SIZE, vec2(xYielding - 13, yYielding + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
     end
 
     if handleOvertaking then
-        ui_dwriteDrawText(CAPTION_OVERTAKE_TEXT, CAPTION_FONT_SIZE, vec2(xOvertake - 20, yOvertake + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
+        ui_dwriteDrawText(Localization.text(CAPTION_OVERTAKE_TEXT), CAPTION_FONT_SIZE, vec2(xOvertake - 20, yOvertake + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
     end
   end
 
   -- Reserve layout space so following UI doesn’t overlap the drawing
-  ui_invisibleButton("##lateralPreviewReserve", vec2(PREVIEW_WIDTH, PREVIEW_HEIGHT))
+  ui_invisibleButton("##lateralPreviewReserve", vec2(previewWidth, PREVIEW_HEIGHT))
 end
 
 return UILateralOffsetsImageWidget

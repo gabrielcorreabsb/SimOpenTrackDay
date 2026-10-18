@@ -3,7 +3,9 @@ local SettingsWindow = {}
 -- bindings
 local ui = ui
 local ui_itemHovered = ui.itemHovered
-local ui_setTooltip = ui.setTooltip
+local Localization = require('Localization')
+local ui_setTooltip_raw = ui.setTooltip
+local ui_setTooltip = function(message, ...) return ui_setTooltip_raw(Localization.text(message, ...)) end
 local ui_pushDisabled = ui.pushDisabled
 local ui_popDisabled = ui.popDisabled
 local ui_columns = ui.columns
@@ -11,9 +13,11 @@ local ui_setColumnWidth = ui.setColumnWidth
 local ui_nextColumn = ui.nextColumn
 local ui_button = ui.button
 local ui_newLine = ui.newLine
-local ui_text = ui.text
+local ui_text_raw = ui.text
+local ui_text = function(message, ...) return ui_text_raw(Localization.text(message, ...)) end
 local ui_separator = ui.separator
-local ui_textColored = ui.textColored
+local ui_textColored_raw = ui.textColored
+local ui_textColored = function(message, color, ...) return ui_textColored_raw(Localization.text(message, ...), color) end
 local ui_pushStyleColor = ui.pushStyleColor
 local ui_popStyleColor = ui.popStyleColor
 local ui_dwriteText = ui.dwriteText
@@ -84,6 +88,9 @@ local StorageManager_Options_PathFinding = StorageManager.Options_PathFinding
 
 
 local UI_HEADER_TEXT_FONT_SIZE = 15
+local ui_availableSpaceX = ui.availableSpaceX
+local ui_sameLine = ui.sameLine
+local function translatedLabel(text, id) return Localization.label(text, id) end
 
 local DEFAULT_SLIDER_WIDTH = 200
 local DEFAULT_SLIDER_FORMAT = '%.2f'
@@ -98,6 +105,13 @@ local storage_Debugging = StorageManager.getStorage_Debugging()
 local storage_AICarValues = StorageManager.getStorage_AICarValues()
 local storage_PathFinding = StorageManager.getStorage_PathFinding()
 local storage_Behavior = StorageManager.getStorage_Behavior()
+local advancedBehaviorOpen = false
+local function drawLanguageSelector()
+    local indexes = { en = 1, ['pt-BR'] = 2, es = 3 }
+    local locales = { 'en', 'pt-BR', 'es' }
+    local index, changed = ui_combo(translatedLabel('Language', 'settings.language'), indexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
+    if changed then Localization.setLocale(locales[index] or 'en') end
+end
 
 
 ---@param storage_Debugging StorageTable_Debugging
@@ -107,7 +121,8 @@ local renderDebuggingSection = function(storage_Debugging)
     Section.section('Debugging', function()
     ui_newLine(1)
 
-    ui_columns(3, false, "debuggingSection")
+    local debugWide = ui_availableSpaceX() >= 980
+    ui_columns(debugWide and 3 or 1, false, "debuggingSection")
 
     if ui_checkbox('Show UI Car List', storage_Debugging.drawCarList) then storage_Debugging.drawCarList = not storage_Debugging.drawCarList end
     if ui_itemHovered() then ui_setTooltip('Shows a list of all cars in the scene') end
@@ -123,7 +138,7 @@ local renderDebuggingSection = function(storage_Debugging)
     if ui_checkbox('Draw tyres side offtrack gizmos', storage_Debugging.debugDrawSideOfftrack) then storage_Debugging.debugDrawSideOfftrack = not storage_Debugging.debugDrawSideOfftrack end
     if ui_itemHovered() then ui_setTooltip('Shows gizmos for the car\'s tyres when offtrack') end
 
-    ui_nextColumn()
+    if debugWide then ui_nextColumn() end
 
     if ui_checkbox('Log fast AI state changes', storage_Debugging.debugLogFastStateChanges) then storage_Debugging.debugLogFastStateChanges = not storage_Debugging.debugLogFastStateChanges end
     if ui_itemHovered() then ui_setTooltip('If enabled, will write to the CSP log if an ai car changes from one state to another very quickly') end
@@ -139,7 +154,7 @@ local renderDebuggingSection = function(storage_Debugging)
 
     storage_Debugging.debugOverridePlayerCarLateralOffsetValue = UIOperations_renderSlider('##debugOverridePlayerCarLateralOffsetValue', 'The lateral offset value to force the player car to use when the override is enabled.', storage_Debugging.debugOverridePlayerCarLateralOffsetValue, StorageManager_options_Debugging_min[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue], StorageManager_options_Debugging_max[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue], 300, 'Player car lateral offset override value: %.2f', StorageManager_options_Debugging_default[StorageManager_Options_Debugging.DebugOverridePlayerCarLateralOffsetValue])
 
-    ui_nextColumn()
+    if debugWide then ui_nextColumn() end
 
     UIOperations_createDisabledSection(not Constants.ENABLE_ACCIDENT_HANDLING_IN_APP, function()
         -- if ui_button('Simulate accident', ui.ButtonFlags.None) then
@@ -169,10 +184,13 @@ local getSliderColorForAICautionWhenSetToZero = function(aiCautionValue)
 end
 
 local drawAICarValuesSection = function()
-    ui_columns(3, false, "aiCarValuesSection")
-    ui_setColumnWidth(0, ui.windowWidth() * 0.32)
-    ui_setColumnWidth(1, ui.windowWidth() * 0.32)
-    ui_setColumnWidth(2, ui.windowWidth() * 0.32)
+    local wideLayout = ui_availableSpaceX() >= 1100
+    ui_columns(wideLayout and 3 or 1, false, "aiCarValuesSection")
+    if wideLayout then
+      ui_setColumnWidth(0, ui.windowWidth() * 0.32)
+      ui_setColumnWidth(1, ui.windowWidth() * 0.32)
+      ui_setColumnWidth(2, ui.windowWidth() * 0.32)
+    end
 
     Section.section('Caution', function()
     ui_newLine(1)
@@ -197,7 +215,7 @@ local drawAICarValuesSection = function()
     storage_AICarValues.AICaution_Yielding =  UIOperations_renderSlider('Caution while yielding', 'The caution level used when yielding (giving way to faster cars).\n\nThe higher this value is, the more cautious the cars will be while yielding.', storage_AICarValues.AICaution_Yielding, StorageManager_options_AICarValues_min[StorageManager_Options_AICarValues.AICaution_Yielding], StorageManager_options_AICarValues_max[StorageManager_Options_AICarValues.AICaution_Yielding], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_AICarValues_default[StorageManager_Options_AICarValues.AICaution_Yielding])
     ui_popStyleColor()
     end)
-    ui_nextColumn()
+    if wideLayout then ui_nextColumn() end
 
     Section.section('Aggression', function()
     ui_newLine(1)
@@ -230,7 +248,7 @@ local drawAICarValuesSection = function()
         storage_AICarValues.AIAggression_Yielding = UIOperations_renderSlider('Aggression while yielding', 'The aggression level used when yielding (giving way to faster cars).\n\nThe lower this value is, the more cautious the cars will be while yielding.', storage_AICarValues.AIAggression_Yielding, StorageManager_options_AICarValues_min[StorageManager_Options_AICarValues.AIAggression_Yielding], StorageManager_options_AICarValues_max[StorageManager_Options_AICarValues.AIAggression_Yielding], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_AICarValues_default[StorageManager_Options_AICarValues.AIAggression_Yielding])
     end)
     end)
-    ui_nextColumn()
+    if wideLayout then ui_nextColumn() end
 
     Section.section('Difficulty', function()
     ui_newLine(1)
@@ -271,22 +289,23 @@ local drawLateralOffsetsSection = function()
     Section.section('Lateral Offsets (Driving Lanes)', function()
     ui_newLine(1)
 
-    ui_columns(2, false, "lateralsSection")
-    ui_setColumnWidth(0, ui.windowWidth() * 0.46)
+    local wide = ui_availableSpaceX() >= 820
+    ui_columns(wide and 2 or 1, false, "lateralsSection")
+    if wide then ui_setColumnWidth(0, ui.windowWidth() * 0.46) end
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
 
     local overtakingSide = RaceTrackManager_getOvertakingSide()
     UIOperations_createDisabledSection(not handleOvertaking, function()
-        storage.overtakingLateralOffset =  UIOperations_renderSlider(string_format('Overtaking Lateral Offset [-1..1] -> Overtaking side: %s', RaceTrackManager.TrackSideStrings[overtakingSide]), 'The lateral offset from the centerline that AI cars will drive to when overtaking another car.\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right', storage.overtakingLateralOffset, StorageManager_options_min[StorageManager_Options.OvertakingLateralOffset], StorageManager_options_max[StorageManager_Options.OvertakingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.OvertakingLateralOffset])
+        storage.overtakingLateralOffset =  UIOperations_renderSlider(translatedLabel(Localization.text('Overtaking Lateral Offset [-1..1] -> Overtaking side: %s', Localization.text(RaceTrackManager.TrackSideStrings[overtakingSide])), 'settings.offset.overtaking'), Localization.text('The lateral offset from the centerline that AI cars will drive to when overtaking another car.\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.overtakingLateralOffset, StorageManager_options_min[StorageManager_Options.OvertakingLateralOffset], StorageManager_options_max[StorageManager_Options.OvertakingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.OvertakingLateralOffset])
     end)
 
     storage.defaultLateralOffset =  UIOperations_renderSlider('Default Lateral Offset [-1..1]', 'The default lateral offset from the centerline that AI cars will try to maintain when not yielding or overtaking.\n-1 = fully to the left\n0 = center of the track (racing line)\n1 = fully to the right', storage.defaultLateralOffset, StorageManager_options_min[StorageManager_Options.DefaultLateralOffset], StorageManager_options_max[StorageManager_Options.DefaultLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.DefaultLateralOffset])
 
     local yieldingSide = RaceTrackManager_getYieldingSide()
     UIOperations_createDisabledSection(not handleYielding, function()
-        storage.yieldingLateralOffset =  UIOperations_renderSlider(string_format('Yielding Lateral Offset [-1..1] -> Yielding side: %s', RaceTrackManager.TrackSideStrings[yieldingSide]), 'The lateral offset from the centerline that AI cars will drive to when yielding (giving way to faster cars).\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right', storage.yieldingLateralOffset, StorageManager_options_min[StorageManager_Options.YieldingLateralOffset], StorageManager_options_max[StorageManager_Options.YieldingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.YieldingLateralOffset])
+        storage.yieldingLateralOffset =  UIOperations_renderSlider(translatedLabel(Localization.text('Yielding Lateral Offset [-1..1] -> Yielding side: %s', Localization.text(RaceTrackManager.TrackSideStrings[yieldingSide])), 'settings.offset.yielding'), Localization.text('The lateral offset from the centerline that AI cars will drive to when yielding (giving way to faster cars).\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.yieldingLateralOffset, StorageManager_options_min[StorageManager_Options.YieldingLateralOffset], StorageManager_options_max[StorageManager_Options.YieldingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.YieldingLateralOffset])
     end)
 
     -- ui.newLine(1)
@@ -295,7 +314,7 @@ local drawLateralOffsetsSection = function()
       ui_textColored('Warning: Yielding side and overtaking side are the same!', ColorManager.RGBM_Colors.Yellow)
     end
 
-    ui_nextColumn()
+    if wide then ui_nextColumn() end
 
     UILateralOffsetsImageWidget_draw(storage)
 
@@ -309,8 +328,9 @@ local drawBehaviorSection = function()
     ui_newLine(1)
 
     -- Profile dropdown
-    local profileIndex = storage_Behavior.profile or StorageManager_Profile.Realistic
-    -- Infer profile from current storage_Behavior values if profile is nil
+    -- Profile is inferred from persisted behavior values because it is not a
+    -- declared ac.storage field.
+    local profileIndex = StorageManager_Profile.Realistic
     local detectedProfile = nil
     for idx, profileData in pairs(StorageManager.BehaviorProfiles or {}) do
         if profileData.mode == storage_Behavior.mode
@@ -322,12 +342,11 @@ local drawBehaviorSection = function()
     end
     profileIndex = detectedProfile or profileIndex or StorageManager_Profile.Realistic
 
-    local profileNames = {"Casual", "Realistic", "Competitive"}
-    local newProfileIndex, profileChanged = ui_combo('AI Behavior Profile', profileIndex, ui.ComboFlags.None, profileNames)
+    local profileNames = {Localization.text('Casual'), Localization.text('Realistic'), Localization.text('Competitive')}
+    local newProfileIndex, profileChanged = ui_combo(translatedLabel('AI Behavior Profile', 'behavior.profile'), profileIndex, ui.ComboFlags.None, profileNames)
     if profileChanged and newProfileIndex ~= profileIndex then
         profileIndex = newProfileIndex
         StorageManager_applyBehaviorProfile(profileIndex)
-        storage_Behavior.profile = profileIndex  -- remember user's choice
     end
     ui_newLine(0.5)
     if ui_itemHovered() then
@@ -339,17 +358,17 @@ local drawBehaviorSection = function()
 
     -- Mode display (read-only; shows what mode the profile activated)
     local modeNames = {[StorageManager_BehaviorMode.TrackDay] = "Track Day", [StorageManager_BehaviorMode.Race] = "Race", [StorageManager_BehaviorMode.HybridAdaptive] = "Hybrid (Auto)"}
-    ui_text('Current Mode: ' .. (modeNames[storage_Behavior.mode] or 'Unknown'))
+    ui_text(Localization.text('Current Mode: %s', Localization.text(modeNames[storage_Behavior.mode] or 'Unknown')))
     ui_newLine(1)
 
     -- Advanced section with 14 sliders
-    local isAdvancedOpen = storage_Debugging.showBehaviorAdvanced or false
-    local checkboxLabel = isAdvancedOpen and 'Hide Advanced Behavior Sliders' or 'Show Advanced Behavior Sliders'
+    local isAdvancedOpen = advancedBehaviorOpen
+    local checkboxLabel = translatedLabel(isAdvancedOpen and 'Hide Advanced Behavior Sliders' or 'Show Advanced Behavior Sliders', 'behavior.advanced.toggle')
     if ui_checkbox(checkboxLabel, isAdvancedOpen) then isAdvancedOpen = not isAdvancedOpen end
-    storage_Debugging.showBehaviorAdvanced = isAdvancedOpen
+    advancedBehaviorOpen = isAdvancedOpen
     if ui_itemHovered() then ui_setTooltip('Granular sliders for the behavior polish values.\nMost users should pick a Profile above and leave these at defaults.') end
 
-    UIOperations_createDisabledSection(not isAdvancedOpen, function()
+    if isAdvancedOpen then
         ui_newLine(1)
 
         storage_Behavior.entryBlendTime_s = UIOperations_renderSlider('Entry blend time', 'Time to fade in when entering a new state (yielding, overtaking, etc.).\nHigher = smoother transitions.', storage_Behavior.entryBlendTime_s, 0.0, 5.0, DEFAULT_SLIDER_WIDTH, '%.2f s', 1.5)
@@ -366,9 +385,10 @@ local drawBehaviorSection = function()
         storage_Behavior.humanLockupProbability = UIOperations_renderSlider('Lock-up probability (per sec)', 'Chance per second of brake lock-up when braking hard.', storage_Behavior.humanLockupProbability, 0.0, 0.10, DEFAULT_SLIDER_WIDTH, '%.3f', 0.03)
         storage_Behavior.humanTractionMistakeProbability = UIOperations_renderSlider('Traction mistake prob (per sec)', 'Chance per second of traction loss on throttle.', storage_Behavior.humanTractionMistakeProbability, 0.0, 0.10, DEFAULT_SLIDER_WIDTH, '%.3f', 0.02)
         storage_Behavior.errorCooldown_s = UIOperations_renderSlider('Error cooldown (s)', 'Minimum time between human errors on the same car.', storage_Behavior.errorCooldown_s or 7.0, 0.0, 30.0, DEFAULT_SLIDER_WIDTH, '%.1f s', 7.0)
-    end)
+    end
     end)
 end
+
 
 SettingsWindow.draw = function()
     Style.windowBegin('settingsWindow')
@@ -376,7 +396,8 @@ SettingsWindow.draw = function()
 
     ui_pushDWriteFont('Segoe UI')
 
-    ui_textColored(string_format('SETTINGS  /  %s', StorageManager_getPerTrackPerModeStorageKey()), Theme.colors.muted)
+    ui_textColored(Localization.text('SETTINGS  /  %s', StorageManager_getPerTrackPerModeStorageKey()), Theme.colors.muted)
+    drawLanguageSelector()
     ui_newLine(1)
 
     -- Draw the Enabled checkbox
@@ -384,7 +405,8 @@ SettingsWindow.draw = function()
     local enabledCheckBoxColor = appEnabled and Theme.colors.accent or Theme.colors.muted
     ui_pushStyleColor(ui_StyleColor.Text, enabledCheckBoxColor)
     local enabledDisabledText = appEnabled and 'Enabled' or 'Disabled'
-    if ui_checkbox(string_format('SimOpenTrackDay %s for: %s (Mode: %s)', enabledDisabledText, RaceTrackManager_getTrackName(), RaceTrackManager_getSessionTypeName()), appEnabled) then storage.enabled = not storage.enabled end
+    local enabledLabel = Localization.text('SimOpenTrackDay %s for: %s (Mode: %s)', Localization.text(enabledDisabledText), RaceTrackManager_getTrackName(), Localization.text(RaceTrackManager_getSessionTypeName()))
+    if ui_checkbox(translatedLabel(enabledLabel, 'settings.app.enabled'), appEnabled) then storage.enabled = not storage.enabled end
     ui_popStyleColor(1)
     if ui_itemHovered() then ui_setTooltip('Enable the SimOpenTrackDay app for this specific track and session mode.\n\nEach track and session mode type use individually saved settings.') end
 
@@ -421,8 +443,9 @@ SettingsWindow.draw = function()
     ui_separator()
 
     -- Create the Yielding and Overtaking table with 2 columns
-    ui_columns(2, true, "yieldingOvertakingSection")
-    ui_setColumnWidth(0, ui.windowWidth() * 0.46)
+    local splitBehavior = ui_availableSpaceX() >= 960
+    ui_columns(splitBehavior and 2 or 1, true, "yieldingOvertakingSection")
+    if splitBehavior then ui_setColumnWidth(0, ui.windowWidth() * 0.46) end
     --ui.setColumnWidth(1, 260)
 
     local handleYielding = storage_Yielding.handleYielding
@@ -483,7 +506,7 @@ SettingsWindow.draw = function()
         end)
     end)
     end)
-    ui_nextColumn()
+    if splitBehavior then ui_nextColumn() end
 
     Section.section('Overtaking', function()
     ui_newLine(1)
@@ -529,8 +552,9 @@ SettingsWindow.draw = function()
     ui_separator()
 
     UIOperations_createDisabledSection(not Constants.ENABLE_ACCIDENT_HANDLING_IN_APP, function()
-        ui_columns(2, true, "accidentsSection")
-        ui_setColumnWidth(0, ui.windowWidth() * 0.46)
+        local pathWide = ui_availableSpaceX() >= 820
+        ui_columns(pathWide and 2 or 1, true, "accidentsSection")
+        if pathWide then ui_setColumnWidth(0, ui.windowWidth() * 0.46) end
 
         Section.section('Accidents', function()
         ui_newLine(1)
@@ -546,7 +570,7 @@ SettingsWindow.draw = function()
         end)
         end)
 
-        ui_nextColumn()
+    if pathWide then ui_nextColumn() end
 
         Section.section('Pathfinding', function()
         ui_newLine(1)

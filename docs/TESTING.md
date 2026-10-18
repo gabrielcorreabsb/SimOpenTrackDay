@@ -1,96 +1,95 @@
-# Guia de Testes — SimOpenTrackDay
+# Testing Guide — SimOpenTrackDay
 
-Este documento descreve como validar o código-fonte do projeto em desenvolvimento **SimOpenTrackDay** antes e depois de uma instalação manual no Assetto Corsa (AC). Cobre pré-requisitos, sintaxe Lua, mocks headless e cenários in-game. A documentação e os checks de fonte não determinam o estado dos arquivos atualmente instalados; runtime CSP e validação visual in-game continuam pendentes. Isso não representa build publicado ou release.
+This document describes how to validate the **SimOpenTrackDay** development source before and after a manual Assetto Corsa (AC) installation. It covers prerequisites, Lua syntax, headless mocks, and in-game scenarios. Documentation and source checks do not establish which files are installed; CSP runtime and in-game visual validation remain pending. This is not a published build or release.
 
-> **Regra de ouro:** mantenha uma cópia de backup da instalação antiga e da configuração do usuário. Não apague a instalação existente nem limpe configurações para testar esta versão em desenvolvimento; prefira uma instalação paralela.
+> **Rule of thumb:** keep backups of the existing installation and user settings. Do not delete the current installation or clear settings to test this development version; prefer a parallel installation.
 
 ---
 
-## 1. Pré-requisitos de ambiente
+## 1. Environment prerequisites
 
 ### 1.1 LuaJIT
 
-LuaJIT é necessário para rodar o checker de sintaxe e os smoke tests headless.
-Use uma instalação compatível com LuaJIT 2.1; este guia não fixa uma versão de
-CSP nem recomenda um instalador específico.
+LuaJIT is required for the syntax checker and headless smoke tests. Use a LuaJIT 2.1-compatible installation; this guide does not specify a CSP version or recommend an installer.
 
-Para conferir a versão instalada:
+To check the installed version:
 
 ```powershell
 luajit -v
 ```
 
-### 1.2 Script de validação de sintaxe
+### 1.2 Syntax checker
 
-O checker mantido no repositório é `tools/check_lua_syntax.ps1`. Ele percorre os arquivos `.lua`, compila cada um com LuaJIT e informa falhas de sintaxe. A contagem é dinâmica: depende dos arquivos encontrados, não de um total fixo. O checker exclui `lib/ac_apps/` e `lib/AssettoCorsaCSPLuaCompatibilityManager/`, além de `*.bak`; não exclui `lib/uilib/`.
+The repository checker is `tools/check_lua_syntax.ps1`. It traverses `.lua` files, compiles each with LuaJIT, and reports syntax failures. Counts are dynamic and depend on discovered files. It excludes `lib/ac_apps/`, `lib/AssettoCorsaCSPLuaCompatibilityManager/`, and `*.bak`; it does not exclude `lib/uilib/`.
 
 ---
 
-## 2. Antes de cada commit / push
+## 2. Local source checks
 
-### 2.1 Validar sintaxe (contagem dinâmica)
+### 2.1 Check syntax (dynamic count)
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
 ```
 
-O script localiza `luajit` no `PATH` por padrão. Os parâmetros opcionais `-LuaJitPath <path-to-luajit.exe>` e `-Root <project-root>` permitem indicar outros caminhos. A saída final indica a quantidade verificada e o processo falha se houver arquivo inválido.
+The script finds `luajit` on `PATH` by default. Optional `-LuaJitPath <path-to-luajit.exe>` and `-Root <project-root>` parameters select other paths. Final output reports the discovered count; the process fails if any file is invalid.
 
-Se houver falha, leia o bloco `FAIL` apontado (arquivo + linha) e
-conserte antes de seguir.
+If it fails, inspect the reported `FAIL` block (file and line) before proceeding.
 
-### 2.2 Grep de regressões óbvias (opcional, mas recomendado)
+### 2.2 Obvious regression searches (optional)
 
-Estas checagens pegam erros que passam pela validação de sintaxe (a sintaxe
-está OK, mas a API usada é errada).
+These searches can catch errors that pass syntax validation, such as using an unavailable API.
 
 ```powershell
-# Deve dar 0 matches: a lista de carros deve vir do CarManager
+# Expected: no matches; use CarManager for the car list
 findstr /N /C:"local carList = {}" *.lua
 
-# Em Enum.lua, deve dar 0 matches com "&": use bit.band
+# Expected: no matches; use bit.band instead of native bitwise operators
 findstr /N /C:"& " Enum.lua
 
-# Deve dar 0 matches: physics.removeAITopSpeed não existe
+# Expected: no matches; physics.removeAITopSpeed does not exist
 findstr /N /C:"physics.removeAITopSpeed" *.lua
 ```
 
-Notas:
+Notes:
 
-- `local carList = {}` → o correto é usar
-  `CarManager.cars_currentReusableList`.
-- `& ` (bitwise nativo) → o correto é `bit.band` (LuaJIT 2.1 sem o operador
-  nativo de 5.3).
-- `physics.removeAITopSpeed` → não existe; use
-  `CarOperations.removeAITopSpeed`.
+- `local carList = {}` → use `CarManager.cars_currentReusableList`.
+- Native `&` → use `bit.band` (LuaJIT 2.1 does not support Lua 5.3 native bitwise operators).
+- `physics.removeAITopSpeed` → use `CarOperations.removeAITopSpeed`.
 
-### 2.3 Mock smoke test da UI (evidência limitada)
+### 2.3 UI mock smoke test (limited evidence)
 
-Execute o smoke test headless de contratos com:
+Run the headless contract smoke test:
 
 ```powershell
 luajit tools/test_ui_smoke.lua
 ```
 
-O teste usa mocks e a fixture versionada `tools/fixtures/settings_baseline.lua`; ele cobre apenas os contratos e caminhos exercitados. Não valida rendering/interação no CSP nem substitui os cenários in-game abaixo.
+The test uses mocks and the versioned `tools/fixtures/settings_baseline.lua` fixture; it covers only exercised contracts and paths. Its mock checks localization/IDs, disabled-control behavior, and selected width/column cases (including 80, 480, 700, 900, 1200, and 1760 px). It does not validate CSP rendering/interaction or replace the in-game scenarios below. It is not a complete main-callback or full UI validation.
 
-### 2.4 Mock smoke test do logo e callback de ícone
+### 2.4 Logo and icon-callback mock smoke test
 
 ```powershell
 luajit tools/test_logo_smoke.lua
 ```
 
-Esse teste compila somente o callback de ícone extraído do entry point e testa `Logo`/renderer com uma UI mockada. Não valida rendering real no CSP.
+This test compiles only the icon callback extracted from the entry point and tests `Logo`/renderer using a mocked UI. It does not validate actual CSP rendering.
 
-### Últimos checks headless registrados
+### 2.5 Localization contract test
 
-Os últimos resultados registrados são: sintaxe Lua 66 PASS, mock UI portátil 542 PASS, mock de logo 21 PASS e comparação opcional com baseline 607 PASS. São checks de fonte/mocks; não comprovam estado da instalação, compatibilidade CSP em execução ou aparência in-game. Para comparar com um baseline separado, defina opcionalmente `RTD_BASELINE_SETTINGS` para o caminho local desse arquivo-fonte antes de executar `tools/test_ui_smoke.lua`; a fixture versionada continua sendo o padrão e não é regenerada automaticamente.
+```powershell
+luajit tools/test_localization.lua
+```
+
+This test checks locale/catalog parity, placeholders, stable UI IDs, strict storage access, and selected source call sites. It does not validate CSP rendering. Mock coverage of widths/layout is bounded and does not establish the complete CSP UI or main callback.
+
+An optional comparison may set `RTD_BASELINE_SETTINGS` to a locally available source baseline before running `tools/test_ui_smoke.lua`. The versioned fixture remains the default and is not regenerated automatically; do not include personal paths in documentation or issues.
 
 ---
 
-## 3. Antes de instalar no AC
+## 3. Before installing in AC
 
-### 3.1 Backup da versão antiga e configurações
+### 3.1 Back up the existing version and settings
 
 ```powershell
 $acLuaApps = "<Assetto Corsa>\apps\lua"
@@ -98,137 +97,134 @@ $backupRoot = "<backup-location>\SimOpenTrackDay-test-backup"
 Copy-Item -LiteralPath (Join-Path $acLuaApps "<existing-app-directory>") -Destination (Join-Path $backupRoot "existing-app") -Recurse
 ```
 
-Substitua os valores entre `<...>` por caminhos seus. Preserve também as configurações do usuário; não redefina nem remova diretórios de configuração durante esses testes.
+Replace `<...>` values with your own paths. Preserve user settings; do not reset or remove configuration directories during these tests.
 
-### 3.2 Copiar a nova versão
+### 3.2 Copy the new version
 
-Faça a cópia **manualmente** dos arquivos de runtime da raiz e das pastas `CarStateMachine/`, `DataStructures/`, `Strings/` e `lib/` para uma pasta paralela `<Assetto Corsa>/apps/lua/SimOpenTrackDay/`. Inclua o entry point `SimOpenTrackDay.lua`, `manifest.ini` e os demais arquivos runtime necessários. Não copie `.git/`, `tools/`, `docs/`, `artifacts/` ou arquivos `*.bak`. Não use uma cópia ampla do repositório. O entry point instalado deve ser `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; não crie a hierarquia `apps/lua/` dentro do clone. Mantenha instalações existentes e configurações do usuário intactas.
-
----
-
-## 4. Smoke test no AC (carregar o app)
-
-Este é um roteiro mínimo de smoke test manual para executar após instalar uma cópia de teste. Runtime CSP e validação visual permanecem pendentes; não presuma que os arquivos instalados correspondem a uma versão específica do código-fonte.
-
-1. Abra o Assetto Corsa e habilite `SimOpenTrackDay` entre as Lua Apps do CSP.
-2. Inicie uma sessão offline com carros IA em uma pista com AI spline.
-3. Abra a janela `SimOpenTrackDay` no jogo e confira os logs CSP se ocorrer erro.
-
-### Se der erro de CSP faltando
-
-Se faltarem funções CSP, consulte as mensagens de compatibilidade e os logs CSP, incluindo os registros `[RTD-DIAG-*]` e a última mensagem de compatibilidade disponível. `CSPCompatibilityManager.ShowErrorModalDialog = false` desativa intencionalmente o modal de diagnóstico; não dependa de uma janela modal para perceber a falha. Use uma versão do CSP que disponibilize as APIs exigidas pelo app; este guia não fixa um número mínimo.
-
-- Se as APIs exigidas estiverem ausentes, atualize o CSP por um canal confiável ou desabilite o app em Lua Apps até resolver a compatibilidade.
+Manually copy the runtime files at the root and the `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/` directories to a parallel `<Assetto Corsa>/apps/lua/SimOpenTrackDay/` directory. Include `SimOpenTrackDay.lua`, `manifest.ini`, and other required runtime files. Do not copy `.git/`, `tools/`, `docs/`, `artifacts/`, or `*.bak` files. Do not copy the repository wholesale. The installed entry point must be `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; do not create `apps/lua/` inside the clone. Keep existing installations and user settings intact.
 
 ---
 
-## 5. Cenários de validação in-game (pendentes para este fork)
+## 4. AC smoke test (load the app)
 
-Use estes cenários detalhados para validar as features após instalar manualmente uma cópia de teste. Eles descrevem verificações planejadas, não resultados já observados neste fork. Sempre que possível, deixe a tabela de debug ligada (`storage_Debugging.drawCarList = true`) para inspecionar o estado dos carros.
+This is a minimal manual smoke test to run after installing a test copy. CSP runtime and visual validation remain pending; do not assume installed files correspond to a specific source revision.
 
-### Cenário 1: Trilha 1 — simulação reativada
+1. Open Assetto Corsa and enable `SimOpenTrackDay` among CSP Lua Apps.
+2. Start an offline session with AI cars on a track with an AI spline.
+3. Open the `SimOpenTrackDay` window in-game; check CSP logs if an error occurs.
 
-- Pilotar 5 voltas na Nordschleife.
-- **Esperado**: carros IA continuam dirigindo (não "congelam").
-- **Esperado**: indicador lateral de cada carro aparece na tabela de debug.
-- **Bug se**: carros IA param de se mover, ou viram NPCs inertes.
+### If required CSP APIs are missing
 
-### Cenário 2: Trilha 2 — performance
+If CSP functions are missing, inspect compatibility messages and CSP logs, including `[RTD-DIAG-*]` records and the latest available compatibility message. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the diagnostic modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
 
-- Habilite `storage_Debugging.drawCarList = true` para ver a tabela de carros.
-- Pilote com 20–30 carros IA na pista.
-- **Esperado**: framerate estável (acima de 60 fps na maioria dos setups).
-- **Bug se**: framerate cai abaixo de 30 fps com IA moderada.
+- If required APIs are unavailable, update CSP through a trusted channel or disable the app in Lua Apps until compatibility is resolved.
 
-### Cenário 3: Perfil Casual
+---
 
-1. `SettingsWindow → Behavior & Mode → "Casual"`.
-2. Pilote na Nordschleife.
+## 5. In-game validation scenarios (pending for this fork)
 
-- **Esperado**: carros IA cedem passagem de forma muito rápida (point-by speed
-  delta = 25 km/h).
-- **Esperado**: nenhuma defesa de posição.
-- **Esperado**: nenhum erro humano (lock-up/traction).
-- **Esperado**: transições suaves (`entryBlendTime = 0.5s`).
+Use these scenarios to validate features after manually installing a test copy. They are planned checks, not results already observed in this fork. When useful, enable the debug table (`storage_Debugging.drawCarList = true`) to inspect car states.
 
-### Cenário 4: Perfil Realistic
+### Scenario 1: Track 1 — simulation resumes
 
-1. `SettingsWindow → Behavior & Mode → "Realistic"` (default).
-2. Pilote na Nordschleife.
+- Drive five laps at Nordschleife.
+- **Expected:** AI cars keep moving (do not “freeze”).
+- **Expected:** each car's lateral indicator appears in the debug table.
+- **Bug if:** AI cars stop moving or become inert NPCs.
 
-- **Esperado**: o limiar configurado para ceder é 15 km/h.
-- **Esperado**: blend time 1.5s (visível: a lateral muda gradualmente).
-- **Esperado**: hesitação de ~0.4s antes de reagir.
-- **Esperado**: nenhuma defesa, nenhum erro.
+### Scenario 2: Track 2 — performance
 
-### Cenário 5: Perfil Competitive
+- Enable `storage_Debugging.drawCarList = true` to show the car table.
+- Drive with 20–30 AI cars on track.
+- **Expected:** stable frame rate (above 60 fps on most setups).
+- **Bug if:** frame rate falls below 30 fps with a moderate AI count.
 
-1. `SettingsWindow → Behavior & Mode → "Competitive"`.
-2. Pilote na Nordschleife.
+### Scenario 3: Casual profile
 
-- **Esperado**: a duração de defesa configurada varia de 1,5 a 3,5s.
-- **Esperado**: lock-ups ocasionais em frenagem forte.
-- **Esperado**: tração perdida na saída de curva.
-- **Esperado**: cedem só se muito mais rápido (10 km/h diff).
+1. Select `SettingsWindow → Behavior & Mode → "Casual"`.
+2. Drive at Nordschleife.
 
-### Cenário 6: Opção de modo Hybrid (comportamento adaptativo pendente)
+- **Inspect configured values:** after applying the profile, `pointBySpeedDeltaKmh` is 25 and `entryBlendTime_s` is 0.5 s. These are stored/UI values only; point-by speed threshold and blend-time behavior are not integrated into the current runtime, so do not expect those effects or report their absence as a CSP regression.
+- **Expected runtime behavior:** no position defense and no human errors (lock-up/traction) for this profile.
 
-1. Selecione um perfil na interface e confira o `Current Mode` exibido; o modo não é editável diretamente.
+### Scenario 4: Realistic profile
 
-- **Limite atual:** `applyBehaviorProfile` é chamado pela interface ao selecionar um perfil, não automaticamente. O perfil Casual e o Realistic configuram `Track Day`; Competitive configura `Race`. `Hybrid (Auto)` não tem detecção/adaptação implementada, portanto não espere mudança automática de modo.
+1. Select `SettingsWindow → Behavior & Mode → "Realistic"` (default).
+2. Drive at Nordschleife.
 
-### Cenário 7: Anti-drag-race
+- **Inspect configured values:** after applying the profile, `pointBySpeedDeltaKmh` is 15, `entryBlendTime_s` is 1.5 s, and `aiReactionDelay_s` is 0.4 s. These values can be inspected in settings/storage; the point-by threshold, blend-time, and reaction helper are not integrated into the current runtime. Do not expect threshold-based yielding, those transition/reaction timings, or treat their absence as a CSP regression.
+- **Expected runtime behavior:** no position defense and no human errors for this profile.
 
-1. Perfil **Competitive**.
-2. Pilote atrás de um AI mais lento em uma reta longa.
+### Scenario 5: Competitive profile
 
-- **Esperado**: ao aplicar o limitador anti-drag-race, a velocidade-alvo do carro
-  à frente é limitada a 95% da velocidade do carro que se aproxima.
+1. Select `SettingsWindow → Behavior & Mode → "Competitive"`.
+2. Drive at Nordschleife.
+
+- **Inspect configured values:** defense duration is configured between 1.5 and 3.5 s. `pointBySpeedDeltaKmh` is 10, but that threshold is not integrated into current runtime behavior; do not infer a required yield-speed difference or treat its absence as a CSP regression.
+- **Runtime limitation:** `DEFENDING_POSITION` is defined but has no incoming transition in the current FSM; the configured duration range does not establish observable position defense. Human errors are enabled, so lock-up/traction-mistake behavior may occur; do not treat a specific event or frequency as guaranteed by this scenario.
+
+### Scenario 6: Hybrid mode (adaptive behavior pending)
+
+1. Select a profile and inspect the displayed `Current Mode`; the mode is not directly editable.
+
+- **Current limitation:** the UI calls `applyBehaviorProfile` when a profile is selected; it is not automatic. Casual and Realistic configure `Track Day`; Competitive configures `Race`. `Hybrid (Auto)` has no implemented detection/adaptation, so do not expect automatic mode changes.
+
+### Scenario 7: Anti-drag-race
+
+1. Select **Competitive**.
+2. Drive behind a slower AI on a long straight.
+
+- **Expected:** when the anti-drag-race limiter applies, the car ahead's target speed is capped at 95% of the approaching car's speed.
 
 ---
 
 ## 6. Debugging checklist
 
-Se algo parecer errado, ligue as flags abaixo (em `Storage`/`storage_Debugging`)
-e reproduza:
+If something appears wrong, enable the following flags (in `Storage`/`storage_Debugging`) and reproduce it:
 
-1. `storage_Debugging.drawCarList = true` — mostra a tabela de carros.
-2. `storage_Debugging.debugShowCarStateOverheadText = true` — texto flutuante
-   acima de cada carro.
-3. `storage_Debugging.debugShowRaycastsWhileDrivingLaterally = true` — desenha
-   os raycasts de detecção lateral.
-4. `storage_Debugging.debugDrawSideOfftrack = true` — desenha a detecção de
-   off-track.
-5. `Constants.PATHFINDING_DEBUGGING = true` (em `Constants.lua`) — ativa o
-   Pathfinding experimental.
+1. `storage_Debugging.drawCarList = true` — displays the car table.
+2. `storage_Debugging.debugShowCarStateOverheadText = true` — draws floating text above each car.
+3. `storage_Debugging.debugShowRaycastsWhileDrivingLaterally = true` — draws lateral-detection raycasts.
+4. `storage_Debugging.debugDrawSideOfftrack = true` — draws off-track detection.
+5. `Constants.PATHFINDING_DEBUGGING = true` (in `Constants.lua`) — enables experimental pathfinding.
 
-Lembre-se de **desligar** essas flags antes de medir performance (Cenário 2),
-pois elas adicionam custo de render/debug.
+Remember to **turn off** these flags before measuring performance (Scenario 2); they add rendering/debug overhead.
 
 ---
 
-## 7. Rolling back (sem apagar instalações ou configurações)
+## 7. Rollback (preserve installations and settings)
 
-Se uma versão quebrar o jogo:
+If a version causes problems:
 
-1. Pare o Assetto Corsa.
-2. Desabilite a cópia de teste na lista Lua Apps do CSP. Não remova a instalação de teste até terminar a comparação.
-3. Restaure a instalação e configuração conhecidas a partir do backup, se necessário:
+1. Stop Assetto Corsa.
+2. Disable the test copy in CSP Lua Apps. Do not remove it until comparison is complete.
+3. Restore the known installation and settings from backup if needed:
    ```powershell
    Copy-Item -Path "<backup-location>\existing-app\*" -Destination "<Assetto Corsa>\apps\lua\<existing-app-directory>" -Recurse
    ```
-4. Reabra o Assetto Corsa.
+4. Reopen Assetto Corsa.
 
 ---
 
-## Resumo rápido (cheat sheet)
+## Quick reference
 
-| Etapa | Comando / Ação | Esperado |
+| Step | Command / action | Expected |
 | --- | --- | --- |
-| Sintaxe | `tools/check_lua_syntax.ps1` | Contagem dinâmica; nenhuma falha |
-| Grep regressões | `findstr` (3 padrões) | 0 matches cada |
-| Backup | copiar instalação/configuração antiga | cópia preservada |
-| Instalar | copiar para `apps/lua/SimOpenTrackDay/` | cópia paralela sem apagar a existente |
-| Smoke test | habilitar Lua App + AI Flood | pendente até execução no CSP |
-| Cenários | 1 → 7 | verificações planejadas, não resultados já confirmados |
-| Rollback | desabilitar teste/restaurar backup | instalações e configurações preservadas |
+| Syntax | `tools/check_lua_syntax.ps1` | Dynamic count; no failures |
+| Regression searches | `findstr` (3 patterns) | No matches for each |
+| Backup | Copy existing installation/settings | Backup preserved |
+| Install | Copy to `apps/lua/SimOpenTrackDay/` | Parallel copy; existing install untouched |
+| Smoke test | Enable Lua App and AI Flood | Pending CSP execution |
+| Scenarios | 1 → 7 | Planned checks, not confirmed results |
+| Rollback | Disable test/restore backup | Installations/settings preserved |
+
+## 8. Manual UI and localization scenarios (pending)
+
+After installing a test copy in CSP, verify each locale and layout. These are proposed manual checks, not results:
+
+- Switch among English, Português (Brasil), and Español; confirm the selection persists after closing/reopening the settings window and after restarting the app.
+- Verify enabled/disabled state and that disabled controls behave as expected; do not equate “enabled” with “can run.”
+- Expand/collapse advanced behavior controls and confirm their visibility and values; this open/closed UI state is local, not persisted.
+- Inspect the current main panel and car table/toggle access; confirm settings access and no clipped or unreachable common controls. The proposed Overview/Diagnostics separation is future work described in the [UI identity plan](plans/UI_IDENTITY.md), not a claim about the current interface.
+- Inspect narrow layouts around 80, 480, 700, 900, 1200, and 1760 px where practical, plus a wide layout; check overflow and navigation. Mocked width coverage is not a CSP visual guarantee.
+- Confirm translated labels keep stable ImGui IDs and no untranslated presentation strings are obvious. Simulation data, enums, and logs are not expected to be translated.

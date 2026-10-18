@@ -1,63 +1,63 @@
-# AGENT.md — Guia de Entrada
+# AGENT.md — Project Guide
 
-> Ponto de entrada para **AI agents** e **desenvolvedores humanos** que chegam no projeto pela primeira vez.
-> Leia isto antes de abrir qualquer arquivo. Depois siga para a documentação detalhada (seção 8).
-
----
-
-## 1. O que é este projeto
-
-**SimOpenTrackDay** é um projeto derivado independente, em desenvolvimento, baseado em **Assetto Corsa Realistic Trackday**: um app em **Lua** para **Assetto Corsa**, carregado via **Custom Shaders Patch (CSP)**. O projeto original é de Andreas Grech; veja os [créditos e licença](../README.md#créditos-e-licença) no README.
-
-Ele altera o comportamento dos carros controlados pela **IA** para que ajam como humanos num *track day* em vez de bots que seguem a *racing line* com "antolhos". Comportamentos principais:
-
-- **Ceder passagem (yield)**: um carro mais lento sai da racing line para um lado fixo (esquerda ou direita, conforme a regra) e deixa o carro mais rápido passar.
-- **Ultrapassar (overtake)**: o carro mais rápido passa pelo lado oposto ao de yield.
-- **Retornar à racing line**: após a manobra, o carro volta suavemente para a racing line quando for seguro.
-- **Erros humanos**: acidentes/lockups/traction mistakes são aceitos e telegrafados (não é determinístico).
-
-A inspiração é a experiência real das **Touristenfahrten da Nordschleife**, onde por regulamento só se ultrapassa pela esquerda e carros que cedem o fazem pela direita.
+> Detailed context for **AI agents** and **human developers** who need to understand the project.
+> This is a human-maintained reference, not an auto-loaded instruction file; read relevant sections as needed.
 
 ---
 
-## 2. Stack técnica
+## 1. Project overview
 
-| Item | Valor |
+**SimOpenTrackDay** is an independent derivative project under development, based on **Assetto Corsa Realistic Trackday**: a **Lua** app for **Assetto Corsa**, loaded through **Custom Shaders Patch (CSP)**. The original project is by Andreas Grech; see [credits and license](../README.md#credits-and-license) in the README.
+
+It changes **AI** car behavior to act more like humans during a *track day* instead of bots following the *racing line* with “blinders.” Main behaviors:
+
+- **Yield:** a slower car moves off the racing line to a fixed side (left or right according to the rule) and lets the faster car pass.
+- **Overtake:** the faster car passes on the side opposite the yield side.
+- **Return to racing line:** after the maneuver, the car smoothly returns when safe.
+- **Human errors:** accidents, lockups, and traction mistakes may occur and are signaled; behavior is not deterministic.
+
+The inspiration is the real **Nordschleife Touristenfahrten** experience, where overtaking is permitted only on the left and yielding cars move right.
+
+---
+
+## 2. Technical stack
+
+| Item | Value |
 | --- | --- |
-| **Engine** | **LuaJIT 2.1** (compatível com **Lua 5.1**) — a mesma engine que o CSP usa internamente |
-| **CSP** | Necessário para carregar Lua Apps; a compatibilidade das APIs usadas é verificada pelo app. Nenhuma versão mínima é declarada aqui. |
-| **Manifest** | `manifest.ini` com `[CORE] LAZY = NONE` |
+| **Engine** | **LuaJIT 2.1** (compatible with **Lua 5.1**), the engine used internally by CSP |
+| **CSP** | Required to load Lua Apps; the app checks compatibility for APIs it uses. No minimum version is declared here. |
+| **Manifest** | `manifest.ini` with `[CORE] LAZY = NONE` |
 | **Callbacks** | `MANIFEST__UPDATE`, `MANIFEST__FUNCTION_MAIN`, `MANIFEST__FUNCTION_SETTINGS`, `MANIFEST__FUNCTION_ICON`, `MANIFEST__TRANSPARENT` |
-| **SDK/submodules** | `lib/ac_apps/` (SDK do CSP) e `lib/AssettoCorsaCSPLuaCompatibilityManager/` (submodule de compatibilidade) — não editar como código do app; atualizar o submodule deliberadamente |
-| **Biblioteca própria** | `lib/uilib/` — código do projeto; não confundir com o SDK vendor ou o submodule de compatibilidade |
+| **SDK/submodules** | `lib/ac_apps/` (CSP SDK) and `lib/AssettoCorsaCSPLuaCompatibilityManager/` (compatibility submodule); do not edit as app code; update the submodule deliberately |
+| **Project library** | `lib/uilib/` — project code, distinct from vendor SDK and compatibility submodule |
 
-As funções de CSP `physics.setAIBrakeMistake` e `physics.setAITractionMistake` são registradas via `CSPCompatibilityManager.addFunction(...)` no topo do entry point. `physics.setAILapsToComplete` existe no SDK distribuído, mas não é registrada nem usada pelo app atual.
+The CSP functions `physics.setAIBrakeMistake` and `physics.setAITractionMistake` are registered through `CSPCompatibilityManager.addFunction(...)` near the top of the entry point. `physics.setAILapsToComplete` exists in the distributed SDK but is neither registered nor used by the current app.
 
-> **Importante**: o payload no repositório está na raiz. Instalado, o entry point fica em `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`. A instalação é manual. Não mova os módulos para uma nova hierarquia dentro do repositório; preserve instalações e configurações existentes.
+> **Important:** repository payload is at the root. When installed, the entry point is `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`. Installation is manual. Do not move modules into a new repository hierarchy; preserve existing installations and settings.
 
 ---
 
-## 3. Layout de pastas (alto nível)
+## 3. High-level directory layout
 
 ```
-SimOpenTrackDay/ (payload na raiz do repositório)
-├─ SimOpenTrackDay.lua                 # ENTRY POINT (callbacks do manifest)
-├─ CarManager.lua                      # estado dos carros (DoD) + helpers de posição
-├─ CarOperations.lua                   # operações de yield/overtake entre carros
-├─ StorageManager.lua                  # settings + storage per-track-per-mode
-├─ SettingsWindow.lua                  # UI de settings (ImGui)
-├─ UIManager.lua / UIOperations.lua    # HUD e overlays
+SimOpenTrackDay/ (payload at repository root)
+├─ SimOpenTrackDay.lua                 # ENTRY POINT (manifest callbacks)
+├─ CarManager.lua                      # car state (DoD) and position helpers
+├─ CarOperations.lua                   # yield/overtake operations
+├─ StorageManager.lua                  # settings and per-track/per-mode storage
+├─ SettingsWindow.lua                  # settings UI (ImGui)
+├─ UIManager.lua / UIOperations.lua    # HUD and overlays
 ├─ HumanErrorManager.lua               # lockups / traction mistakes
-├─ AccidentManager.lua                 # detecção e navegação de acidentes
-├─ CollisionAvoidanceManager.lua       # evitar colisões
+├─ AccidentManager.lua                 # accident detection/navigation
+├─ CollisionAvoidanceManager.lua       # collision avoidance
 ├─ RaceTrackManager.lua                # spline, racing line, offsets
-├─ BehaviorPolish.lua                  # helpers puros de comportamento
-├─ Enum.lua / Constants.lua            # enums e constantes globais
-├─ Logger.lua / Profiler.lua           # logging e profiling
+├─ BehaviorPolish.lua                  # pure behavior helpers
+├─ Enum.lua / Constants.lua            # enums and global constants
+├─ Logger.lua / Profiler.lua           # logging and profiling
 │
 ├─ CarStateMachine/
 │  ├─ CarStateMachine.lua              # FSM central: entry/update/transition/exit
-│  ├─ CarState_TEMPLATE.lua            # template para novos estados
+│  ├─ CarState_TEMPLATE.lua            # template for new states
 │  └─ States/
 │     ├─ CarState_DrivingNormally.lua
 │     ├─ CarState_EasingInYield.lua
@@ -74,78 +74,78 @@ SimOpenTrackDay/ (payload na raiz do repositório)
 │     ├─ CarState_AnotherCarCollidedIntoMe.lua
 │     └─ CarState_AfterCustomAIFloodTeleport.lua
 │
-├─ Strings/                            # textos de debug (reason/exit reason)
+├─ Strings/                            # debug reason/exit-reason text
 │  ├─ Strings.lua
 │  ├─ Strings_StateExitReason.lua
 │  ├─ Strings_ReasonWhyCantYield.lua
 │  └─ Strings_ReasonWhyCantOvertake.lua
 │
-├─ DataStructures/                     # estruturas reutilizáveis
+├─ DataStructures/                     # reusable data structures
 │  ├─ QueueManager.lua
 │  ├─ StackManager.lua
 │  ├─ DequeManager.lua
 │  └─ CompletableIndexCollectionManager.lua
 │
-├─ lib/ac_apps/                        # SDK CSP (vendor)
-├─ lib/AssettoCorsaCSPLuaCompatibilityManager/ # submodule de compatibilidade
-├─ lib/uilib/                          # biblioteca própria do projeto
+├─ lib/ac_apps/                        # CSP SDK (vendor)
+├─ lib/AssettoCorsaCSPLuaCompatibilityManager/ # compatibility submodule
+├─ lib/uilib/                          # project-owned library
 │
-└─ docs/                               # esta documentação
+└─ docs/                               # project documentation
 ```
 
-Os demais `*.lua` no root (ex.: `CameraManager`, `GameTimeManager`, `SessionDetails`, `VecPool`, `Pathfinding`, `FrenetAvoid`, etc.) são módulos principais carregados pelo entry point.
+Other root `*.lua` files (e.g. `CameraManager`, `GameTimeManager`, `SessionDetails`, `VecPool`, `Pathfinding`, `FrenetAvoid`) are primary modules loaded by the entry point.
 
 ---
 
-## 4. Entry points por intenção
+## 4. Entry points by task
 
-Use a tabela abaixo conforme o que você quer fazer:
+Use this table to locate a starting point for a task:
 
-| Quero... | Vá para |
+| Task | Start at |
 | --- | --- |
-| **Entender o fluxo principal** | `SimOpenTrackDay.lua` → `script.MANIFEST__UPDATE` |
-| **Entender a decisão de um carro individual** | `CarManager.lua` → `getActualTrackLateralOffset` + estados em `CarStateMachine/States/` |
-| **Mudar UI de tela principal** | `SimOpenTrackDay.lua` → `MANIFEST__FUNCTION_MAIN` |
-| **Mudar tela de settings** | `SettingsWindow.lua` → `MANIFEST__FUNCTION_SETTINGS` |
-| **Mexer em settings/persistência** | `StorageManager.lua` (ver seção 5) |
-| **Adicionar uma feature** | Seção 6 |
+| **Understand main flow** | `SimOpenTrackDay.lua` → `script.MANIFEST__UPDATE` |
+| **Understand one car's decisions** | `CarManager.lua` → `getActualTrackLateralOffset` and states in `CarStateMachine/States/` |
+| **Change main-window UI** | `SimOpenTrackDay.lua` → `MANIFEST__FUNCTION_MAIN` |
+| **Change settings UI** | `SettingsWindow.lua` → `MANIFEST__FUNCTION_SETTINGS` |
+| **Change settings/persistence** | `StorageManager.lua` (see section 5) |
+| **Add a feature** | Section 6 |
 
-**Fluxo resumido do `MANIFEST__UPDATE`**: atualiza estado global (tempo de sessão, pista, flags) → reconstrói a lista ordenada de carros → roda a FSM de cada carro → aplica operações (yield/overtake) → atualiza UI/HUD.
+**`MANIFEST__UPDATE` summary:** update global state (session time, track, flags) → rebuild sorted car list → run each car's FSM → apply operations (yield/overtake) → update UI/HUD.
 
-### Estados da FSM (referência rápida)
+### FSM states (quick reference)
 
-Cada estado é um **bit flag** em `CarStateMachine.CarStateType`. O estado de um carro é testado/somado com `bit.band`/`bit.bor`.
+Each state is a **bit flag** in `CarStateMachine.CarStateType`. Car states are tested/combined with `bit.band`/`bit.bor`.
 
-| Estado | Bit | Papel |
+| State | Bit | Role |
 | --- | --- | --- |
-| `DRIVING_NORMALLY` | 1 | Segue a racing line, comportamento padrão |
-| `EASING_IN_YIELD` | 4 | Transição suave para a faixa de yield |
-| `STAYING_ON_YIELDING_LANE` | 8 | Mantém-se fora da racing line cedendo passagem |
-| `EASING_OUT_YIELD` | 32 | Retorna à racing line após o yield |
-| `DEFENDING_POSITION` | 65536 | Segura a racing line sob pressão antes de ceder |
-| `EASING_IN_OVERTAKE` | 1024 | Transição para a faixa de ultrapassagem |
-| `STAYING_ON_OVERTAKING_LANE` | 2048 | Mantém-se na faixa de ultrapassagem |
-| `EASING_OUT_OVERTAKE` | 4096 | Retorna à racing line após ultrapassar |
-| `NAVIGATING_AROUND_ACCIDENT` | 8192 | Desvia de acidente na pista |
-| `DRIVING_IN_YELLOW_FLAG_ZONE` | 16384 | Comportamento sob bandeira amarela |
-| `COLLIDED_WITH_TRACK` | 128 | Recuperação após sair da pista |
-| `COLLIDED_WITH_CAR` | 256 | Recuperação após colisão com outro carro |
-| `ANOTHER_CAR_COLLIDED_INTO_ME` | 512 | Reação a ser atingido |
-| `WAITING_AFTER_ACCIDENT` | 64 | Espera após acidente |
-| `AFTER_CUSTOMAIFLOOD_TELEPORT` | 32768 | Reintegração após teleporte do CustomAIFlood |
+| `DRIVING_NORMALLY` | 1 | Follows the racing line by default |
+| `EASING_IN_YIELD` | 4 | Smooth transition to the yielding lane |
+| `STAYING_ON_YIELDING_LANE` | 8 | Holds off the racing line to yield |
+| `EASING_OUT_YIELD` | 32 | Returns to the racing line after yielding |
+| `DEFENDING_POSITION` | 65536 | Holds the racing line under pressure before yielding |
+| `EASING_IN_OVERTAKE` | 1024 | Transitions to the overtaking lane |
+| `STAYING_ON_OVERTAKING_LANE` | 2048 | Holds the overtaking lane |
+| `EASING_OUT_OVERTAKE` | 4096 | Returns to the racing line after overtaking |
+| `NAVIGATING_AROUND_ACCIDENT` | 8192 | Avoids an accident on track |
+| `DRIVING_IN_YELLOW_FLAG_ZONE` | 16384 | Behavior in a yellow-flag zone |
+| `COLLIDED_WITH_TRACK` | 128 | Recovers after leaving the track |
+| `COLLIDED_WITH_CAR` | 256 | Recovers after colliding with another car |
+| `ANOTHER_CAR_COLLIDED_INTO_ME` | 512 | Reacts to being hit |
+| `WAITING_AFTER_ACCIDENT` | 64 | Waits after an accident |
+| `AFTER_CUSTOMAIFLOOD_TELEPORT` | 32768 | Reintegrates after CustomAIFlood teleport |
 
-> O template `CarState_TEMPLATE.lua` mostra o contrato de cada estado: `states_entryFunctions`, `states_updateFunctions`, `states_transitionFunctions`, `states_exitFunctions`, todos com a assinatura `(carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)`.
+> `CarState_TEMPLATE.lua` shows each state's contract: `states_entryFunctions`, `states_updateFunctions`, `states_transitionFunctions`, and `states_exitFunctions`, all with signature `(carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)`.
 
 ---
 
-## 5. Convenções do código
+## 5. Code conventions
 
 ### Naming
-- `snake_case` para funções e variáveis locais.
-- `CamelCase` + nome do módulo para **tabelas principais** e **enums** (`CarManager`, `StorageManager.BehaviorProfiles`, `StorageManager.Options_Behavior`, `CarStateMachine.CarStateType`).
+- Use `snake_case` for functions and local variables.
+- Use `CamelCase` with the module name for **main tables** and **enums** (`CarManager`, `StorageManager.BehaviorProfiles`, `StorageManager.Options_Behavior`, `CarStateMachine.CarStateType`).
 
-### Bindings locais no topo de cada arquivo
-Cada arquivo cria `local` no topo para as APIs que usa:
+### Top-level local bindings
+Each file binds the APIs it uses to locals near the top:
 
 ```lua
 local ac_getCar            = ac.getCar
@@ -153,24 +153,24 @@ local physics_setAITopSpeed = physics.setAITopSpeed
 local CarManager_getActualTrackLateralOffset = CarManager.getActualTrackLateralOffset
 ```
 
-**Use esses locals** dentro das funções; **nunca chame `ac.getCar(...)` diretamente**. Isso melhora performance (evita lookup de tabela em hot path) e mantém um ponto único de acoplamento.
+**Use these locals** inside functions; **do not call `ac.getCar(...)` directly**. This avoids repeated table lookups in hot paths and keeps a single coupling point.
 
 ### Bitwise
-Use a biblioteca **`bit.*` do LuaJIT**: `bit.band`, `bit.bor`, `bit.bnot`, `bit.bxor`, `bit.lshift`, `bit.rshift`.
+Use LuaJIT's **`bit.*`** library: `bit.band`, `bit.bor`, `bit.bnot`, `bit.bxor`, `bit.lshift`, `bit.rshift`.
 
-> **NÃO use `&`, `|`, `~`, `<<`, `>>`** — são operadores de **Lua 5.3** e **não existem no LuaJIT 2.1**. Você quebrará o app.
+> **Do not use `&`, `|`, `~`, `<<`, `>>`** — these are **Lua 5.3** operators and **do not exist in LuaJIT 2.1**.
 
-Os estados da FSM são **bit flags** (`DRIVING_NORMALLY = 1`, `EASING_IN_YIELD = 4`, `STAYING_ON_YIELDING_LANE = 8`, `EASING_OUT_YIELD = 32`, ...), então máscaras com `bit.band`/`bit.bor` são o padrão para testar/transicionar estados.
+FSM states are **bit flags** (`DRIVING_NORMALLY = 1`, `EASING_IN_YIELD = 4`, `STAYING_ON_YIELDING_LANE = 8`, `EASING_OUT_YIELD = 32`, ...); use `bit.band`/`bit.bor` masks to test or transition states.
 
-### Estado de carro (Data-Oriented Design)
-O estado **não** fica em instâncias de carro. Ele vive em tabelas DoD indexadas por índice de carro:
-- `CarManager.cars_*Index` (índices)
-- `CarManager.cars_*` (dados)
+### Car state (Data-Oriented Design)
+State does **not** live in car instances. It lives in DoD tables indexed by car index:
+- `CarManager.cars_*Index` (indices)
+- `CarManager.cars_*` (data)
 
-Sempre acesse via essas tabelas e mantenha os índices consistentes.
+Always access state through these tables and keep indices consistent.
 
-### Storage per-track-per-mode
-Settings são salvos **por pista e por modo** de jogo (Practice, Qualify, Race, Hotlap, TimeAttack, Drift, Drag). Não crie storage ad-hoc: use `StorageManager.getStorage*()`:
+### Per-track/per-mode storage
+Settings are saved **per track and game mode** (Practice, Qualify, Race, Hotlap, TimeAttack, Drift, Drag). Do not create ad hoc storage; use `StorageManager.getStorage*()`:
 
 ```lua
 StorageManager.getStorage()
@@ -183,93 +183,95 @@ StorageManager.getStorage_PathFinding()
 StorageManager.getStorage_Behavior()
 ```
 
-### Erros são aceitos
-`HumanErrorManager` pode disparar `physics.setAIBrakeMistake` / `physics.setAITractionMistake` intencionalmente. Comportamento "perfeito demais" é **errado** para os objetivos do app — tudo deve ser telegrafado para o jogador.
+### Errors are intentional
+`HumanErrorManager` may intentionally call `physics.setAIBrakeMistake` / `physics.setAITractionMistake`. Behavior that is “too perfect” is **wrong** for the app's goals; errors should be signaled to the player.
 
 ---
 
-## 6. Como adicionar uma nova feature (workflow típico)
+## 6. Adding a feature (typical workflow)
 
-1. **Decidir modo e perfil**
-    Se a feature afeta o comportamento da IA, crie/estenda uma entrada em `StorageManager.BehaviorProfiles`.
+1. **Choose mode and profile**
+    If the feature affects AI behavior, add or extend an entry in `StorageManager.BehaviorProfiles`.
 
-2. **Nova option**
-   - Adicione um ID no enum correspondente (ex.: `StorageManager.Options_Behavior`).
-   - Adicione a entrada na collection `*_beforeDoD` (ex.: `optionsCollection_Behavior_beforeDoD`).
-   - Adicione o campo na `storageTable_*` (ex.: `storageTable_Behavior`).
-   - Os defaults/min/max fluem por `fillInDoDTables(collection, default, min, max)`.
+2. **New option**
+   - Add an ID to the relevant enum (e.g. `StorageManager.Options_Behavior`).
+   - Add an entry to the `*_beforeDoD` collection (e.g. `optionsCollection_Behavior_beforeDoD`).
+   - Add a field to `storageTable_*` (e.g. `storageTable_Behavior`).
+   - Defaults/min/max flow through `fillInDoDTables(collection, default, min, max)`.
 
-3. **Slider no UI**
-    Para opções de behavior, edite `SettingsWindow.lua` na seção de Behavior. Categorias novas ganham uma seção análoga.
+3. **UI control**
+    For behavior options, edit the Behavior section in `SettingsWindow.lua`. New categories get an analogous section.
 
-4. **Lógica de IA**
-   - **Novo estado?** Estenda a FSM em `CarStateMachine/CarStateMachine.lua` (adicione o bit flag em `CarStateType` e os arrays `states_*Functions`) e crie `CarState_<Name>.lua` em `CarStateMachine/States/`, usando `CarStateMachine/CarState_TEMPLATE.lua`.
-   - **Só lógica?** Estenda o manager relevante (`CarOperations`, `CollisionAvoidanceManager`, etc.).
+4. **AI logic**
+    - **New state?** Extend the FSM in `CarStateMachine/CarStateMachine.lua` (add the bit flag to `CarStateType` and update `states_*Functions`) and create `CarState_<Name>.lua` in `CarStateMachine/States/` using `CarStateMachine/CarState_TEMPLATE.lua`.
+    - **Logic only?** Extend the relevant manager (`CarOperations`, `CollisionAvoidanceManager`, etc.).
 
 5. **Wiring**
-    Chame a partir do `MANIFEST__UPDATE` no entry point se for per-frame. Para ícones das janelas, o manifest usa `MANIFEST__FUNCTION_ICON`. Se for evento, use os handlers de `ac.onCarJumped` / `ac.onCarCollision` (registrados no entry point).
+    Call from `MANIFEST__UPDATE` in the entry point for per-frame work. Window icons use the manifest's `MANIFEST__FUNCTION_ICON`. For events, use `ac.onCarJumped` / `ac.onCarCollision` handlers registered in the entry point.
 
-6. **Validar**
-    Rode o checker de sintaxe (seção 7); a contagem é determinada dinamicamente pelos arquivos encontrados.
+6. **Validate**
+    Run the syntax checker (section 7); the count is determined dynamically from discovered files.
 
 ---
 
-## 7. Comandos úteis
+## 7. Useful commands
 
-### Validar sintaxe Lua
+### Check Lua syntax
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
 ```
-O checker usa `luajit` no `PATH` por padrão; opcionalmente passe `-LuaJitPath <caminho>` e `-Root <raiz-do-projeto>`. A saída informa a contagem real encontrada. Ele exclui `lib/ac_apps/` e `lib/AssettoCorsaCSPLuaCompatibilityManager/`; não exclui `lib/uilib/`.
+The checker uses `luajit` from `PATH` by default; optionally pass `-LuaJitPath <path>` and `-Root <project-root>`. Output reports the discovered count. It excludes `lib/ac_apps/` and `lib/AssettoCorsaCSPLuaCompatibilityManager/`, but not `lib/uilib/`.
 
-### Localizar uma função
+### Find a function
 ```powershell
 Select-String -Path '*.lua' -Pattern 'getActualTrackLateralOffset'
 ```
 
-### Listar todos os pontos onde uma função é chamada
+### List call sites for a function
 ```powershell
 Select-String -Path '*.lua' -Pattern 'setAITopSpeed' | Select-Object -ExpandProperty FileName
 ```
 
-### Listar todos os arquivos `.lua` (excluindo vendor)
+### List all `.lua` files (excluding vendor)
 ```powershell
 Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\lib\\(ac_apps|AssettoCorsaCSPLuaCompatibilityManager)\\' }
 ```
 
 ---
 
-## 8. Links para a documentação detalhada
+## 8. Documentation links
 
-| Documento | Conteúdo |
+| Document | Content |
 | --- | --- |
-| `docs/ARCHITECTURE.md` | Mapa completo do código, acoplamentos entre módulos, hot paths |
-| `docs/TESTING.md` | Como validar antes de pilotar |
-| `docs/UI_REDESIGN_DISCOVERY.md` | Inventário e status da revisão de UI |
-| `CONTRIBUTING.md` | Fluxo de contribuição |
-| `README.md` (raiz) | Visão geral, instalação manual, uso e créditos |
+| [Documentation index](README.md) | Task-oriented index and references |
+| [OpenCode workflow](WORKFLOW_OPENCODE.md) | Task-scoped reading and handoff |
+| [Architecture](ARCHITECTURE.md) | Code map, module coupling, hot paths |
+| [Testing](TESTING.md) | Checks and in-game validation scenarios |
+| [Localization](LOCALIZATION.md) | Locale, IDs, persistence, test contract |
+| [UI redesign discovery](UI_REDESIGN_DISCOVERY.md) | Historical inventory and current status addendum |
+| [UI identity plan](plans/UI_IDENTITY.md) | Proposed future UI direction |
+| [Contributing](../CONTRIBUTING.md) | Contribution workflow |
+| [Project README](../README.md) | Overview, manual installation, usage, credits |
 
 ---
 
-## 9. Avisos importantes
+## 9. Important cautions
 
-- ⛔ **NÃO use `&`, `|`, `~`** como operadores. São **Lua 5.3 only**. Use `bit.band` / `bit.bor` / `bit.bnot`.
-- ⛔ **Não edite `lib/ac_apps/` como código do projeto** (SDK vendor); atualizações no submodule de compatibilidade devem ser deliberadas. `lib/uilib/` é biblioteca própria, não vendor.
-- ⛔ **NÃO modifique `manifest.ini`** para testar localmente. O CSP carrega o app como `apps/lua/<pasta>/manifest.ini`.
-- ⚠️ **NÃO aloque tabelas em hot paths.** Use as tabelas reutilizáveis (ex.: `cars_currentReusableList`, `_reusableSideAnchorTable`) e pools como `VecPool`.
-- ⚠️ **Compatibilidade CSP é checada pelo entry point.** `physics.setAIBrakeMistake` e `physics.setAITractionMistake` passam por `CSPCompatibilityManager.addFunction`; consulte o diagnóstico do app para APIs ausentes.
-- ⚠️ **Respeite o DoD.** Estado de carro em tabelas indexadas, não em instâncias.
-- ⚠️ **Não reinvente a roda.** Antes de criar lógica nova, verifique se já existe tabela de classes/storage/enum para estender.
-- ⚠️ **Erros intencionais existem.** Não "conserte" o `HumanErrorManager` achando que é bug.
+- ⛔ **Do not use `&`, `|`, `~`** as operators. They are Lua 5.3 only; use `bit.band` / `bit.bor` / `bit.bnot`.
+- ⛔ **Do not edit `lib/ac_apps/` as project code** (vendor SDK); update the compatibility submodule deliberately. `lib/uilib/` is project-owned, not vendor.
+- ⛔ **Do not modify `manifest.ini`** for local testing. CSP loads the app from `apps/lua/<directory>/manifest.ini`.
+- ⚠️ **Avoid allocations in hot paths.** Use reusable tables (e.g. `cars_currentReusableList`, `_reusableSideAnchorTable`) and pools such as `VecPool`.
+- ⚠️ **The entry point checks CSP compatibility.** `physics.setAIBrakeMistake` and `physics.setAITractionMistake` are registered through `CSPCompatibilityManager.addFunction`; consult app diagnostics for missing APIs.
+- ⚠️ **Respect DoD:** car state belongs in indexed tables, not instances.
+- ⚠️ **Reuse existing structures:** check for tables/classes/storage/enums before creating new logic.
+- ⚠️ **Intentional errors exist:** do not “fix” `HumanErrorManager` under the assumption that they are bugs.
 
 ---
 
-## 10. Checklist de onboarding (primeiros 15 minutos)
+## 10. Optional onboarding path
 
-1. Leia este arquivo inteiro.
-2. Abra `SimOpenTrackDay.lua` e localize `MANIFEST__UPDATE`.
-3. Leia `CarStateMachine/CarStateMachine.lua` e identifique os bit flags em `CarStateType`.
-4. Abra `CarStateMachine/States/CarState_DrivingNormally.lua` como exemplo de estado real.
-5. Leia `StorageManager.lua` nas seções de enum/collection/storage Table e `getStorage*()`.
-6. Rode o checker de sintaxe (seção 7); confirme a contagem dinâmica e que não há falhas.
-7. Só então comece a alterar código.
+1. Skim this guide or the [documentation index](README.md) for the task at hand.
+2. For main flow, locate `MANIFEST__UPDATE` in `SimOpenTrackDay.lua`.
+3. For car behavior, inspect `CarStateMachine/CarStateMachine.lua` and a relevant state under `CarStateMachine/States/`.
+4. For persistence, inspect `StorageManager.lua` schemas and `getStorage*()` getters.
+5. Run relevant checks from [Testing](TESTING.md); a syntax check is not a substitute for UI or CSP validation.

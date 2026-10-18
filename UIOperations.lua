@@ -25,6 +25,8 @@ local string = string
 local string_format = string.format
 local math = math
 local math_max = math.max
+local math_min = math.min
+local Localization = require('Localization')
 
 ---Renders a slider with a tooltip
 ---@param label string @Slider label.
@@ -37,6 +39,10 @@ local math_max = math.max
 ---@param defaultValue number @The default value to reset to on right-click and is shown in the tooltip.
 ---@return number @Possibly updated slider value.
 UIOperations.renderSlider = function(label, tooltip, value, minValue, maxValue, sliderWidth, labelFormat, defaultValue)
+    if not label:find('###', 1, true) and label:sub(1, 2) ~= '##' then label = Localization.label(label) end
+    tooltip = Localization.text(tooltip)
+    sliderWidth = math_max(0, math_min(sliderWidth, ui.availableSpaceX()))
+    if labelFormat then labelFormat = Localization.text(labelFormat) end
     -- set the width of the slider
     ui_pushItemWidth(sliderWidth)
 
@@ -46,7 +52,7 @@ UIOperations.renderSlider = function(label, tooltip, value, minValue, maxValue, 
     -- reset the item width
     ui_popItemWidth()
 
-    tooltip = string_format('%s\n\nDefault: %.2f', tooltip, defaultValue)
+    tooltip = string_format('%s\n\n%s: %.2f', tooltip, Localization.text('Default'), defaultValue)
 
     if ui_itemHovered() then
         -- render the tooltip

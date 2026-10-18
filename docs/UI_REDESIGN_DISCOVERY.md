@@ -1,6 +1,6 @@
 # UI redesign discovery — SimOpenTrackDay
 
-This is an implementation inventory for UI corrections, not a redesign specification. Installation is manual; source documentation and local checks do not establish which files are currently installed or running. CSP runtime and in-game visual validation remain **PENDING**. This does not represent a published build or release. Keep the car-list/main-window experience and `UIManager` outside the redesign scope.
+This is a historical implementation inventory for UI corrections, not a current redesign specification. Installation is manual; source documentation and local checks do not establish which files are installed or running. CSP runtime and in-game visual validation remain **PENDING**. This is not a published build or release. The earlier exclusion of the main window and `UIManager` is superseded by the user's later authorization to plan changes to those areas; see [UI identity plan](plans/UI_IDENTITY.md).
 
 ## Status vocabulary
 
@@ -27,7 +27,7 @@ Current `SettingsWindow.draw()` order:
 1. 42px vector logo, track/session label, and enabled control.
 2. Default, yielding, and overtaking lateral offsets.
 3. AI Caution, Aggression, and Difficulty in three columns with proportional widths.
-4. Behavior profile and advanced options (disabled until enabled).
+4. Behavior profile and advanced options (advanced controls are hidden until expanded; they are not disabled for that reason).
 5. Yielding and overtaking.
 6. Accidents and pathfinding.
 7. Other settings.
@@ -102,10 +102,14 @@ These are IDs in `Strings.StringNames` under the corresponding `STRING_CATEGORY`
 
 The entry point retains nine `[RTD-DIAG-*]` log statements: five suffixed tags (`-0`, `-0a`, `-0b`, `-0c`, `-1`) and four generic `[RTD-DIAG]` statements. Do not remove or rename them as incidental cleanup. `CSPCompatibilityManager.ShowErrorModalDialog = false` is intentional; it disables showing the compatibility error modal during the relevant flow, while the `ui.modalDialog` availability check remains separately present. Preserve that behavior unless a separately validated compatibility change requires otherwise.
 
-## Current state
+## Historical recorded state
 
 - **IMPLEMENTED:** manifest IDs, window labels/sizes, and `MANIFEST__FUNCTION_ICON` on both windows are present in `manifest.ini`; the legacy PNG file and `ICON` metadata entries are removed.
 - **IMPLEMENTED:** the line-based OTD vector logo is used by the main-window icon renderer and manifest icon callback; no PNG is drawn. `Constants.APP_ICON_SIZE` remains 128 for the main renderer; Settings calls `Logo.draw(42)`.
-- **DECIDED:** preserve module locations and root payload; preserve the main window/UIManager outside redesign; keep compatibility submodule/vendor distinctions intact.
-- **VALIDATED (headless/source checks only):** last recorded checks were Lua syntax 66 PASS, portable UI mock 542 PASS, `luajit tools/test_logo_smoke.lua` 21 PASS (including absence of legacy `ICON` metadata), and optional `RTD_BASELINE_SETTINGS` mock 607 PASS. A prior 70/70 local payload audit and negative-scroll regression probe are historical only; they say nothing about files currently installed or running. The icon callback is mock-tested, not validated in CSP runtime.
-- **PENDING:** CSP runtime and in-game visual validation. A manual CSP smoke test remains a follow-up after manual installation; no build or release is published by this verification.
+- **DECIDED at the time:** preserve module locations and root payload; keep compatibility submodule/vendor distinctions intact. The main-window/UIManager exclusion is superseded as described above.
+- **Historical checks only:** earlier records listed syntax 66 PASS, portable UI mock 542 PASS, logo mock 21 PASS, and optional baseline mock 607 PASS. Counts are not current results and were not rerun in this documentation phase. Earlier payload audit and scroll probe are also historical. The icon callback was mock-tested, not validated in CSP runtime.
+- **PENDING:** CSP runtime and in-game visual validation. The current working tree is not proof of CSP behavior; a manual CSP check remains necessary. No build or release is claimed.
+
+## Current plan status addendum
+
+The current direction and phases are documented in [UI identity plan](plans/UI_IDENTITY.md). The code working tree includes responsive UI/localization changes, but this documentation pass did not revalidate runtime or visual behavior in CSP. The current profile display is inferred from a subset of values and is not safe to describe as a reliable “Custom” detector. Advanced behavior controls are conditionally hidden by the UI toggle; “hidden” does not mean disabled. Translation applies to display text; internal IDs remain stable. The full car table and its existing toggle remain part of the diagnostic experience. Any future redesign must preserve these distinctions and validate the current CSP baseline first.

@@ -8,11 +8,12 @@ local ui_measureDWriteText = ui.measureDWriteText
 local ui_dwriteText = ui.dwriteText
 local ui_windowPos = ui.windowPos
 local ui_windowSize = ui.windowSize
+local Localization = require('Localization')
 
 -- local string = string
 -- local string_format = string.format
 
-local versionText = string.format('%s v%s by %s',Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_AUTHOR)
+local function versionText() return Localization.text('%s v%s by %s', Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_AUTHOR) end
 local versionTextColor = ColorManager.RGBM_Colors.Gainsboro
 
 -- UIAppNameVersion.draw = function(absoluteScreenPosition, fontSize)
@@ -41,17 +42,18 @@ local draw = function(absoluteScreenPosition, fontSize)
 
     local prev = ui_cursorScreenPos()
     ui_setCursorScreenPos(absoluteScreenPosition)
-    ui_dwriteText(versionText, fontSize, versionTextColor)
+    ui_dwriteText(versionText(), fontSize, versionTextColor)
     ui_setCursorScreenPos(prev)
 end
 
 UIAppNameVersion.drawBottomRight = function(fontSize)
     local windowPosition = ui_windowPos()
     local windowSize = ui_windowSize()
-    local textDimensions = cachedVersionTextDimensions[fontSize]
+    local cacheKey = fontSize .. ':' .. Localization.getLocale()
+    local textDimensions = cachedVersionTextDimensions[cacheKey]
     if textDimensions == nil then
-        textDimensions = ui_measureDWriteText(versionText, fontSize, -1)
-        cachedVersionTextDimensions[fontSize] = textDimensions
+        textDimensions = ui_measureDWriteText(versionText(), fontSize, -1)
+        cachedVersionTextDimensions[cacheKey] = textDimensions
     end
 
     local textWidth = textDimensions.x

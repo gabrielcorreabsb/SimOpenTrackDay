@@ -53,14 +53,15 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   package.loaded['UIAppNameVersionWidget'] = nil
   package.loaded['UIOperations'] = nil
   package.loaded['StorageManager'] = nil
+  package.loaded['Localization'] = nil
 
   local state = {
-    events = {}, sliders = {}, sliderCalls = {}, checkboxes = {}, buttonLabels = {}, tooltips = {},
+    events = {}, sliders = {}, sliderCalls = {}, checkboxes = {}, buttonLabels = {}, tooltips = {}, controlIDs = {},
     consumerCalls = { slider = 0, toggle = 0, uiOperationsSlider = 0 },
     pendingCheckbox = {}, pendingSlider = {}, pendingCombo = {}, mouseRight = {},
     colorDepth = 0, fontDepth = 0, widthDepth = 0, disabledDepth = 0, idDepth = 0,
     styleColorPushes = {},
-    groupDepth = 0, columnsDepth = 0, frame = 0,
+    groupDepth = 0, columnsDepth = 0, frame = 0, availableX = 900, columnCounts = {}, currentColumn = 0, sectionColumns = {},
     cursor = newVec2(-(scrollPosition and scrollPosition.x or 0), -(scrollPosition and scrollPosition.y or 0)),
     windowPosition = newVec2(137, 83), windowSize = newVec2(1024, 768), fillRects = 0, firstLogoLine = nil,
     scroll = newVec2(scrollPosition and scrollPosition.x or 0, scrollPosition and scrollPosition.y or 0),
@@ -68,6 +69,11 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   }
   local function event(name, ...)
     state.events[#state.events + 1] = { name, ... }
+  end
+  local function visibleLabel(label)
+    local visible, id = label:match('^(.-)###(.*)$')
+    if not visible and label:sub(1, 2) ~= '##' then visible = label end
+    return visible or label, id
   end
   local function requireEnabled(kind)
     return state.disabledDepth == 0
@@ -104,15 +110,22 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
     popID = function() assert(state.idDepth > 0, 'ID stack underflow'); state.idDepth = state.idDepth - 1 end,
     beginGroup = function() state.groupDepth = state.groupDepth + 1 end,
     endGroup = function() assert(state.groupDepth > 0, 'group stack underflow'); state.groupDepth = state.groupDepth - 1 end,
-    columns = function(n) state.columnsDepth = n == 1 and 0 or state.columnsDepth + 1 end,
-    setColumnWidth = function() end, nextColumn = function() end,
+    columns = function(n)
+      state.columnCounts[#state.columnCounts + 1] = n
+      state.currentColumn, state.currentColumnCount = 0, n
+      state.columnsDepth = n == 1 and 0 or state.columnsDepth + 1
+    end,
+    setColumnWidth = function() end,
+    nextColumn = function() state.currentColumn = math.min(state.currentColumn + 1, (state.currentColumnCount or 1) - 1) end,
     windowWidth = function() return 1760 end,
     checkbox = function(label, value)
+      local visible, id = visibleLabel(label)
       if not state.firstControlIndex then state.firstControlIndex = #state.events + 1 end
-      event('checkbox', label)
-      state.lastItemLabel = label
-      state.checkboxes[label] = { value = value, disabled = not requireEnabled() }
-      if state.pendingCheckbox[label] and requireEnabled() then state.pendingCheckbox[label] = nil; return true end
+      event('checkbox', visible)
+      state.lastItemLabel = visible
+      state.checkboxes[visible] = { value = value, disabled = not requireEnabled() }
+      state.controlIDs[visible] = id
+      if (state.pendingCheckbox[label] or state.pendingCheckbox[visible]) and requireEnabled() then state.pendingCheckbox[label], state.pendingCheckbox[visible] = nil, nil; return true end
       return false
     end,
     button = function(label)
@@ -122,22 +135,26 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
       return state.pendingButton == label and requireEnabled()
     end,
     combo = function(label, value, flags, options)
+      local visible, id = visibleLabel(label)
       if not state.firstControlIndex then state.firstControlIndex = #state.events + 1 end
-      event('combo', label)
-      state.lastItemLabel = label
+      event('combo', visible)
+      state.lastItemLabel = visible
+      state.controlIDs[visible] = id
       assert(flags == comboFlags.None, 'unsupported ComboFlags')
       state.combos = state.combos or {}
-      state.combos[label] = { value = value, options = options, disabled = not requireEnabled() }
-      local nextValue = state.pendingCombo[label]
+      state.combos[visible] = { value = value, options = options, disabled = not requireEnabled() }
+      local nextValue = state.pendingCombo[label] or state.pendingCombo[visible]
       if nextValue ~= nil and requireEnabled() then state.pendingCombo[label] = nil; return nextValue, nextValue ~= value end
       return value, false
     end,
     slider = function(label, value, minimum, maximum, format)
+      local visible, id = visibleLabel(label)
       if not state.firstControlIndex then state.firstControlIndex = #state.events + 1 end
-      event('slider', label)
-      state.lastItemLabel = label
-      state.sliders[label] = { value = value, min = minimum, max = maximum, format = format, disabled = not requireEnabled() }
-      local action = state.pendingSlider[label]
+      event('slider', visible)
+      state.lastItemLabel = visible
+      state.controlIDs[visible] = id
+      state.sliders[visible] = { value = value, min = minimum, max = maximum, format = format, width = state.itemWidth, disabled = not requireEnabled() }
+      local action = state.pendingSlider[label] or state.pendingSlider[visible]
       if action and requireEnabled() then
         state.pendingSlider[label] = nil
         if action.value ~= nil then return action.value end
@@ -151,6 +168,9 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
     dwriteText = function(text, size)
       state.dwriteTexts = state.dwriteTexts or {}
       state.dwriteTexts[#state.dwriteTexts + 1] = text
+      if text == 'Yielding' or text == 'Overtaking' or text == 'Accidents' or text == 'Pathfinding' then
+        state.sectionColumns[text] = state.currentColumn
+      end
       state.lastDWriteSize = size
     end,
     newLine = function() end, separator = function() end,
@@ -182,7 +202,7 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
       state.cursor = newVec2(position.x, position.y)
     end,
     newLine = function(amount) state.cursor.y = state.cursor.y + (amount or 20) end,
-    availableSpaceX = function() return 900 end,
+    availableSpaceX = function() return state.availableX end,
     availableSpaceY = function() return 700 end,
     itemRectMax = function() return newVec2(state.cursor.x + 100, state.cursor.y + 20) end,
     itemRectMin = function() return newVec2(state.cursor.x, state.cursor.y) end,
@@ -203,7 +223,24 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   _G.ac = {
     getSim = function() return { raceSessionType = 'practice' } end,
     getTrackFullID = function() return 'smoke_track' end,
-    storage = function(defaults) return defaults end,
+    storage = function(defaults)
+      if defaults.mode ~= nil then
+        local values = {}
+        for key, value in pairs(defaults) do values[key] = value end
+        return setmetatable({}, {
+          __index = function(_, key)
+            local value = values[key]
+            if value == nil then error('Unknown key: ' .. tostring(key), 2) end
+            return value
+          end,
+          __newindex = function(_, key, value)
+            if values[key] == nil then error('Unknown key: ' .. tostring(key), 2) end
+            values[key] = value
+          end,
+        })
+      end
+      return defaults
+    end,
   }
   _G.RaceTrackManager = {
     TrackSideStrings = { [1] = 'Left', [2] = 'Right' },
@@ -216,17 +253,20 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   _G.AppIconRenderer = { draw = function() end }
   _G.UILateralOffsetsImageWidget = { draw = function() end }
   _G.UIManager = { VERTICAL_SCROLLBAR_WIDTH = 20 }
-  _G.UIAppNameVersionWidget = require('UIAppNameVersionWidget')
   _G.AccidentManager = { simulateAccident_manual = function() end, simulateAccident_random = function() end }
   _G.vec3 = function(x, y, z) return { x = x, y = y, z = z } end
 
   local storageManager = require('StorageManager')
   _G.StorageManager = storageManager
+  local localization = require('Localization')
+  localization.setLocale('en')
+  _G.UIAppNameVersionWidget = require('UIAppNameVersionWidget')
   local uiOperations = require('UIOperations')
   local renderSlider = uiOperations.renderSlider
   uiOperations.renderSlider = function(label, tooltip, value, minimum, maximum, width, format, defaultValue)
     state.consumerCalls.uiOperationsSlider = state.consumerCalls.uiOperationsSlider + 1
-    state.sliderCalls[label] = {
+    local visibleLabel = label:match('^(.-)###') or label
+    state.sliderCalls[visibleLabel] = {
       tooltip = tooltip, value = value, min = minimum, max = maximum,
       width = width, format = format, default = defaultValue,
     }
@@ -239,7 +279,8 @@ local function setUp(settingsFile, accidentsEnabled, scrollPosition)
   state.sliderRenderSource = debug.getinfo(sliderRender, 'S').source:gsub('\\', '/')
   sliderModule.render = function(label, tooltip, value, minimum, maximum, width, format, defaultValue)
     state.consumerCalls.slider = state.consumerCalls.slider + 1
-    state.sliderCalls[label] = {
+    local visibleLabel = label:match('^(.-)###') or label
+    state.sliderCalls[visibleLabel] = {
       tooltip = tooltip, value = value, min = minimum, max = maximum,
       width = width, format = format, default = defaultValue,
     }
@@ -271,6 +312,8 @@ end
 
 local function draw(settings, state, verifyCoordinates)
   state.frame = state.frame + 1
+  state.columnCounts = {}
+  state.controlIDs, state.sectionColumns, state.dwriteTexts = {}, {}, {}
   state.sliders, state.checkboxes, state.combos = {}, {}, {}
   state.sliderCalls, state.buttonLabels = {}, {}
   state.lines, state.events, state.firstLogoLine, state.firstControlIndex = {}, {}, nil, nil, nil
@@ -312,6 +355,9 @@ end
 local sliderStorageFields
 local function inventory(path, accidentsEnabled)
   local settings, _, state = setUp(path, accidentsEnabled)
+  state.pendingCheckbox['SimOpenTrackDay Disabled for: Mock Track (Mode: Practice)'] = true
+  draw(settings, state)
+  state.pendingCheckbox['Show Advanced Behavior Sliders'] = true
   draw(settings, state)
   return {
     sliders = state.sliderCalls,
@@ -373,7 +419,8 @@ if externalBaselinePath and os.getenv('RTD_DUMP_BASELINE_FIXTURE') == '1' then
 end
 
 local function normalizeBrandLabel(label)
-  return (label:gsub('^SimOpenTrackDay ', 'Realistic Trackday '))
+  label = label:gsub('^SimOpenTrackDay ', 'Realistic Trackday ')
+  return (label:gsub(' Enabled for:', ' Disabled for:'))
 end
 local function normalizedSet(source)
   local result = {}
@@ -414,7 +461,10 @@ local function compareLabels(kind, actualSource, normalize)
 end
 local checkboxCount = compareLabels('checkboxes', current.checkboxes, true)
 local buttonCount = compareLabels('buttons', current.buttons)
-local comboCount = compareLabels('combos', current.combos)
+local baselineCombos = {}
+for label, value in pairs(current.combos) do if label ~= 'Language' then baselineCombos[label] = value end end
+local comboCount = compareLabels('combos', baselineCombos)
+check(current.combos['Language'] ~= nil, 'language selector is present in Settings')
 local fieldCount = compareLabels('fields', current.fields)
 print(string.format('Baseline active controls: %d sliders, %d checkboxes, %d buttons, %d combos; %d storage fields (comments excluded).',
   sliderCount, checkboxCount, buttonCount, comboCount, fieldCount))
@@ -444,11 +494,85 @@ state.storage.enabled = true
 local appEnabledLabel = 'SimOpenTrackDay Enabled for: Mock Track (Mode: Practice)'
 state.hoverLabel = appEnabledLabel
 draw(settings, state, true)
-check(state.sliders['Entry blend time'] and state.sliders['Entry blend time'].disabled,
-  'advanced behavior sliders are disabled by default')
+  check(state.sliders['Entry blend time'] == nil,
+  'advanced behavior sliders are genuinely collapsed by default')
 check(table.concat(state.tooltips, '\n'):find('Enable the SimOpenTrackDay app', 1, true) ~= nil,
   'settings enable tooltip uses current app branding')
 check(state.lastDWriteSize == 12, 'settings footer uses the established 12px version widget')
+check(state.combos.Language and not state.combos.Language.disabled, 'language selector remains available before app controls')
+local profileCombo = state.combos['AI Behavior Profile']
+check(profileCombo and profileCombo.options[1] == 'Casual' and profileCombo.options[2] == 'Realistic' and profileCombo.options[3] == 'Competitive',
+  'profile combo items are localized display text, never labels with hidden IDs')
+for label in pairs(state.checkboxes) do
+  check(not label:find('###', 1, true), 'interactive labels do not expose hidden IDs: ' .. label)
+end
+for label in pairs(state.combos) do
+  check(not label:find('###', 1, true), 'combo labels do not expose hidden IDs: ' .. label)
+end
+local localizationLocales = require('Localization').locales
+check(#localizationLocales == 3 and localizationLocales[1] == 'en' and localizationLocales[2] == 'pt-BR' and localizationLocales[3] == 'es',
+  'real Localization module exposes exactly the supported locale contract')
+local offsetControlID = state.controlIDs['Default Lateral Offset [-1..1]']
+check(offsetControlID == 'Default Lateral Offset [-1..1]', 'slider retains its source-English widget ID')
+local localization = require('Localization')
+localization.setLocale('pt-BR')
+draw(settings, state)
+check(state.controlIDs['Deslocamento lateral padrão [-1..1]'] == offsetControlID,
+  'Portuguese label changes while retaining the source-English slider ID')
+check(table.concat(state.dwriteTexts or {}, '\n'):find('Depuração', 1, true) ~= nil,
+  'section and control labels render translated text without ID suffixes')
+check(state.sliders['##debugCarStateOverheadShowDistance'] and
+  state.sliders['##debugCarStateOverheadShowDistance'].format == 'Distância dos indicadores dos carros: %.0fm',
+  'slider value format strings are localized before ui.slider')
+localization.setLocale('es')
+draw(settings, state)
+check(state.controlIDs['Desplazamiento lateral predeterminado [-1..1]'] == offsetControlID,
+  'Spanish label changes while retaining the source-English slider ID')
+localization.setLocale('en')
+state.availableX = 480
+draw(settings, state)
+local narrowIsSingleColumn = true
+for _, count in ipairs(state.columnCounts) do if count > 1 then narrowIsSingleColumn = false end end
+check(narrowIsSingleColumn, 'narrow layout stacks all Settings sections into one column')
+for _, slider in pairs(state.sliderCalls) do
+  check(slider.width <= state.availableX, 'narrow slider width fits the available content area')
+end
+state.availableX = 1200
+draw(settings, state)
+local wideUsesColumns = false
+for _, count in ipairs(state.columnCounts) do if count > 1 then wideUsesColumns = true end end
+check(wideUsesColumns, 'wide layout uses multi-column grouping where space allows')
+state.availableX = 80
+draw(settings, state)
+for _, slider in pairs(state.sliderCalls) do
+  check(slider.width >= 0, 'very narrow slider request remains non-negative')
+end
+for _, slider in pairs(state.sliders) do
+  check(slider.width <= 80, 'very narrow native slider dimensions are not widened past available space')
+end
+local function checkSectionColumns(width, expectedOvertaking, expectedPathfinding)
+  local s, _, snapshot = setUp(currentPath, true)
+  snapshot.storage.enabled, snapshot.availableX = true, width
+  draw(s, snapshot)
+  check(snapshot.sectionColumns.Overtaking == expectedOvertaking,
+    string.format('Overtaking column index at width %d', width))
+  check(snapshot.sectionColumns.Pathfinding == expectedPathfinding,
+    string.format('Pathfinding column index at width %d', width))
+end
+checkSectionColumns(700, 0, 0)
+checkSectionColumns(900, 0, 1)
+checkSectionColumns(1200, 1, 1)
+checkSectionColumns(1760, 1, 1)
+local entryFile = assert(io.open(root .. '/SimOpenTrackDay.lua', 'rb'))
+local entrySource = entryFile:read('*a')
+entryFile:close()
+local mainCallback = entrySource:match('function script%.MANIFEST__FUNCTION_MAIN%(dt%)%s*(.-)function script%.MANIFEST__FUNCTION_ICON')
+check(mainCallback ~= nil and mainCallback:find("Localization.label('Language', 'settings.language')", 1, true) ~= nil,
+  'main-window callback exposes the language selector')
+if mainCallback then
+  check(mainCallback:find("Localization.label('Language', 'settings.language')", 1, true) < mainCallback:find('shouldAppRun()', 1, true),
+    'main-window language selector is available before the app-running guard')
+end
 local sliderGrabAccentFound = false
 for _, push in ipairs(state.styleColorPushes) do
   local value = push.value
@@ -479,25 +603,28 @@ check(state.sliders['Default Lateral Offset [-1..1]'].disabled == false,
 
 state.pendingCheckbox['Show Advanced Behavior Sliders'] = true
 draw(settings, state)
-check(state.debugging.showBehaviorAdvanced == true, 'advanced behavior toggles on')
+check(state.debugging.showBehaviorAdvanced == false, 'advanced visibility does not alter debugging storage')
 check(state.sliders['Entry blend time'] ~= nil, 'advanced sliders visible on enabling draw')
 state.pendingCheckbox['Hide Advanced Behavior Sliders'] = true
 draw(settings, state)
-check(state.debugging.showBehaviorAdvanced == false, 'advanced behavior toggles off')
-check(state.sliders['Entry blend time'] and state.sliders['Entry blend time'].disabled,
-  'advanced sliders disabled on closing the advanced section')
+check(state.debugging.showBehaviorAdvanced == false, 'closing advanced visibility leaves storage unchanged')
+check(state.sliders['Entry blend time'] == nil, 'advanced sliders are removed from layout when collapsed')
 
 local profile = storageManager.Profile.Competitive
 state.pendingCombo['AI Behavior Profile'] = profile
 draw(settings, state)
-check(state.behavior.profile == profile and state.behavior.mode == storageManager.BehaviorMode.Race,
-  'profile choice persisted and profile applied')
+check(state.behavior.mode == storageManager.BehaviorMode.Race,
+  'profile choice applies without writing an undeclared storage key')
+local unknownProfileReadOk = pcall(function() return state.behavior.profile end)
+local unknownProfileWriteOk = pcall(function() state.behavior.profile = profile end)
+check(not unknownProfileReadOk and not unknownProfileWriteOk,
+  'profile UI never reads or writes the undeclared behavior.profile key')
 check(state.behavior.humanErrorEnabled == true, 'competitive profile enables human errors')
 
 profile = storageManager.Profile.Realistic
 state.pendingCombo['AI Behavior Profile'] = profile
 draw(settings, state)
-check(state.behavior.profile == profile and state.behavior.mode == storageManager.BehaviorMode.TrackDay,
+check(state.behavior.mode == storageManager.BehaviorMode.TrackDay,
   'Realistic profile remains selectable and applies its original mode')
 check(state.behavior.entryBlendTime_s == 1.5 and state.behavior.pointBySpeedDeltaKmh == 15 and
   state.behavior.humanErrorEnabled == false, 'Realistic profile defaults remain unchanged')
