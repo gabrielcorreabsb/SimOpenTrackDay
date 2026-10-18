@@ -1,123 +1,56 @@
-# SimOpenTrackDay 0.1 — instalação manual
+# SimOpenTrackDay — instalação
 
-Esta é uma versão de preview de desenvolvimento. O instalador PowerShell tem modos Preview, Install e Rollback. Preview é o padrão; a execução exige caminhos informados pelo usuário e confirmação exata `YES`. Não há destino padrão nem garantia de compatibilidade/renderização CSP. O manifesto SHA-256 verifica integridade do payload, não autenticidade, assinatura dos scripts ou origem confiável.
+O instalador copia a pasta `SimOpenTrackDay/` para dentro do `apps\lua\` do Assetto Corsa. É o único arquivo do mod distribuído ao usuário final; tudo o mais vive no repositório de desenvolvimento.
 
-## Conteúdo do pacote
+## Requisitos
 
-Extraia o pacote completo para uma pasta de sua escolha, fora do checkout. Ele contém `payload/SimOpenTrackDay/`, `install.bat`, `installer.ps1`, este `INSTALL.md` e `checksums.sha256`. O payload não inclui Git, SDK nem vendor desnecessário; retém a dependência de compatibilidade CSP requerida em runtime e seu notice, além de `LICENSE` e notices aplicáveis. Testes e árvore geral de documentação não são incluídos no payload.
+- Windows com PowerShell 5.1 (padrão do Windows 10/11).
+- Uma instalação do Assetto Corsa (Steam, Epic ou GOG) que já contenha `apps\lua\` — qualquer versão que rode com CSP.
 
-Use Windows PowerShell 5.1. Preserve backups e configurações antes de instalar. O instalador não deve apagar arquivos desconhecidos nem limpar/resetar armazenamento do usuário. Conflitos são recusados: pare e revise manualmente; não use exclusão, espelhamento ou purge para forçar instalação.
+## Como instalar
 
-## 1. Preview (somente leitura)
+1. Dê duplo clique em `install.bat`. Uma janela preta do PowerShell vai abrir.
+2. Quando pedir o caminho da pasta `apps\lua`, cole o caminho completo. Exemplos:
+   - Steam: `D:\Steam\steamapps\common\assettocorsa\apps\lua`
+   - Epic: `C:\Program Files\Epic Games\AssettoCorsa\apps\lua`
+   - Custom: `C:\Jogos\AssettoCorsa\apps\lua`
+3. O instalador mostra o que vai fazer (apagar a pasta `SimOpenTrackDay\` atual dentro de `apps\lua\` e copiar a nova).
+4. Digite `YES` (exatamente, em maiúsculas) e pressione Enter para confirmar.
+5. Espere a mensagem final. A janela fecha sozinha quando termina com sucesso.
 
-Localize a raiz da instalação AC que contém `acs.exe`; não suponha uma localização Steam. Informe explicitamente a pasta extraída e a raiz AC:
+## Como atualizar
 
-```powershell
-$package = "C:\caminho com espaços\SimOpenTrackDay-0.1"
-$acRoot = "D:\caminho com espaços\Assetto Corsa"
-& "$package\install.bat" -Mode Preview -AssettoCorsaRoot "$acRoot"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1" -Mode Preview -AssettoCorsaRoot "$acRoot"
+É a mesma coisa. Rode `install.bat` de novo e cole o caminho. O instalador apaga a pasta antiga e coloca a nova — não precisa desinstalar antes.
+
+## Se der erro
+
+A janela mostra uma mensagem curta. O log completo (com o erro real e a stack trace do PowerShell) é gravado em
+
+```
+%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs\installer-AAAA-MM-DD-HH-MM-SS.txt
 ```
 
-Revise o plano, caminhos e conflitos. Preview não escreve arquivos de instalação.
+Para abrir:
 
-### Como ler a saída (a janela fecha em duplo clique)
+1. Pressione Win+R, digite `%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs` e dê Enter.
+2. Abra o arquivo `.txt` mais recente num editor de texto (Notepad serve).
 
-O instalador é um script PowerShell invocado por `powershell.exe -File`. Em duplo clique no `install.bat` ou no `installer.ps1`, o Windows abre a janela do console, executa e fecha imediatamente após a última linha — comportamento padrão do PowerShell quando não há prompt interativo. Apenas o modo Install pausa para a confirmação `YES`; Preview e Rollback encerram logo depois de imprimir o resultado.
+Erros comuns:
 
-Para conseguir ler a saída, escolha uma das opções:
+- **`Caminho nao encontrado`** — você colou o caminho da raiz do AC (`...\assettocorsa`), não o de `apps\lua`. Cole o caminho completo até `apps\lua`.
+- **`Confirmacao nao confere`** — você digitou outra coisa no lugar de `YES`. Rode de novo.
+- **`Permissao negada`** — o Assetto Corsa está aberto. Feche o AC antes de instalar.
 
-- **Salvar em arquivo de log** (mais simples para revisar depois):
+## O que o instalador copia
 
-  ```powershell
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1" -Mode Preview -AssettoCorsaRoot "$acRoot" *> "D:\preview.txt"
-  notepad "D:\preview.txt"
-  ```
+Tudo o que está listado em `tools/payload.manifest`. Hoje são 66 arquivos: 35 `.lua` na raiz do mod, mais `manifest.ini`, `LICENSE`, as subpastas `DataStructures/`, `Strings/`, `CarStateMachine/`, `lib/uilib/`, `lib/AssettoCorsaCSPLuaCompatibilityManager/` e `lib/i18n/*.lua`. Para adicionar um arquivo novo, edite `tools/payload.manifest` adicionando o caminho relativo — não precisa mexer em `install.bat` nem em `installer.ps1`.
 
-  `*>` redireciona stdout e stderr para o mesmo arquivo.
+## Para desenvolvedores
 
-- **Abrir o PowerShell manualmente** (Win+R → `powershell.exe` → Enter) e rodar o comando direto; a janela fica aberta durante a execução e você rola para cima para ver tudo.
-
-- **Manter a saída na mesma janela** usando `Start-Process -Wait -NoNewWindow`:
-
-  ```powershell
-  Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"$package\installer.ps1",'-Mode','Preview','-AssettoCorsaRoot',"$acRoot" -Wait -NoNewWindow
-  ```
-
-Em todas as três formas, o instalador continua sendo o mesmo; o que muda é só como você captura/visualiza a saída. Erros são sempre impressos em stderr antes de fechar.
-
-## 2. Instalar (após revisão e backup)
-
-`-BackupRoot` é opcional; sem ele, o instalador escolhe uma pasta de backup no perfil do usuário. O journal fica no backup por padrão. Informe caminho explícito se desejado. A raiz AC precisa conter `acs.exe` ou `acs_x86.exe` e `apps`; o destino é `<raiz>\apps\lua\SimOpenTrackDay`.
+`installer.ps1` é o motor. Pode ser chamado direto:
 
 ```powershell
-$backup = "D:\backups\SimOpenTrackDay"
-& "$package\install.bat" -Mode Install -AssettoCorsaRoot "$acRoot" -BackupRoot "$backup"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1" -Mode Install -AssettoCorsaRoot "$acRoot" -BackupRoot "$backup"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\installer.ps1" -AssettoCorsaRoot "C:\...\apps\lua"
 ```
 
-Leia o plano e digite `YES` somente se concordar. Registre o caminho do journal para rollback. Instalação é ação do usuário; agentes não devem executá-la.
-
-## 3. Rollback
-
-Use o journal da transação e a mesma raiz AC:
-
-```powershell
-$journal = "D:\backups\SimOpenTrackDay\SimOpenTrackDay-<id>.json"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$package\installer.ps1" -Mode Rollback -AssettoCorsaRoot "$acRoot" -JournalPath "$journal"
-```
-
-O backup associado é lido do journal. Não remova journal/backups antes de confirmar o resultado. Em conflito/erro, pare e preserve arquivos e journal para inspeção; o rollback não promete remover todos os arquivos temporários/empty directories remanescentes. Não force remoção automatizada nem apague arquivos desconhecidos.
-
-## Troubleshooting
-
-Sintomas comuns durante o uso da versão instalada no Assetto Corsa. Esta seção **não** é sobre erros do instalador PowerShell (esses aparecem em stderr antes do instalador fechar a janela); é sobre erros runtime Lua depois que o app já está carregando dentro do AC.
-
-### Sintoma: `UI draw failed: .../MainWindow.lua:165: attempt to call field 'drawContent' (a nil value)`
-
-O traceback indica que, na primeira frame, `MainWindow.lua:165` chama `SettingsWindow.drawContent(…)`, mas o campo `drawContent` não existe na tabela `SettingsWindow` que foi carregada. A fonte atual (commit `e855e3d`) define `SettingsWindow.drawContent` em `SettingsWindow.lua:471`, então **a fonte está consistente**. O sintoma aponta para **payload instalado desatualizado** no destino AC, normalmente um `apps/lua/SimOpenTrackDay/SettingsWindow.lua` deixado por uma versão anterior do app, quando `SettingsWindow` ainda era um módulo procedural sem o campo `drawContent`.
-
-**Como confirmar antes de qualquer reinstalação:**
-
-```powershell
-# 1. Hash do SettingsWindow.lua no pacote extraído
-Get-FileHash -LiteralPath "C:\pacote\extraido\payload\SimOpenTrackDay\SettingsWindow.lua" -Algorithm SHA256
-
-# 2. Hash do SettingsWindow.lua instalado no destino AC
-Get-FileHash -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay\SettingsWindow.lua" -Algorithm SHA256
-
-# 3. Hash esperado (consta em checksums.sha256 do pacote)
-Select-String -Path "C:\pacote\extraido\checksums.sha256" -Pattern "SettingsWindow\.lua$"
-```
-
-- Se **(2)** for diferente de **(1)** e de **(3)**: payload desatualizado. Vá para "Correção" abaixo.
-- Se **(2)** for igual a **(1)** e **(3)**: a fonte está alinhada; a causa é outra (CSP hook injetando módulo customizado, conflito com outro mod Lua em `apps/lua`, ou erro de parse silencioso em outro módulo carregado antes do `MainWindow`). Preserve `apps/lua/SimOpenTrackDay` para inspeção, capture o `ac.log` do CSP e investigue.
-
-**Correção para payload desatualizado:**
-
-```powershell
-# Faça backup manual do apps\lua\SimOpenTrackDay antes (precaução):
-Copy-Item -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay" -Destination "<backup manual>" -Recurse
-
-# Remova a pasta de instalação antiga e re-instale:
-Remove-Item -LiteralPath "<raiz AC>\apps\lua\SimOpenTrackDay" -Recurse -Force
-& "C:\pacote\extraido\install.bat" -Mode Install -AssettoCorsaRoot "<raiz AC>"
-# quando pedir confirmação, digite YES
-```
-
-Reinstale via `install.bat -Mode Install` para que o caminho `New` force substituição completa. Preview antes (`-Mode Preview`) deve listar todos os arquivos Lua como `New` (não `Changed`) se a remoção manual foi efetiva.
-
-### Sintoma: app não abre / janela some imediatamente / erro genérico em `ac.log`
-
-Capture o `ac.log` do CSP (`Documents\Assetto Corsa\logs\ac.log.0` ou similar) e verifique se há linhas `UI draw failed:` diferentes das listadas acima, ou erros `module '…' not found`. Preserve a pasta `apps/lua/SimOpenTrackDay` no destino AC para inspeção manual antes de qualquer reinstalação.
-
-## Build e validação
-
-`tools/build_package.ps1` usa o checkout como `-SourceRoot` padrão e exige `-OutputPath` novo, externo à fonte, com diretório pai já existente. Sem `-Build`, apenas preview; com `-Build`, gera o pacote sem sobrescrever destino existente. O payload declarado contém 66 arquivos. Checksums abrangem somente runtime payload.
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\build_package.ps1" -OutputPath "D:\deliveries\SimOpenTrackDay-0.1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\build_package.ps1" -OutputPath "D:\deliveries\SimOpenTrackDay-0.1" -Build
-```
-
-`tools/test_package.ps1`, `tools/test_installer.ps1` e `tools/test_distribution.ps1` usam sandbox/mocks sob `%LOCALAPPDATA%\Temp\opencode`; `test_distribution.ps1` integra o pacote com a fonte real. Nenhum deles valida instalação real nem CSP. Rendering e comportamento CSP permanecem para validação manual pelo usuário, preservando instalações e settings existentes.
+Não instala em nenhuma pasta do AC automaticamente — você sempre informa o caminho. Testes de runtime Lua estão em `tools/test_*.lua` e `tools/check_lua_syntax.ps1`. Validação completa do app dentro do Assetto Corsa exige o jogo rodando; o instalador não testa isso.

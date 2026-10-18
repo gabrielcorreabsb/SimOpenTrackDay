@@ -1,5 +1,9 @@
-# Explicit runtime payload paths, relative to SourceRoot; forward slashes only.
-# The single locale glob is intentionally constrained to direct .lua children.
+# Runtime payload for SimOpenTrackDay v0.1
+# One entry per line, paths relative to repository root. Blank lines and lines
+# starting with '#' are ignored. Globs ending in /*.lua are expanded against
+# direct children. Files listed here are copied verbatim into the user's
+# selected <AssettoCorsaRoot>/apps/lua/SimOpenTrackDay/ tree, after that
+# directory is wiped clean.
 SimOpenTrackDay.lua
 Constants.lua
 Logger.lua
