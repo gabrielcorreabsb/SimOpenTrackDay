@@ -26,8 +26,42 @@ Theme.colors = {
 Theme.spacing = { xs = 4, sm = 8, md = 14, lg = 22, xl = 32 }
 Theme.type = { caption = 13, body = 15, control = 18, tab = 19, section = 18, title = 26, carDetail = 16 }
 Theme.slider = { width = 220, compactWidth = 180, stackedMaxWidth = 460 }
+Theme.button = {
+  selected = {
+    normal = Theme.colors.accentSoft,
+    hovered = Theme.colors.accentSoft,
+    pressed = Theme.colors.accent,
+    text = Theme.colors.white,
+  },
+  quiet = {
+    normal = Theme.colors.transparent,
+    hovered = Theme.colors.divider,
+    pressed = Theme.colors.accent,
+    text = Theme.colors.text,
+  },
+  windowChrome = {
+    normal = Theme.colors.surface,
+    hovered = Theme.colors.divider,
+    pressed = Theme.colors.accent,
+    text = Theme.colors.text,
+  },
+  disabled = {
+    normal = Theme.colors.surface,
+    hovered = Theme.colors.surface,
+    pressed = Theme.colors.surface,
+    text = Theme.colors.disabled,
+  },
+}
 Theme.layout = {
   windowInset = 8,
+  headerTitleRowHeight = 34,
+  headerContextGap = Theme.spacing.xs,
+  headerBottomPadding = Theme.spacing.sm,
+  headerControlRowHeight = 34,
+  headerControlGap = Theme.spacing.sm,
+  headerWideControlThreshold = 760,
+  headerLanguageStartRatio = 0.31,
+  headerStatusStartRatio = 0.76,
   tabHeight = 34,
   tabUnderlineHeight = 3,
   chipHeight = 28,

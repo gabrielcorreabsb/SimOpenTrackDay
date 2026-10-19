@@ -41,6 +41,7 @@ CSPCompatibilityManager.addFunction(function() return ui.newLine end, "ui.newLin
 CSPCompatibilityManager.addFunction(function() return ui.text end, "ui.text")
 CSPCompatibilityManager.addFunction(function() return ui.drawRect end, "ui.drawRect")
 CSPCompatibilityManager.addFunction(function() return ui.drawRectFilled end, "ui.drawRectFilled")
+CSPCompatibilityManager.addFunction(function() return ui.drawRectFilledMultiColor end, "ui.drawRectFilledMultiColor")
 CSPCompatibilityManager.addFunction(function() return ui.pushClipRect end, "ui.pushClipRect")
 CSPCompatibilityManager.addFunction(function() return ui.popClipRect end, "ui.popClipRect")
 CSPCompatibilityManager.addFunction(function() return ui.measureText end, "ui.measureText")

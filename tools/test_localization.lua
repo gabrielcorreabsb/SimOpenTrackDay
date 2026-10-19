@@ -114,7 +114,8 @@ check(mainWindowSource:find("Localization.text(tabSources[i])", 1, true) ~= nil 
   mainWindowSource:find("Localization.label('Navigation', 'main.tabs')", 1, true) ~= nil,
   'all tab labels and compact navigation use localized text with stable IDs')
 check(mainWindowSource:find("Localization.label(storage.enabled and 'Enabled' or 'Disabled', 'settings.app.enabled')", 1, true) ~= nil and
-  mainWindowSource:find("Localization.label('Language', 'settings.language')", 1, true) ~= nil,
+  mainWindowSource:find("Localization.text('Language')", 1, true) ~= nil and
+  mainWindowSource:find("ui.combo('###settings.language'", 1, true) ~= nil,
   'global enabled and language controls retain their stable IDs in MainWindow')
 local settingsTabsSource = readSource('SettingsWindow.lua')
 check(settingsTabsSource:find("'Show Advanced Controls'", 1, true) ~= nil and

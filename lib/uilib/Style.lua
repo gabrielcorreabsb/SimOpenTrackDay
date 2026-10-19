@@ -78,6 +78,19 @@ Style.popSurface = function()
   pop(3)
 end
 
+Style.pushButton = function(role)
+  local colors = Theme.button[role]
+  if not colors then error('Unknown button style role: ' .. tostring(role), 2) end
+  push(colorIndex('Button'), colors.normal)
+  push(colorIndex('ButtonHovered'), colors.hovered)
+  push(colorIndex('ButtonActive'), colors.pressed)
+  push(colorIndex('Text'), colors.text)
+end
+
+Style.popButton = function()
+  pop(4)
+end
+
 Style.push = push
 Style.pop = pop
 

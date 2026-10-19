@@ -29,20 +29,37 @@ local state = {
   preserveCursorForNextDraw = false,
   pendingButton = nil, pendingCheckbox = nil, pendingCombo = {},
   windowOpenCalls = {},
-  comboRows = {}, buttonRows = {}, text = {}, wrapped = {}, gradients = {}, measuredTexts = {},
+  comboRows = {}, buttonRows = {}, checkboxRows = {}, wrappedRows = {}, text = {}, wrapped = {}, gradients = {}, measuredTexts = {},
   dwriteRows = {}, columnLayouts = {}, columnWidths = {},
   headerColumns = false, headerColumnIndex = 0, headerColumnCount = 0,
   shouldRunCalls = 0, carListCalls = 0, notRunningCalls = 0, errors = 0,
   clipDepth = 0, clipRects = {}, nativeMeasureRequests = {}, tooltips = {}, hovered = false,
-  throwBackgroundFill = false,
+  groupDepth = 0, throwBackgroundFill = false, throwLaneContent = false,
+  lastItemMaxY = 0, separatorRows = {},
 }
 local function event(kind, ...)
   state.events[#state.events + 1] = { kind, ... }
+end
+local function wrappedLineCount(text, width)
+  local lines = 0
+  width = math.max(1, width or state.availableWidth)
+  for line in (text .. '\n'):gmatch('(.-)\n') do
+    local explicitLines = 1
+    for _ in line:gmatch('\n') do explicitLines = explicitLines + 1 end
+    lines = lines + math.max(explicitLines, math.ceil(#line * 12 / width))
+  end
+  return math.max(1, lines)
+end
+local function advanceMockItem(height)
+  state.lastItemMaxY = state.cursor.y + height
+  state.cursor.y = state.lastItemMaxY + 2
 end
 local function clearFrame()
   state.events, state.children, state.comboRows, state.buttonRows = {}, {}, {}, {}
   state.childFontStacks = {}
   state.text, state.wrapped, state.wrappedFonts, state.gradients = {}, {}, {}, {}
+  state.checkboxRows, state.wrappedRows = {}, {}
+  state.coloredRows = {}
   state.dwriteRows, state.columnLayouts, state.columnWidths = {}, {}, {}
   state.measuredTexts = {}
   state.fontPushes = {}
@@ -50,6 +67,8 @@ local function clearFrame()
   state.clipRects, state.nativeMeasureRequests, state.tooltips = {}, {}, {}
   state.headerColumns, state.headerColumnIndex, state.headerColumnCount = false, 0, 0
   state.headerColumnWidths = {}
+  state.lastItemMaxY = 0
+  state.separatorRows = {}
   state.carListCalls, state.notRunningCalls = 0, 0
 end
 local throwFooterText = false
@@ -108,9 +127,20 @@ _G.ui = {
     end
     state.wrapped[#state.wrapped + 1] = text
     state.wrappedFonts[#state.wrappedFonts + 1] = state.fontStack[#state.fontStack]
+    local row = { text = text, x = state.cursor.x, y = state.cursor.y }
+    state.wrappedRows[#state.wrappedRows + 1] = row
     event('wrapped', text)
+    row.height = wrappedLineCount(text, math.max(1, state.availableWidth - math.max(0, state.cursor.x - 8))) * 20
+    advanceMockItem(row.height)
+    row.bottom = state.lastItemMaxY
   end,
-  textColored = function(text) state.text[#state.text + 1] = text; event('colored', text) end,
+  textColored = function(text) state.text[#state.text + 1] = text; state.coloredRows = state.coloredRows or {}; state.coloredRows[#state.coloredRows + 1] = { text = text, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y }; event('colored', text); advanceMockItem(20) end,
+  beginGroup = function() state.groupDepth = state.groupDepth + 1; event('group+') end,
+  endGroup = function()
+    assert(state.groupDepth > 0, 'group stack underflow')
+    state.groupDepth = state.groupDepth - 1
+    event('group-')
+  end,
   dwriteText = function(text)
     state.text[#state.text + 1] = text
     state.dwriteRows[#state.dwriteRows + 1] = { text = text, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y }
@@ -118,8 +148,10 @@ _G.ui = {
     event('dwrite', text)
   end,
   combo = function(label, index, _, options)
-    state.comboRows[#state.comboRows + 1] = { label = label, index = index, options = options, disabled = state.disabledDepth > 0, font = state.fontStack[#state.fontStack] }
+    state.comboRows[#state.comboRows + 1] = { label = label, index = index, options = options, disabled = state.disabledDepth > 0, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y, width = state.itemWidth, height = 32 }
     event('combo', label)
+    advanceMockItem(32)
+    state.comboRows[#state.comboRows].bottom = state.lastItemMaxY
     local nextIndex = state.pendingCombo[label]
     if nextIndex ~= nil then state.pendingCombo[label] = nil; return nextIndex, nextIndex ~= index end
     return index, false
@@ -129,7 +161,12 @@ _G.ui = {
     state.checkboxValues[label] = value
     state.checkboxFonts = state.checkboxFonts or {}
     state.checkboxFonts[label] = state.fontStack[#state.fontStack]
+    state.checkboxRows[#state.checkboxRows + 1] = { label = label, x = state.cursor.x, y = state.cursor.y }
     event('checkbox', label)
+    local lines = select(2, label:gsub('\n', '\n')) + 1
+    state.checkboxRows[#state.checkboxRows].height = lines * 20
+    advanceMockItem(lines * 20)
+    state.checkboxRows[#state.checkboxRows].bottom = state.lastItemMaxY
     if state.pendingCheckbox == label then state.pendingCheckbox = nil; return true end
     return false
   end,
@@ -140,7 +177,7 @@ _G.ui = {
     if state.pendingButton == label then state.pendingButton = nil; return true end
     return false
   end,
-  separator = function() event('separator') end,
+  separator = function() state.separatorRows[#state.separatorRows + 1] = { y = state.cursor.y }; event('separator', state.cursor.y) end,
   columns = function(count, border, id)
     state.columnLayouts[#state.columnLayouts + 1] = { count = count, border = border, id = id }
     if id == 'headerControls' then
@@ -172,7 +209,7 @@ _G.ui = {
       end
       return math.max(0, math.min(columnWidth, total))
     end
-    return state.availableWidth
+    return math.max(0, state.availableWidth - math.max(0, state.cursor.x - 8))
   end,
   measureDWriteText = function(text, size, wrap)
     state.measuredTexts[#state.measuredTexts + 1] = text
@@ -180,10 +217,11 @@ _G.ui = {
     return vec2(#text * 8, 14)
   end,
   measureText = function(text, wrap)
+    local height = wrap and wrap > 0 and wrappedLineCount(text, wrap) * 20 or 20
     state.nativeMeasureRequests[#state.nativeMeasureRequests + 1] = {
-      text = text, wrap = wrap, font = state.fontStack[#state.fontStack], width = #text * 12,
+      text = text, wrap = wrap, font = state.fontStack[#state.fontStack], width = #text * 12, height = height,
     }
-    return vec2(#text * 12, 20)
+    return vec2(#text * 12, height)
   end,
   itemHovered = function() return state.hovered end,
   setTooltip = function(text) state.tooltips[#state.tooltips + 1] = text end,
@@ -195,7 +233,7 @@ _G.ui = {
   windowPos = function() return state.windowPos end,
   cursorScreenPos = function() return vec2(state.windowPos.x + state.cursor.x, state.windowPos.y + state.cursor.y) end,
   itemRectMin = function() return vec2(0, 0) end,
-  itemRectMax = function() return vec2(0, 0) end,
+  itemRectMax = function() return vec2(state.cursor.x, state.lastItemMaxY or 0) end,
   textLineHeightWithSpacing = function() return 18 end,
   drawLine = function(...) event('drawLine', ...) end,
   dummy = function(size) state.cursor.x = state.cursor.x + size.x end,
@@ -205,6 +243,7 @@ _G.ui = {
     end
     event('fill', p1, p2, color, ...)
   end,
+  drawRect = function(...) event('outline', ...) end,
   pushClipRect = function(p1, p2, intersect)
     state.clipDepth = state.clipDepth + 1
     state.clipRects[#state.clipRects + 1] = { p1 = p1, p2 = p2, intersect = intersect }
@@ -229,6 +268,7 @@ _G.ui = {
   end,
   endChild = function()
     assert(#state.children > 0, 'endChild without beginChild')
+    assert(state.groupDepth == 0, 'endChild with an open group')
     local expectedFontStack = state.childFontStacks[#state.children]
     assert(#state.fontStack == #expectedFontStack, 'native font stack depth must match beginChild at endChild')
     for i, font in ipairs(expectedFontStack) do
@@ -259,7 +299,10 @@ _G.ColorManager = { RGBM_Colors = { WhiteSmoke = 'white-smoke', Red = 'red' } }
 _G.UIManager = {
   drawAppNotRunningMessageInMainWindow = function() state.notRunningCalls = state.notRunningCalls + 1; event('not-running') end,
   drawUICarList = function() state.carListCalls = state.carListCalls + 1; event('car-list') end,
-  drawMainWindowLateralOffsetsSection = function() event('lanes') end,
+  drawMainWindowLateralOffsetsSection = function()
+    event('lanes')
+    if state.throwLaneContent then error('injected lane content failure') end
+  end,
 }
 _G.SettingsWindow = {
   drawContent = function(tab, available)
@@ -274,7 +317,7 @@ _G.Constants = { APP_NAME = 'SimOpenTrackDay', APP_VERSION = '0.1', APP_AUTHOR =
 package.loaded.Localization = nil
 package.loaded.UIManager = nil
 package.loaded.UIState = nil
-for _, name in ipairs({ 'Theme', 'Style', 'Logo', 'Toggle' }) do
+for _, name in ipairs({ 'Theme', 'Style', 'Logo', 'Toggle', 'Section' }) do
   package.loaded['lib/uilib/' .. name] = nil
 end
 local Localization = require('Localization')
@@ -312,6 +355,7 @@ local function draw(shouldRun, missing, message)
     return shouldRun()
   end, missing, message)
   check(#state.children == 0, 'child window stack balanced after draw')
+  check(state.groupDepth == 0, 'section groups balanced after draw')
   check(#state.styles == 0, 'style-color stack balanced after draw')
   check(state.widthDepth == 0 and state.fontDepth == 0, 'item-width and font stacks balanced after draw')
   check(state.disabledDepth == 0, 'disabled stack balanced after draw')
@@ -323,6 +367,23 @@ local function findEvent(kind, value)
   for index, item in ipairs(state.events) do
     if item[1] == kind and (value == nil or item[2] == value) then return index end
   end
+end
+local function countEvent(kind)
+  local count = 0
+  for _, item in ipairs(state.events) do if item[1] == kind then count = count + 1 end end
+  return count
+end
+local function countDWriteText(text)
+  local count = 0
+  for _, row in ipairs(state.dwriteRows) do if row.text == text then count = count + 1 end end
+  return count
+end
+local function countNativeTitle(text)
+  local count = 0
+  for _, row in ipairs(state.coloredRows or {}) do
+    if row.text == text and row.font == ui.Font.Title then count = count + 1 end
+  end
+  return count
 end
 local function findCombo(id)
   for _, row in ipairs(state.comboRows) do if row.label:find('###' .. id, 1, true) then return row end end
@@ -340,13 +401,29 @@ draw(function() return canRun end, false, nil)
 check(#state.contentCalls == 1 and state.contentCalls[1].tab == 'Overview' and state.contentCalls[1].available,
   'Overview content receives the three-argument MainWindow callback availability')
 check(state.carListCalls == 1, 'operational overview includes the car-list action')
+local laneHeadingCount = 0
+for _, row in ipairs(state.coloredRows or {}) do
+  if row.text == Localization.text('Driving lanes') then laneHeadingCount = laneHeadingCount + 1 end
+end
+check(laneHeadingCount == 1 and findEvent('group+') < findEvent('lanes') and
+  findEvent('lanes') < findEvent('group-') and findEvent('outline') ~= nil,
+  'Overview wraps the UIManager lane-section stub in one shared Section group')
+local nativeLaneMeasure, dwriteLaneTitle = false, false
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == Localization.text('Driving lanes') and request.font == ui.Font.Title then nativeLaneMeasure = true end
+end
+for _, row in ipairs(state.dwriteRows) do
+  if row.text == Localization.text('Driving lanes') then dwriteLaneTitle = true end
+end
+check(nativeLaneMeasure and not dwriteLaneTitle,
+  'Section title dimensions and rendering use the same native Title font, not DirectWrite')
 local closeID = Localization.label('Close', 'main.window.close')
 local closeButton
 for _, row in ipairs(state.buttonRows) do if row.label == closeID then closeButton = row end end
 check(closeButton and closeButton.width > 0 and closeButton.width <= state.availableWidth and
   closeButton.x + closeButton.width == 8 + state.availableWidth,
   'visible header close control keeps its stable ID and fits the main content width')
-check(#state.gradients == 1 and findEvent('clip+') < findEvent('fill') and findEvent('fill') < findEvent('clip-'),
+check(#state.gradients >= 2 and findEvent('clip+') < findEvent('fill') and findEvent('fill') < findEvent('clip-'),
   'background fill is clipped to the viewport and restores the prior clip before header drawing')
 check(state.clipRects[1] and state.clipRects[1].p1.x == 0 and state.clipRects[1].p1.y == 0 and
   state.clipRects[1].p2.x == state.windowSize.x and state.clipRects[1].p2.y == state.windowSize.y and
@@ -362,11 +439,23 @@ for _, push in ipairs(state.stylePushes) do
   if push.index == styleColor.Text and push.value == Theme.colors.white then selectedTabUsesWhiteText = true end
 end
 check(selectedTabUsesWhiteText, 'selected navigation text uses the static white Theme color')
+local selectedButtonToken, quietButtonToken = false, false
+for _, push in ipairs(state.stylePushes) do
+  if push.index == styleColor.Button and push.value == Theme.button.selected.normal then selectedButtonToken = true end
+  if push.index == styleColor.Button and push.value == Theme.button.quiet.normal then quietButtonToken = true end
+end
+check(selectedButtonToken and quietButtonToken,
+  'existing tab buttons use shared selected and quiet state roles from Theme')
+local StyleForButtons = require('lib/uilib/Style')
+StyleForButtons.pushButton('disabled')
+StyleForButtons.popButton()
+check(#state.styles == 0 and state.stylePushes[#state.stylePushes].value == Theme.button.disabled.text,
+  'shared disabled button role balances style scope and uses muted text')
 check(findEvent('beginChild', 'mainPageContent') < findEvent('content', 'Overview') and
   findEvent('content', 'Overview') < findEvent('endChild', 'mainPageContent'),
   'child content begins, draws, and ends in order')
-check(findEvent('checkbox', 'Enabled###settings.app.enabled') < findEvent('combo', 'Language###settings.language') and
-  findEvent('combo', 'Language###settings.language') < findEvent('shouldAppRun'),
+check(findEvent('checkbox', 'Enabled###settings.app.enabled') < findEvent('combo', '###settings.language') and
+  findEvent('combo', '###settings.language') < findEvent('shouldAppRun'),
   'global enable and language controls precede the operational availability guard')
 check(state.checkboxValues['Enabled###settings.app.enabled'] == true,
   'global enable checkbox exposes the real Enabled state and stable ID')
@@ -403,10 +492,10 @@ for _, row in ipairs(state.buttonRows) do
 end
 check(titleNavButtons == 5, 'all five navigation buttons render in Title font scope')
 local titleHeader = false
-for _, row in ipairs(state.dwriteRows) do
+for _, row in ipairs(state.coloredRows or {}) do
   if row.text == 'SimOpenTrackDay' and row.font == ui.Font.Title then titleHeader = true end
 end
-check(titleHeader, 'main application title renders under the native Title font')
+check(titleHeader, 'main application title renders under the native Title font without DirectWrite')
 check(not pcall(ui.popFont), 'native font mock rejects underflow')
 
 -- Exercise the real word-wrapping Toggle while retaining its native checkbox ID.
@@ -424,19 +513,97 @@ check(state.checkboxValues[wrappedToggle] == true and #state.styles == 0,
   'wrapped label still uses the native checkbox and balances its styles')
 state.availableWidth = 1200
 
-state.availableWidth = 759
-draw(function() return true end, false, nil)
-local headerColumnsAt759 = false
-for _, layout in ipairs(state.columnLayouts) do if layout.id == 'headerControls' then headerColumnsAt759 = true end end
-check(not headerColumnsAt759, 'header avoids its three-column control layout below 760 px')
-state.availableWidth = 760
-draw(function() return true end, false, nil)
-local headerColumnsAt760 = false
-for _, layout in ipairs(state.columnLayouts) do
-  if layout.id == 'headerControls' and layout.count == 3 then headerColumnsAt760 = true end
+state.availableWidth = 1200
+
+local function verifyHeaderGeometry(width, locale, wide)
+  Localization.setLocale(locale)
+  state.windowSize = vec2(width, 768)
+  state.availableWidth = width - (2 * Theme.layout.windowInset)
+  UIState.activeTab = 'Overview'
+  draw(function() return true end, false, nil)
+  local brand, context, enable, language, statusDot, headerFill, statusText
+  for _, row in ipairs(state.coloredRows or {}) do
+    if row.text == 'SimOpenTrackDay' then brand = row end
+  end
+  for _, row in ipairs(state.wrappedRows) do
+    if row.text:find('Mock Track', 1, true) then context = row end
+    if row.text == Localization.text('Language') then language = row end
+    if row.text == Localization.text('Operational') or
+      row.text == Localization.text('SimOpenTrackDay is not running.') then statusText = row end
+  end
+  for _, row in ipairs(state.checkboxRows) do
+    if row.label:find('###settings.app.enabled', 1, true) then enable = row end
+  end
+  local languageCombo = findCombo('settings.language')
+  for _, item in ipairs(state.events) do
+    if item[1] == 'fill' and item[4] == Theme.colors.success then statusDot = { x = item[2].x, y = item[2].y - 5 } end
+    if item[1] == 'fill' and item[4] == Theme.colors.surface and not headerFill then headerFill = item end
+  end
+  local headerLeft = Theme.layout.windowInset
+  local headerRight = width - Theme.layout.windowInset
+  check(brand and context and enable and language and languageCombo and statusDot and headerFill,
+    string.format('header geometry elements exist at %d px in %s', width, locale))
+  if not (brand and context and enable and language and languageCombo and statusDot and headerFill) then return end
+  check(brand.x == headerLeft and enable.x == headerLeft and context.x == headerLeft and
+    brand.y >= headerFill[2].y and
+    brand.y + ui.measureText(brand.text, -1).y <= headerFill[2].y + Theme.layout.headerTitleRowHeight and
+    context.y >= headerFill[2].y + Theme.layout.headerTitleRowHeight and
+    context.y + ui.measureText(context.text, state.availableWidth).y <= headerFill[3].y,
+    string.format('brand, session and controls share the header grid without crossing its background at %d px in %s', width, locale))
+  check(languageCombo.x + languageCombo.width <= headerRight,
+    string.format('language combo stays inside the content bounds at %d px in %s', width, locale))
+  local firstHeaderSeparator = state.separatorRows[1]
+  check(statusText and firstHeaderSeparator and
+    firstHeaderSeparator.y > math.max(enable.bottom, languageCombo.bottom, statusText.bottom),
+    string.format('header separator follows the measured checkbox, combo, and status bounds at %d px in %s', width, locale))
+  if wide then
+    check(enable.y == language.y and language.y == languageCombo.y and languageCombo.y == statusDot.y and
+      enable.x < language.x and language.x < languageCombo.x and
+      languageCombo.x + languageCombo.width < statusDot.x and statusDot.x < headerRight,
+      string.format('wide enable, labeled language field and status share one aligned row at %d px in %s', width, locale))
+  else
+    check(enable.y < language.y and language.y == languageCombo.y and languageCombo.y < statusDot.y and
+      enable.x == language.x and language.x == statusDot.x,
+      string.format('narrow controls stack on a shared left grid without overlap at %d px in %s', width, locale))
+  end
 end
-check(headerColumnsAt760 and #state.columnWidths == 2,
-  'header uses three columns and two explicit widths starting at 760 px')
+
+for _, locale in ipairs({ 'en', 'pt-BR', 'es' }) do
+  verifyHeaderGeometry(900, locale, true)
+  verifyHeaderGeometry(1200, locale, true)
+  verifyHeaderGeometry(480, locale, false)
+end
+Localization.setLocale('en')
+
+local function verifyHeaderVerticalBounds(warningStatus)
+  Localization.setLocale('en')
+  state.windowSize = vec2(900, 768)
+  state.availableWidth = 900 - (2 * Theme.layout.windowInset)
+  storage.enabled = true
+  draw(function() return not warningStatus end, false, nil)
+  local languageCombo, statusText
+  for _, row in ipairs(state.comboRows) do
+    if row.label == '###settings.language' then languageCombo = row end
+  end
+  for _, row in ipairs(state.wrappedRows) do
+    local expected = warningStatus and Localization.text('SimOpenTrackDay is not running.') or Localization.text('Operational')
+    if row.text == expected then statusText = row end
+  end
+  local firstHeaderSeparator = state.separatorRows[1]
+  check(languageCombo and statusText and firstHeaderSeparator and
+    firstHeaderSeparator.y > math.max(languageCombo.bottom, statusText.bottom),
+    warningStatus and 'wide header separator follows wrapped warning and combo bottoms' or
+      'wide header separator follows combo bottom when combo exceeds the status text height')
+  if languageCombo and statusText then
+    check(warningStatus and statusText.height > languageCombo.height or
+      (not warningStatus and languageCombo.height > statusText.height),
+      warningStatus and 'warning status fixture is taller than the combo' or
+        'operational status fixture is shorter than the combo')
+  end
+end
+
+verifyHeaderVerticalBounds(false)
+verifyHeaderVerticalBounds(true)
 
 -- The native chrome is replaced with an explicit close action; closing does not
 -- mutate app enablement or the transient active tab.
@@ -462,17 +629,13 @@ for _, row in ipairs(state.buttonRows) do
 end
 normalCloseEvent = findEvent('button', Localization.label('Close', 'main.window.close'))
 local wordmarkRow
-for _, row in ipairs(state.dwriteRows) do if row.text == 'SimOpenTrackDay' then wordmarkRow = row end end
-local logoRight = 0
-for _, item in ipairs(state.events) do
-  if item[1] == 'drawLine' then logoRight = math.max(logoRight, item[2].x, item[3].x) end
-end
+for _, row in ipairs(state.coloredRows or {}) do if row.text == 'SimOpenTrackDay' then wordmarkRow = row end end
 check(normalCloseButton and normalCloseButton.width <= 464 and
   normalCloseButton.x + normalCloseButton.width == state.windowSize.x - Theme.layout.windowInset and
   normalCloseButton.y == Theme.layout.windowInset and wordmarkRow and
-  logoRight <= wordmarkRow.x and
-  wordmarkRow.x + ui.measureDWriteText('SimOpenTrackDay', Theme.type.title, -1).x + Theme.spacing.sm <= normalCloseButton.x,
-  '480 px header positions Close at the right inset and reserves a non-overlapping brand rectangle')
+  wordmarkRow.x == Theme.layout.windowInset and
+  wordmarkRow.x + ui.measureText('SimOpenTrackDay', -1).x + Theme.spacing.sm <= normalCloseButton.x,
+  '480 px header aligns native-font brand and Close to the same inset without overlap')
 
 -- At narrow content widths, hide branding that cannot fit beside the close
 -- control instead of allowing the rectangles to overlap.
@@ -480,9 +643,9 @@ state.windowSize = vec2(80, 768)
 state.availableWidth = 64
 UIState.activeTab = 'Overview'
 draw(function() return true end, false, nil)
-local narrowClose, firstLogoLine
+local narrowClose, narrowBrand
 for index, item in ipairs(state.events) do
-  if item[1] == 'drawLine' and not firstLogoLine then firstLogoLine = index end
+  if item[1] == 'colored' and item[2] == 'SimOpenTrackDay' then narrowBrand = true end
 end
 for _, row in ipairs(state.buttonRows) do
   if row.label:match('###(.*)$') == 'main.window.close' then narrowClose = row end
@@ -490,8 +653,8 @@ end
 check(narrowClose and narrowClose.width <= 64 and
   narrowClose.x >= Theme.layout.windowInset and
   narrowClose.x + narrowClose.width <= state.windowSize.x - Theme.layout.windowInset and
-  not firstLogoLine,
-  '80 px viewport keeps Close inside the inset and hides the brand when its rectangle cannot fit')
+  not narrowBrand,
+  '80 px viewport prioritizes the accessible Close control when brand cannot fit')
 
 for _, locale in ipairs({ 'en', 'pt-BR', 'es' }) do
   Localization.setLocale(locale)
@@ -544,20 +707,20 @@ for _, row in ipairs(state.buttonRows) do
 end
 check(#measuredVisibleTabs == 5, 'navigation measurement is derived from five actual tab buttons, excluding header actions')
 for index, visible in ipairs(measuredVisibleTabs) do
-  expectedTabWidth = expectedTabWidth + #visible * 8 + Theme.spacing.lg
+  expectedTabWidth = expectedTabWidth + #visible * 12 + Theme.spacing.lg
   if index > 1 then expectedTabWidth = expectedTabWidth + Theme.spacing.sm end
 end
 local measuredVisibleSelection = false
-for _, text in ipairs(state.measuredTexts) do
-  if text == measuredVisibleTabs[1] then measuredVisibleSelection = true end
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == measuredVisibleTabs[1] then measuredVisibleSelection = true end
 end
-check(measuredVisibleSelection, 'visible selected-tab label participates in navigation measurement')
+check(measuredVisibleSelection, 'visible selected-tab label participates in native-font navigation measurement')
 for _, tab in ipairs({ 'Overview', 'Behavior', 'Yielding', 'Overtaking', 'Advanced' }) do
   local found = false
-  for _, request in ipairs(state.measureRequests) do
-    if request.text == tab then found = request.size == Theme.type.tab and request.wrap == -1 end
+  for _, request in ipairs(state.nativeMeasureRequests) do
+    if request.text == tab then found = request.font == ui.Font.Title and request.wrap == -1 end
   end
-  check(found, 'navigation measures visible ' .. tab .. ' text with Theme tab typography')
+  check(found, 'navigation measures visible ' .. tab .. ' with the native Title font')
 end
 state.availableWidth = expectedTabWidth
 draw(function() return true end, false, nil)
@@ -603,6 +766,8 @@ state.pendingButton = 'Behavior###main.tab.behavior'
 draw(function() return true end, false, nil)
 check(UIState.activeTab == 'Behavior' and state.contentCalls[1].tab == 'Behavior',
   'wide navigation changes to Behavior before drawing content')
+check(countEvent('lanes') == 0 and countNativeTitle(Localization.text('Driving lanes')) == 0,
+  'operational non-Overview tabs do not render the Overview lane card')
 local navIDs = {}
 for _, row in ipairs(state.buttonRows) do
   local _, id = visibleId(row.label)
@@ -648,12 +813,24 @@ for localeIndex, locale in ipairs({ 'en', 'pt-BR', 'es' }) do
   for _, width in ipairs({ 80, 480, 700, 900, 1200, 1760 }) do
     state.availableWidth = width
     UIState.activeTab = 'Overview'
-    local languageComboLabel = width < 300 and '###settings.language' or Localization.label('Language', 'settings.language')
+    Localization.setLocale(locale)
+    local languageComboLabel = '###settings.language'
     state.pendingCombo[languageComboLabel] = localeIndex
     draw(function() return true end, false, nil)
     check(Localization.getLocale() == locale and findCombo('settings.language') ~= nil,
       string.format('global language control remains available at %d px in %s (actual %s, combo %s)',
          width, locale, tostring(Localization.getLocale()), tostring(findCombo('settings.language') ~= nil)))
+    local explicitLanguageLabel = false
+    for _, rowText in ipairs(state.wrapped) do
+      if rowText == Localization.text('Language') then explicitLanguageLabel = true end
+    end
+    check(explicitLanguageLabel,
+      string.format('language selector keeps its localized visible label separate from the stable combo ID in %s', locale))
+    if width == 480 then
+      check(countNativeTitle(Localization.text('Driving lanes')) == 1 and countEvent('lanes') == 1 and
+        findEvent('group+') < findEvent('lanes') and findEvent('lanes') < findEvent('group-'),
+        string.format('localized Overview lane grouping renders once in %s', locale))
+    end
     local localizedFooter = table.concat(state.wrapped, '\n')
     local expectedLocalizedFooter = Localization.text('%s v%s | developed by %s | original author: %s',
       Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_DEVELOPER, Constants.APP_AUTHOR)
@@ -699,7 +876,10 @@ check(persisted.uiLanguage == 'es' and Localization.getLocale() == 'es' and
 
 -- CSP missing state disables content but leaves header, language, and navigation active.
 state.availableWidth = 480
+UIState.activeTab = 'Overview'
 draw(function() return true end, true, 'Required CSP item missing')
+check(countEvent('lanes') == 0 and countNativeTitle(Localization.text('Driving lanes')) == 0,
+  'unavailable Overview omits the operational lane card')
 check(state.contentCalls[1] and not state.contentCalls[1].available and state.carListCalls == 0,
   'missing CSP requirements disable operational content and hide car list action')
 check(findCombo('settings.language') and findCombo('main.tabs') and state.disabledDepth == 0,
@@ -742,6 +922,8 @@ check(reloadedUIState.activeTab == 'Overview', 'active tab resets on module relo
 local entryFile = assert(io.open('SimOpenTrackDay.lua', 'rb'))
 local entrySource = entryFile:read('*a')
 entryFile:close()
+check(entrySource:find('CSPCompatibilityManager.addFunction(function() return ui.drawRectFilledMultiColor end, "ui.drawRectFilledMultiColor"', 1, true) ~= nil,
+  'entrypoint registers ui.drawRectFilledMultiColor used by the shared Overview Section')
 local declaration = 'function script.MANIFEST__FUNCTION_MAIN(dt)'
 local startAt = assert(entrySource:find(declaration, 1, true), 'one-window entry callback declaration remains')
 local finishAt = assert(entrySource:find('\nend', startAt, true), 'main callback terminator remains')
@@ -793,6 +975,24 @@ check(#state.children == 0 and state.fontDepth == 0 and #state.styles == 0,
   'car-list failure rethrows original error after child/font/style cleanup')
 check(state.dwriteFontDepth == 0 and state.nativeFontDepth == 0, 'both font stacks clean up after car-list error')
 UIManager.drawUICarList = originalCarList
+
+state.throwLaneContent = true
+clearFrame()
+state.cursor = vec2(8, 8)
+local laneFailureOK, laneFailure = pcall(MainWindow.draw, function() return true end, false, nil)
+state.throwLaneContent = false
+check(not laneFailureOK and tostring(laneFailure):find('injected lane content failure', 1, true) ~= nil,
+  'lane-section callback preserves and rethrows the original error')
+check(state.groupDepth == 0 and #state.children == 0 and #state.styles == 0 and
+  state.dwriteFontDepth == 0 and state.nativeFontDepth == 0 and #state.fontStack == 0,
+  'lane-section error closes group and child, then balances styles and both font scopes')
+local laneGroupEnd, laneChildEnd
+for index, item in ipairs(state.events) do
+  if item[1] == 'group-' then laneGroupEnd = index end
+  if item[1] == 'endChild' and item[2] == 'mainPageContent' then laneChildEnd = index end
+end
+check(laneGroupEnd and laneChildEnd and laneGroupEnd < laneChildEnd,
+  'lane group closes before MainWindow cleanup ends its child')
 
 throwFooterText = true
 clearFrame()

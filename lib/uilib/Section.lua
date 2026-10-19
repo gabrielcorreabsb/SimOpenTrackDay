@@ -1,7 +1,6 @@
 local Section = {}
 local ui = ui
 local Theme = require('lib/uilib/Theme')
-local Style = require('lib/uilib/Style')
 local vec2 = vec2
 local Localization = require('Localization')
 local ui_drawRectFilledMultiColor = ui.drawRectFilledMultiColor
@@ -13,7 +12,9 @@ Section.section = function(label, callback, opts)
   opts = opts or EMPTY_OPTIONS
   local left = ui.getCursor()
   local available = opts.width or ui.availableSpaceX()
-  local headerHeight = Theme.type.section + Theme.spacing.md
+  local title = Localization.text(label)
+  local titleSize = ui.measureText(title, -1)
+  local headerHeight = math.max(Theme.type.section, titleSize.y) + Theme.spacing.md
   local headerRight = left.x + available
   local headerBottom = left.y + headerHeight
   ui.drawRectFilled(left, vec2(headerRight, headerBottom), Theme.colors.surface, 7, 0)
@@ -25,12 +26,16 @@ Section.section = function(label, callback, opts)
   end
   ui.setCursor(vec2(left.x + Theme.spacing.md, left.y + Theme.spacing.sm))
   ui.beginGroup()
-  Style.push(ui.StyleColor.Text, Theme.colors.white)
-  ui.dwriteText(Localization.text(label), Theme.type.section)
-  Style.pop()
+  ui.textColored(title, Theme.colors.white)
   ui.setCursor(vec2(left.x + Theme.spacing.md, left.y + headerHeight + Theme.spacing.sm))
-  if callback then callback() end
-  ui.endGroup()
+  if callback then
+    local callbackOk, callbackError = pcall(callback)
+    local groupCloseOk, groupCloseError = pcall(ui.endGroup)
+    if not callbackOk then error(callbackError, 0) end
+    if not groupCloseOk then error(groupCloseError, 0) end
+  else
+    ui.endGroup()
+  end
   local boundsMin, boundsMax = ui.itemRectMin(), ui.itemRectMax()
   local finish = ui.getCursor()
   local top = math.min(left.y, boundsMin.y)
