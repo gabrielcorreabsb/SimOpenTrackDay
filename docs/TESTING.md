@@ -1,6 +1,6 @@
 # Testing Guide — SimOpenTrackDay
 
-This document describes how to validate the **SimOpenTrackDay** development source before and after a manual Assetto Corsa (AC) installation. It covers prerequisites, Lua syntax, headless mocks, and in-game scenarios. Documentation and source checks do not establish which files are installed; CSP runtime and in-game visual validation remain pending. This is not a published build or release.
+This document describes how to validate the **SimOpenTrackDay** development source before and after a manual Assetto Corsa (AC) installation. It covers prerequisites, Lua syntax, headless mocks, and in-game scenarios. Documentation and source checks do not establish which files are installed. A limited manual UI-loading recovery was reported on 2026-10-18 (see section 6); broader CSP runtime and visual validation remain pending. This is not a published build or release.
 
 > **Rule of thumb:** keep backups of the existing installation and user settings. Do not delete the current installation or clear settings to test this development version; prefer a parallel installation.
 
@@ -65,6 +65,8 @@ Run the headless contract smoke test:
 luajit tools/test_ui_smoke.lua
 ```
 
+Current blocker: `tools/fixtures/settings_baseline.lua` is absent from this checkout, so the default run fails during loading. This predates the `__dirname` bootstrap change; do not count this smoke test as passed.
+
 The test uses mocks and the versioned `tools/fixtures/settings_baseline.lua` fixture; it covers only exercised contracts and paths. Its mock checks localization/IDs, disabled-control behavior, and selected width/column cases (including 80, 480, 700, 900, 1200, and 1760 px). It does not validate CSP rendering/interaction or replace the in-game scenarios below. It is not a complete main-callback or full UI validation.
 
 ### 2.4 Logo and icon-callback mock smoke test
@@ -89,6 +91,8 @@ An optional comparison may set `SOTD_BASELINE_SETTINGS` to a locally available s
 
 Run `luajit tools/test_main_window.lua`, `luajit tools/test_ui_manager.lua`, and `luajit tools/test_no_diagnostics.lua` for isolated entry, operational car-list, and static no-diagnostics contracts. These checks are bounded/headless; they do not validate CSP rendering or runtime behavior. `luajit tools/test_settings_model.lua` covers the settings model independently.
 
+Run `luajit tools/test_ui_controls.lua` for shared control geometry, status-indicator contracts and the source payload-manifest entry. `tools/test_main_window.lua` and `tools/test_ui_manager.lua` cover mocked navigation/filter localization, stable IDs, and selection behavior; the manager check also exercises translated filter counts, chip widths/wrapping, and narrow combo fallback. These are headless checks and do not establish CSP rendering or installation.
+
 ### 2.7 Version and license metadata
 
 Run `luajit tools/test_version.lua` to check runtime/manifest name, version and author metadata and preservation of the existing MIT license notice. It does not validate CSP or product behavior.
@@ -96,6 +100,16 @@ Run `luajit tools/test_version.lua` to check runtime/manifest name, version and 
 ### 2.8 Package/installer checks
 
 `tools/test_package.ps1`, `tools/test_installer.ps1` and `tools/test_distribution.ps1` exercise package, installer and real-source integration under a sandbox under `%LOCALAPPDATA%\Temp\opencode`. They do not establish CSP compatibility or safe behavior in a real Assetto Corsa installation. When launching `install.bat` or `installer.ps1` in Preview or Rollback, the console window closes immediately after printing — that is normal PowerShell behavior, not an error. Run it from an open terminal or capture the output (e.g. `*> "D:\preview.txt"`) so you can read the plan.
+
+---
+
+### 2.9 Module-path bootstrap (Windows, LuaJIT)
+
+```powershell
+luajit tools/test_module_path.lua
+```
+
+Run from the repository root. This test exercises the actual entry-point bootstrap using a disposable sandbox under `%LOCALAPPDATA%\Temp\opencode`, without touching the game installation. It checks app-local modules winning over external namesakes, a renamed folder with spaces, `?.lua` and `?/init.lua`, trailing separators, preservation of prior search paths, rejection of unavailable/invalid `__dirname`, and the fact that `package.loaded` entries are not replaced. It does not establish CSP preprocessing, module loading or rendering behavior; confirm those manually after installing a test copy.
 
 ---
 
@@ -119,7 +133,7 @@ Manually copy the runtime files at the root and the `CarStateMachine/`, `DataStr
 
 ## 4. AC smoke test (load the app)
 
-This is a minimal manual smoke test to run after installing a test copy. CSP runtime and visual validation remain pending; do not assume installed files correspond to a specific source revision.
+This is a minimal manual smoke test to run after installing a test copy. The incident recovery recorded in section 6 does not complete the broader scenarios below; do not assume installed files correspond to a specific source revision.
 
 1. Open Assetto Corsa and enable `SimOpenTrackDay` among CSP Lua Apps.
 2. Start an offline session with AI cars on a track with an AI spline.
@@ -193,6 +207,22 @@ Use these scenarios to validate features after manually installing a test copy. 
 
 Use compatibility messages and CSP logs for operational errors. Diagnostic probes, overlays, traces, and development actions are not available; legacy debug storage schemas may remain inert. Preserve error reports when sharing a problem, but do not expect a diagnostic modal or debug flags.
 
+### Blank tabs and mixed Lua module versions
+
+On 2026-10-18, CSP logged `attempt to call field 'drawContent' (a nil value)` in `MainWindow.lua`. The entrypoint/main window were current, but the loaded settings module came from `.\SettingsWindow.lua` and exposed the old `draw` interface. `Constants` reported `RealisticTrackday 0.9.8`. Old project files in the AC root were winning module resolution because relative/external paths preceded the app directory in the observed `package.path`.
+
+After identified root-level project files were backed up and removed with authorization, the user confirmed that the UI worked again. This is a limited manual result for that installation, not confirmation of every tab, locale, AI scenario or performance target. No permanent runtime loader change was applied. See the [evidence and prevention plan](plans/MODULE_LOADING_HARDENING.md).
+
+For a similar failure:
+
+1. Preserve `%USERPROFILE%\Documents\Assetto Corsa\logs\custom_shaders_patch.log` (use the actual Documents location if redirected). Compare the error, app identity and module origin with the installed files; an up-to-date app folder alone does not prove those modules were loaded.
+2. With the game and launcher closed, inspect the AC root for loose project modules such as `Constants.lua` or `SettingsWindow.lua`. Do not delete all `.lua` files or folders: a matching filename is not proof that a file belongs to this project.
+3. If necessary, use a temporary instrumented test copy to record build markers, `package.path`, `package.loaded` and module origins before/after `require`. Check environment `LUA_PATH` without changing the global environment. Such probes are not a shipped diagnostic interface.
+4. Confirm ownership/content, inventory and back up any conflicting files before an explicitly authorized, targeted removal. Preserve user storage, game files, other mods and unrelated root folders. Do not use cache/settings deletion as the default remedy.
+5. Start a fresh game session with only the intended copy enabled, check the logs, and exercise the five tabs. Record what was actually observed; do not infer simulation correctness from visible controls.
+
+Install payload only into `apps/lua/SimOpenTrackDay/`, never directly into the AC root. The source bootstrap now prioritizes its directory through `__dirname`; its CSP validation remains pending and it does not replace entries already in `package.loaded`. The current installer does not automatically detect root-level module collisions; an installer preflight was **not approved or implemented**. Follow the [current installation guide](INSTALL.md) for path and backup requirements.
+
 ---
 
 ## 7. Rollback (preserve installations and settings)
@@ -230,4 +260,5 @@ After installing a test copy in CSP, verify each locale and layout. These are pr
 - Expand/collapse advanced behavior controls and confirm their visibility and values; this open/closed UI state is local, not persisted.
 - Confirm the single window has Overview, Behavior, Yielding, Overtaking, and Advanced tabs; the header remains visible while content scrolls; gradients are subtle and primary typography is white. These are pending manual checks, not confirmed CSP results. The current direction is in the [Restructuring plan](RESTRUCTURING_PLAN.md), not historical UI proposals.
 - Inspect narrow layouts around 80, 480, 700, 900, 1200, and 1760 px where practical, plus a wide layout; check overflow and navigation. Mocked width coverage is not a CSP visual guarantee.
+- With native title/background removed and `PADDING = 8, 8`, confirm in CSP that the app fill reaches all window edges without transparent bands while content remains inset, empty header space still moves the window, window edges still resize it, the top-right Close control closes it, and the app can be reopened from the apps bar. Check narrow and normal viewports; the wordmark may be hidden where its measured rectangle cannot fit, and narrow Close may use `X` with a localized tooltip. Headless clip-stack/geometry/manifest mocks do not prove CSP clipping, hit-testing or rendering.
 - Confirm translated labels keep stable ImGui IDs and no untranslated presentation strings are obvious. Simulation data, enums, and logs are not expected to be translated.

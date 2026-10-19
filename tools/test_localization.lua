@@ -72,11 +72,11 @@ for key in pairs(es) do check(en[key] ~= nil, 'no extra es msgid: ' .. key) end
 -- those templates. This guards inventory coverage independently of catalog size.
 local requiredMsgids = {
   'Overview', 'AI car list', 'SimOpenTrackDay is not running.',
-  'Use the enable control in the header.', 'Adjust driving lane offsets in Overview.',
+  'Use the enable control in the header.', 'Adjust driving lane offsets in Behavior.',
   'Behavior', 'Yielding', 'Overtaking', 'Advanced', 'Navigation',
   'Show Advanced Controls', 'Hide Advanced Controls',
   'Car #%02d - %s', 'Speed: %d km/h | Lane offset: %.3f',
-  'yes #%d', '%s v%s by %s', 'Center', 'Left', 'Right',
+  'yes #%d', '%s v%s | developed by %s | original author: %s', 'Center', 'Left', 'Right',
   'Undefined', 'Practice', 'Qualify', 'Race', 'Hotlap', 'TimeAttack', 'Drift', 'Drag',
   'DrivingNormally', 'EasingInYield', 'StayingOnYieldingLane', 'EasingOutYield',
   'WaitingAfterAccident', 'CollidedWithTrack', 'CollidedWithCar', 'AnotherCarCollidedIntoMe',
@@ -282,7 +282,7 @@ end
 
 local settingsSource = readSource('SettingsWindow.lua')
 local literalUICallCount = checkLiteralUIArgs(settingsSource,
-  { 'ui_checkbox', 'ui_setTooltip', 'Section.section', 'ui_button', 'ui_text', 'ui_textColored' },
+  { 'ui_checkbox', 'ui_setTooltip', 'Section.section', 'ui_button', 'ui_text', 'ui_textWrapped', 'ui_textColored' },
   'SettingsWindow')
 check(literalUICallCount >= 57,
   'SettingsWindow retains its current 57+ literal UI call inventory after tab extraction: ' .. literalUICallCount)
@@ -309,15 +309,23 @@ for line in settingsSource:gmatch('[^\r\n]+') do
 end
 check(sliderCallCount >= 50, 'inventory extracted from live SettingsWindow slider calls')
 check(sourceContains('MainWindow.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
-check(sourceContains('UIManager.lua', "T('SimOpenTrackDay is not running.')"), 'not-running msgid is present at its live call site')
+check(sourceContains('MainWindow.lua', "drawStatusIndicator('SimOpenTrackDay is not running.'") and
+  sourceContains('MainWindow.lua', 'UIControls.drawStatus(source, color, Localization, ui, vec2)') and
+  sourceContains('lib/uilib/UIControls.lua', 'Localization.text(source)'),
+  'not-running msgid reaches localization through the shared status control')
 check(sourceContains('UIManager.lua', "T('Use the enable control in the header.')") and
-  sourceContains('UIManager.lua', "T('Adjust driving lane offsets in Overview.')"),
-  'UIManager guidance uses current header and Overview terminology')
+  sourceContains('UIManager.lua', "T('Adjust driving lane offsets in Behavior.')"),
+  'UIManager guidance uses current header and Behavior terminology')
 check(pt['Use the enable control in the header.'] == 'Use o controle de ativação no cabeçalho.' and
-  es['Use the enable control in the header.'] == 'Usa el control de activación de la cabecera.' and
-  pt['Adjust driving lane offsets in Overview.'] == 'Ajuste os deslocamentos das faixas em Visão geral.' and
-  es['Adjust driving lane offsets in Overview.'] == 'Ajusta los desplazamientos de los carriles en Resumen.',
-  'header and Overview guidance has the requested PT-BR and Spanish translations')
+  es['Use the enable control in the header.'] == 'Usa el control de activación de la cabecera.',
+  'header guidance retains its PT-BR and Spanish translations')
+local behaviorGuidance = 'Adjust driving lane offsets in Behavior.'
+check(type(pt[behaviorGuidance]) == 'string' and pt[behaviorGuidance] ~= '' and
+  type(es[behaviorGuidance]) == 'string' and es[behaviorGuidance] ~= '',
+  'Behavior guidance is translated in PT-BR and Spanish')
+check(pt[behaviorGuidance] == 'Ajuste os deslocamentos laterais em Comportamento.' and
+  es[behaviorGuidance] == 'Ajusta los desplazamientos laterales en Comportamiento.',
+  'Behavior guidance matches the final PT-BR and Spanish catalog text')
 check(en['You can enable the app from the Settings.'] == nil and
   pt['You can enable the app from the Settings.'] == nil and
   es['You can enable the app from the Settings.'] == nil and
@@ -338,7 +346,8 @@ for _, orphanedMsgid in ipairs(orphanedBrandMsgids) do
     not sourceContains('SimOpenTrackDay.lua', orphanedMsgid),
     'no active runtime caller remains for orphaned msgid: ' .. orphanedMsgid)
 end
-check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s by %s'"), 'version widget uses an unformatted template msgid')
+check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s | developed by %s | original author: %s'"),
+  'version widget uses an unformatted developer/author template msgid')
 check(sourceContains('UIManager.lua', "T(CarStateMachine.CarStateTypeStrings[state] or '')"), 'car-list display routes state labels through localization')
 check(sourceContains('UIManager.lua', 'T(yieldingSideString)'), 'yielding side display routes side through localization')
 check(sourceContains('UIManager.lua', 'T(defaultDrivingSideString)'), 'default side display routes side through localization')
@@ -364,11 +373,13 @@ check(localization.label('##debug-only') == '##debug-only', 'hidden-only ID labe
 check(not localization.setLocale('fr') and localization.getLocale() == 'pt-BR', 'invalid locale rejected without changing locale')
 check(localization.setLocale('es') and uiKnown.uiLanguage == 'es' and localization.text('Left') == 'Izquierda', 'locale can be changed and persisted')
 check(localization.text('yes #%d', 12) == 'sí #12', 'Spanish formatted car-status placeholder')
-check(localization.text('%s v%s by %s', 'SimOpenTrackDay', '1.2', 'Author') == 'SimOpenTrackDay v1.2 por Author', 'Spanish formatted version-widget placeholders')
+check(localization.text('%s v%s | developed by %s | original author: %s', 'SimOpenTrackDay', '1.2', 'SnakeD', 'Author') ==
+  'SimOpenTrackDay v1.2 | desarrollado por SnakeD | autor original: Author', 'Spanish formatted developer/author placeholders')
 check(localization.text('Center') == 'Centro', 'center side localization is present')
 localization.setLocale('pt-BR')
 check(localization.text('yes #%d', 12) == 'sim #12', 'Portuguese formatted car-status placeholder')
-check(localization.text('%s v%s by %s', 'SimOpenTrackDay', '1.2', 'Author') == 'SimOpenTrackDay v1.2 por Author', 'Portuguese formatted version-widget placeholders')
+check(localization.text('%s v%s | developed by %s | original author: %s', 'SimOpenTrackDay', '1.2', 'SnakeD', 'Author') ==
+  'SimOpenTrackDay v1.2 | desenvolvido por SnakeD | autor original: Author', 'Portuguese formatted developer/author placeholders')
 localization.label(stableLabel)
 localization.setLocale('es')
 check(labelID(localization.label(stableLabel)) == labelID('Modify Settings###main.settings'), 'embedded label ID remains stable across locales')

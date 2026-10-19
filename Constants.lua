@@ -5,6 +5,7 @@ local sim = ac.getSim()
 Constants.APP_NAME = "SimOpenTrackDay"
 Constants.APP_VERSION = "0.1"
 Constants.APP_AUTHOR = "dreasgrech"
+Constants.APP_DEVELOPER = "SnakeD"
 Constants.APP_ICON_SIZE = vec2(128, 128)
 Constants.IS_ONLINE = sim.isOnlineRace
 Constants.CAN_APP_RUN = (not Constants.IS_ONLINE)

@@ -1,3 +1,13 @@
+-- Prefer modules shipped beside this entry point over same-named files elsewhere.
+if type(__dirname) ~= 'string' or __dirname == '' then
+  error('SimOpenTrackDay: __dirname is unavailable; cannot establish module search path')
+end
+local appDirectory = __dirname:gsub('[\\/]+$', '')
+if appDirectory == '' then
+  error('SimOpenTrackDay: __dirname is invalid; cannot establish module search path')
+end
+package.path = appDirectory .. '/?.lua;' .. appDirectory .. '/?/init.lua;' .. package.path
+
 Constants = require("Constants")
 Logger = require("Logger")
 CSPCompatibilityManager = require("lib.AssettoCorsaCSPLuaCompatibilityManager.CSPCompatibilityManager")
@@ -24,12 +34,16 @@ CSPCompatibilityManager.addFunction(function() return ac.focusCar end, "ac.focus
 CSPCompatibilityManager.addFunction(function() return ac.setCurrentCamera end, "ac.setCurrentCamera")
 CSPCompatibilityManager.addFunction(function() return ac.setCurrentDrivableCamera end, "ac.setCurrentDrivableCamera")
 CSPCompatibilityManager.addFunction(function() return ac.getCarMaxSpeedWithGear end, "ac.getCarMaxSpeedWithGear")
+CSPCompatibilityManager.addFunction(function() return ac.setWindowOpen end, "ac.setWindowOpen")
 
 CSPCompatibilityManager.addFunction(function() return ui.button end, "ui.button")
 CSPCompatibilityManager.addFunction(function() return ui.newLine end, "ui.newLine")
 CSPCompatibilityManager.addFunction(function() return ui.text end, "ui.text")
 CSPCompatibilityManager.addFunction(function() return ui.drawRect end, "ui.drawRect")
 CSPCompatibilityManager.addFunction(function() return ui.drawRectFilled end, "ui.drawRectFilled")
+CSPCompatibilityManager.addFunction(function() return ui.pushClipRect end, "ui.pushClipRect")
+CSPCompatibilityManager.addFunction(function() return ui.popClipRect end, "ui.popClipRect")
+CSPCompatibilityManager.addFunction(function() return ui.measureText end, "ui.measureText")
 CSPCompatibilityManager.addFunction(function() return ui.availableSpaceY end, "ui.availableSpaceY")
 CSPCompatibilityManager.addFunction(function() return ui.beginGroup end, "ui.beginGroup")
 CSPCompatibilityManager.addFunction(function() return ui.endGroup end, "ui.endGroup")
@@ -50,6 +64,10 @@ CSPCompatibilityManager.addFunction(function() return ui.ButtonFlags end, "ui.bu
 CSPCompatibilityManager.addFunction(function() return ui.windowSize end, "ui.windowSize")
 CSPCompatibilityManager.addFunction(function() return ui.drawImage end, "ui.drawImage")
 CSPCompatibilityManager.addFunction(function() return ui.pushDWriteFont end, "ui.pushDWriteFont")
+CSPCompatibilityManager.addFunction(function() return ui.pushFont end, "ui.pushFont")
+CSPCompatibilityManager.addFunction(function() return ui.popFont end, "ui.popFont")
+CSPCompatibilityManager.addFunction(function() return ui.Font.Title end, "ui.Font.Title")
+CSPCompatibilityManager.addFunction(function() return ui.Font.Main end, "ui.Font.Main")
 CSPCompatibilityManager.addFunction(function() return ui.pushStyleColor end, "ui.pushStyleColor")
 CSPCompatibilityManager.addFunction(function() return ui.popStyleColor end, "ui.popStyleColor")
 CSPCompatibilityManager.addFunction(function() return ui.styleColor end, "ui.styleColor")

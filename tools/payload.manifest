@@ -65,6 +65,7 @@ lib/uilib/Slider.lua
 lib/uilib/Style.lua
 lib/uilib/Theme.lua
 lib/uilib/Toggle.lua
+lib/uilib/UIControls.lua
 lib/AssettoCorsaCSPLuaCompatibilityManager/CSPCompatibilityManager.lua
 lib/AssettoCorsaCSPLuaCompatibilityManager/README.md
 lib/i18n/*.lua

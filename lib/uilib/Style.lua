@@ -2,6 +2,8 @@ local Style = {}
 local ui = ui
 local Theme = require('lib/uilib/Theme')
 local vec2 = vec2
+local ui_pushClipRect = ui.pushClipRect
+local ui_popClipRect = ui.popClipRect
 local colorStack = {}
 local windowPushCounts = {}
 local EMPTY_OPTIONS = {}
@@ -29,13 +31,18 @@ Style.windowBegin = function(name, opts)
   opts = opts or EMPTY_OPTIONS
   if opts.background ~= false then
     -- getCursor() is in window/content coordinates and moves opposite the scroll.
-    -- Add the active scroll offset to pin the fill to the viewport; the draw call
-    -- remains clipped to the current window's client area.
+    -- Add scroll and remove padding to pin the fill to the viewport. Only this
+    -- fill replaces the content clip; ordinary content keeps its original clip.
     local cursor = ui.getCursor()
     local scroll = vec2(ui.getScrollX(), ui.getScrollY())
-    local left = vec2(cursor.x + scroll.x, cursor.y + scroll.y)
+    local inset = Theme.layout.windowInset
+    local left = vec2(cursor.x + scroll.x - inset, cursor.y + scroll.y - inset)
     local size = ui.windowSize()
-    ui.drawRectFilled(left, vec2(left.x + size.x, left.y + size.y), Theme.colors.bg)
+    ui_pushClipRect(vec2(0, 0), size, false)
+    local fillOk, fillError = pcall(ui.drawRectFilled, left, vec2(left.x + size.x, left.y + size.y), Theme.colors.bg)
+    local clipPopOk, clipPopError = pcall(ui_popClipRect)
+    if not fillOk then error(fillError, 0) end
+    if not clipPopOk then error(clipPopError, 0) end
   end
   push(colorIndex('Text'), Theme.colors.text)
   push(colorIndex('Border'), Theme.colors.divider)

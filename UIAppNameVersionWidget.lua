@@ -13,7 +13,7 @@ local Localization = require('Localization')
 -- local string = string
 -- local string_format = string.format
 
-local function versionText() return Localization.text('%s v%s by %s', Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_AUTHOR) end
+local function versionText() return Localization.text('%s v%s | developed by %s | original author: %s', Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_DEVELOPER, Constants.APP_AUTHOR) end
 local versionTextColor = ColorManager.RGBM_Colors.Gainsboro
 
 -- UIAppNameVersion.draw = function(absoluteScreenPosition, fontSize)

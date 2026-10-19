@@ -6,6 +6,7 @@ local Theme = require('lib/uilib/Theme')
 local Style = require('lib/uilib/Style')
 local Logo = require('lib/uilib/Logo')
 local Toggle = require('lib/uilib/Toggle')
+local UIControls = require('lib/uilib/UIControls')
 local UIState = require('UIState')
 local SettingsWindow = SettingsWindow
 local UIManager = UIManager
@@ -19,14 +20,23 @@ local tabSources = { 'Overview', 'Behavior', 'Yielding', 'Overtaking', 'Advanced
 local tabIDs = { 'overview', 'behavior', 'yielding', 'overtaking', 'advanced' }
 local tabLabels = { '', '', '', '', '' }
 local tabNames = { '', '', '', '', '' }
-local visibleTabLabels = { '', '', '', '', '' }
 local tabWidthScratch = { 0, 0, 0, 0, 0 }
 local storage = StorageManager.getStorage()
 local Constants = Constants
+local ac = ac
+local ac_setWindowOpen = ac and ac.setWindowOpen
 local TAB_GAP = Theme.spacing.sm
+local LAYOUT = Theme.layout
+local LOGO_SIZE = 38
 local ui_textWrapped = ui.textWrapped
 local ui_drawRectFilled = ui.drawRectFilled
 local ui_drawRectFilledMultiColor = ui.drawRectFilledMultiColor
+local ui_columns = ui.columns
+local ui_setColumnWidth = ui.setColumnWidth
+local ui_nextColumn = ui.nextColumn
+local ui_pushFont = ui.pushFont
+local ui_popFont = ui.popFont
+local ui_Font = ui.Font
 local drawState = {
   shouldAppRun = nil,
   anyMissingCSPElements = false,
@@ -34,6 +44,8 @@ local drawState = {
   shouldRun = false,
   operationalAvailable = false,
   childOpen = false,
+  footerFontOpen = false,
+  nativeFontOpen = false,
   fontOpen = false,
   styleOpen = false
 }
@@ -56,20 +68,27 @@ local function drawTabNavigation()
   local totalWidth = 0
   for i = 1, #tabSources do
     tabLabels[i] = Localization.text(tabSources[i])
-    visibleTabLabels[i] = i == selectedIndex and (tabLabels[i] .. '  ✓') or tabLabels[i]
     tabNames[i] = Localization.label(tabSources[i], 'main.tab.' .. tabIDs[i])
-    if i == selectedIndex then
-      local marker = tabNames[i]:find('###', 1, true)
-      tabNames[i] = tabNames[i]:sub(1, marker - 1) .. '  ✓' .. tabNames[i]:sub(marker)
-    end
-    tabWidthScratch[i] = ui.measureDWriteText(visibleTabLabels[i], Theme.type.body, -1).x + Theme.spacing.lg
+    tabWidthScratch[i] = ui.measureDWriteText(tabLabels[i], Theme.type.tab, -1).x + Theme.spacing.lg
     totalWidth = totalWidth + tabWidthScratch[i]
     if i > 1 then totalWidth = totalWidth + TAB_GAP end
   end
 
   if totalWidth > ui.availableSpaceX() then
-    ui.pushItemWidth(math.min(ui.availableSpaceX(), 350))
-    local newIndex, changed = ui.combo(Localization.label('Navigation', 'main.tabs'), selectedIndex, ui.ComboFlags.None, tabLabels)
+    local availableWidth = math.max(0, ui.availableSpaceX())
+    local navigationText = Localization.text('Navigation')
+    local navigationLabel = Localization.label('Navigation', 'main.tabs')
+    local navigationWidth = ui.measureDWriteText(navigationText, Theme.type.control, -1).x
+    local comboLabel = navigationLabel
+    if availableWidth < LAYOUT.responsiveLabelThreshold then
+      if ui_textWrapped then ui_textWrapped(navigationText) else ui.text(navigationText) end
+      comboLabel = '###main.tabs'
+      ui.pushItemWidth(availableWidth)
+    else
+      local comboWidth = UIControls.comboWidth(availableWidth, navigationWidth, LAYOUT.navigationComboMaxWidth)
+      ui.pushItemWidth(comboWidth)
+    end
+    local newIndex, changed = ui.combo(comboLabel, selectedIndex, ui.ComboFlags.None, tabLabels)
     ui.popItemWidth()
     if changed then UIState.activeTab = tabSources[newIndex] or 'Overview' end
     return
@@ -78,18 +97,26 @@ local function drawTabNavigation()
   for i = 1, #tabSources do
     if i > 1 then ui.sameLine(0, TAB_GAP) end
     local isSelected = i == selectedIndex
-    if isSelected then
-      Style.push(ui.StyleColor.Button, Theme.colors.accent)
-      Style.push(ui.StyleColor.ButtonHovered, Theme.colors.accent)
-      Style.push(ui.StyleColor.ButtonActive, Theme.colors.accent)
-      Style.push(ui.StyleColor.Text, Theme.colors.white)
-    end
-    if ui.button(tabNames[i], vec2(tabWidthScratch[i], 34)) then
+    Style.push(ui.StyleColor.Button, isSelected and Theme.colors.accentSoft or Theme.colors.transparent)
+    Style.push(ui.StyleColor.ButtonHovered, isSelected and Theme.colors.accentSoft or Theme.colors.divider)
+    Style.push(ui.StyleColor.ButtonActive, Theme.colors.accent)
+    Style.push(ui.StyleColor.Text, isSelected and Theme.colors.white or Theme.colors.muted)
+    local tabTop = ui.getCursor()
+    if ui.button(tabNames[i], vec2(tabWidthScratch[i], LAYOUT.tabHeight)) then
       UIState.activeTab = tabSources[i]
       selectedIndex = i
     end
-    if isSelected then Style.pop(4) end
+    Style.pop(4)
+    if isSelected then
+      local underlineTop = tabTop.y + LAYOUT.tabHeight - LAYOUT.tabUnderlineHeight
+      ui_drawRectFilled(vec2(tabTop.x, underlineTop), vec2(tabTop.x + tabWidthScratch[i], tabTop.y + LAYOUT.tabHeight), Theme.colors.accent, 1, 0)
+    end
   end
+end
+
+-- Colored dot + localized label. State is always carried by the text; the dot is reinforcement.
+local function drawStatusIndicator(source, color)
+  UIControls.drawStatus(source, color, Localization, ui, vec2)
 end
 
 local function drawHeader()
@@ -108,35 +135,88 @@ local function drawHeader()
     end
   end
 
-  Logo.draw(38)
-  ui.sameLine()
-  ui.dwriteText('SimOpenTrackDay', Theme.type.title)
-  ui.newLine(0.5)
+  local closeText = Localization.text('Close')
+  local closeLabel = Localization.label('Close', 'main.window.close')
+  local closeTextWidth = ui.measureText(closeText, -1).x
+  local closeCompact = closeTextWidth + Theme.spacing.md > headerWidth
+  if closeCompact then closeLabel = 'X###main.window.close' end
+  local closeWidth = math.min(math.max(0, headerWidth),
+    (closeCompact and ui.measureText('X', -1).x or closeTextWidth) + Theme.spacing.md)
+  local brandText = 'SimOpenTrackDay'
+  local brandWidth = ui.measureDWriteText(brandText, Theme.type.title, -1).x
+  local brandSpace = math.max(0, headerWidth - closeWidth - Theme.spacing.sm)
+  local showLogo, showWordmark = false, false
+  if brandSpace >= LOGO_SIZE + Theme.spacing.sm + brandWidth then
+    showLogo, showWordmark = true, true
+  elseif brandSpace >= brandWidth then
+    showWordmark = true
+  elseif brandSpace >= LOGO_SIZE then
+    showLogo = true
+  end
+
+  if showLogo then
+    Logo.draw(LOGO_SIZE)
+    if showWordmark then ui.sameLine(0, Theme.spacing.sm) end
+  end
+  if showWordmark then ui.dwriteText(brandText, Theme.type.title) end
+  local closePosition = vec2(headerTop.x + headerWidth - closeWidth, headerTop.y)
+  ui.setCursor(closePosition)
+  Style.push(ui.StyleColor.Button, Theme.colors.surface)
+  Style.push(ui.StyleColor.ButtonHovered, Theme.colors.divider)
+  Style.push(ui.StyleColor.ButtonActive, Theme.colors.accent)
+  Style.push(ui.StyleColor.Text, Theme.colors.text)
+  local closeClicked = ui.button(closeLabel, vec2(closeWidth, LAYOUT.tabHeight))
+  Style.pop(4)
+  if closeCompact and ui.itemHovered() then ui.setTooltip(closeText) end
+  if closeClicked and ac_setWindowOpen then ac_setWindowOpen('mainWindow', false) end
+  ui.setCursor(vec2(headerTop.x, headerTop.y + LOGO_SIZE + Theme.spacing.sm))
 
   local trackName = RaceTrackManager.getTrackName()
   local sessionName = Localization.text(RaceTrackManager.getSessionTypeName())
   local context = trackName .. ' | ' .. sessionName
   if ui_textWrapped then ui_textWrapped(context) else ui.text(context) end
 
+  local headerControlsWide = ui.availableSpaceX() >= 760
+  if headerControlsWide then
+    ui_columns(3, false, 'headerControls')
+    ui_setColumnWidth(0, ui.windowWidth() * 0.28)
+    ui_setColumnWidth(1, ui.windowWidth() * 0.40)
+  end
+
   if Toggle.render(Localization.label(storage.enabled and 'Enabled' or 'Disabled', 'settings.app.enabled'), storage.enabled) then
     storage.enabled = not storage.enabled
   end
 
+  if headerControlsWide then ui_nextColumn() end
+  local languageText = Localization.text('Language')
   local languageLabel = Localization.label('Language', 'settings.language')
-  ui.pushItemWidth(math.min(ui.availableSpaceX(), 270))
-  local languageIndex, languageChanged = ui.combo(languageLabel, localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
+  local languageAvailable = math.max(0, ui.availableSpaceX())
+  local languageLabelWidth = ui.measureDWriteText(languageText, Theme.type.control, -1).x
+  local comboLanguageLabel = languageLabel
+  local languageWidth
+  if languageAvailable < LAYOUT.responsiveLabelThreshold then
+    if ui_textWrapped then ui_textWrapped(languageText) else ui.text(languageText) end
+    comboLanguageLabel = '###settings.language'
+    languageWidth = languageAvailable
+  else
+    languageWidth = UIControls.comboWidth(languageAvailable, languageLabelWidth, LAYOUT.languageComboMaxWidth)
+  end
+  ui.pushItemWidth(languageWidth)
+  local languageIndex, languageChanged = ui.combo(comboLanguageLabel, localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
   ui.popItemWidth()
   if languageChanged then Localization.setLocale(locales[languageIndex] or 'en') end
 
+  if headerControlsWide then ui_nextColumn() end
   drawState.shouldRun = drawState.shouldAppRun()
   drawState.operationalAvailable = drawState.shouldRun and not drawState.anyMissingCSPElements
   if drawState.operationalAvailable then
-    local carListLabel = Localization.label('AI car list', 'main.cars')
-    local carListWidth = math.min(ui.availableSpaceX(), ui.measureDWriteText(Localization.text('AI car list'), Theme.type.body, -1).x + Theme.spacing.lg)
-    if ui.button(carListLabel, vec2(carListWidth, 32)) then
-      UIState.activeTab = 'Overview'
-    end
+    drawStatusIndicator('Operational', Theme.colors.success)
+  elseif storage.enabled then
+    drawStatusIndicator('SimOpenTrackDay is not running.', Theme.colors.warning)
+  else
+    drawStatusIndicator('Disabled', Theme.colors.disabled)
   end
+  if headerControlsWide then ui_columns(1, false) end
 
   if drawState.anyMissingCSPElements and drawState.missingCSPElementsErrorMessage and drawState.missingCSPElementsErrorMessage ~= '' then
     ui.separator()
@@ -153,6 +233,14 @@ local function drawWindowBody()
   drawState.styleOpen = true
   ui.pushDWriteFont('Segoe UI')
   drawState.fontOpen = true
+  local nativeFont
+  if ui_Font then
+    nativeFont = ui_Font.Title or ui_Font.Main
+  end
+  if ui_pushFont and ui_popFont and nativeFont then
+    ui_pushFont(nativeFont)
+    drawState.nativeFontOpen = true
+  end
 
   drawHeader()
   ui.separator()
@@ -165,26 +253,48 @@ local function drawWindowBody()
     SettingsWindow.drawContent(UIState.activeTab, drawState.operationalAvailable)
     if UIState.activeTab == 'Overview' and drawState.operationalAvailable then
       ui.newLine(1)
-      ui.dwriteText(Localization.text('AI car list'), Theme.type.section)
+      ui.text(Localization.text('Driving lanes'))
+      ui.separator()
+      UIManager.drawMainWindowLateralOffsetsSection()
+      ui.newLine(1)
+      ui.text(Localization.text('AI car list'))
       ui.separator()
       UIManager.drawUICarList()
     end
     ui.newLine(1)
     ui.separator()
-    local versionAndCredit = Localization.text('%s v%s by %s', Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_AUTHOR)
+    local versionAndCredit = Localization.text('%s v%s | developed by %s | original author: %s', Constants.APP_NAME, Constants.APP_VERSION, Constants.APP_DEVELOPER, Constants.APP_AUTHOR)
+    if ui_pushFont and ui_popFont and ui_Font and ui_Font.Main then
+      ui_pushFont(ui_Font.Main)
+      drawState.footerFontOpen = true
+    end
     if ui_textWrapped then
       ui_textWrapped(versionAndCredit)
     else
       ui.textColored(versionAndCredit, Theme.colors.muted)
+    end
+    if drawState.footerFontOpen then
+      ui_popFont()
+      drawState.footerFontOpen = false
     end
   end
 end
 
 local function closeWindowScopes()
   local cleanupOk, cleanupError = true, nil
+  if drawState.footerFontOpen then
+    drawState.footerFontOpen = false
+    local ok, err = pcall(ui_popFont)
+    if not ok then cleanupOk, cleanupError = false, err end
+  end
   if drawState.childOpen then
     drawState.childOpen = false
     local ok, err = pcall(ui.endChild)
+    if not ok and cleanupOk then cleanupOk, cleanupError = false, err end
+  end
+  if drawState.nativeFontOpen then
+    drawState.nativeFontOpen = false
+    local ok, err = pcall(ui_popFont)
     if not ok then cleanupOk, cleanupError = false, err end
   end
   if drawState.fontOpen then

@@ -2,7 +2,7 @@
 
 SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders Patch (CSP). It helps AI-controlled cars yield and overtake during track-day sessions instead of staying on the racing line at all times.
 
-This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. Runtime behavior and visual presentation in CSP have not been validated in-game.
+This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. A limited manual UI-loading recovery was reported on 2026-10-18; broader runtime behavior and visual validation in CSP remain pending. See [troubleshooting](docs/TESTING.md#6-operational-troubleshooting).
 
 - [Manual installation](#manual-installation)
 - [Package and installer guide](docs/INSTALL.md)
@@ -32,7 +32,7 @@ The entry point registers required CSP functions and checks compatibility. This 
 
 ## Manual installation
 
-For the packaged preview workflow (build, preview, install and rollback), see the [package and installer guide](docs/INSTALL.md). The installer is not executed on the user's behalf. When launching the installer in Preview or Rollback, run it from an open terminal or redirect the output (e.g. `*> "D:\preview.txt"`) — the window closes immediately after printing, which is normal PowerShell behavior.
+See the [installation guide](docs/INSTALL.md) for `tools/install.bat` and manual backup/restore. The current installer replaces the contents of the app directory and has no automatic backup or rollback. Supply the **AC installation root**, not `apps/lua`, when prompted; the script appends the app path. Installation remains a manual user action.
 
 The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
 
@@ -41,6 +41,8 @@ The source repository keeps runtime payload at its root; the app installation pa
 - `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/` directories.
 
 The installation must contain `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; the directory and entry-point names must match. Do not copy Git metadata (`.git/` directories or `.git` files), `tools/`, `docs/`, `artifacts/`, or `*.bak` files. The compatibility submodule at `lib/AssettoCorsaCSPLuaCompatibilityManager/` is part of runtime; do not copy the submodule's Git metadata.
+
+**Never copy the modules directly into the Assetto Corsa root.** Old files there can shadow the installed app's modules and leave its tabs blank. The source bootstrap now prioritizes its own directory via `__dirname`, but CSP validation of that change is pending; it does not replace already cached modules. See the [resolved incident, implemented bootstrap and remaining proposal](docs/plans/MODULE_LOADING_HARDENING.md). The installer is unchanged.
 
 Preserve existing installations and settings. Use a separate app directory for testing; do not remove or replace old directories or reset user data during installation or rollback.
 
@@ -58,9 +60,9 @@ The recursive clone obtains the compatibility submodule. The CSP SDK is in `lib/
 
 1. Manually install the runtime files and enable SimOpenTrackDay among CSP Lua Apps.
 2. Start an offline session with AI cars on a track with a compatible AI spline. The app does not run online/multiplayer.
-3. Open the single app window from the Assetto Corsa sidebar. Use the global enable control and internal tabs to adjust available options.
+3. Open the single app window from the Assetto Corsa sidebar. Overview contains the operational car list; Behavior groups lateral offsets first, then behavior profile/mode and general caution, aggression, and difficulty controls. Yielding and Overtaking contain maneuver-specific options, while Advanced is for technical settings such as accidents, pathfinding, and Other. Use the global enable control as needed.
 
-The operational car list is part of the app UI; diagnostic options are not available. Interaction and results must be confirmed in CSP; this guide does not claim visual validation.
+The operational car list is part of the app UI; diagnostic options are not available. Interaction and simulation results must be confirmed in CSP; the reported UI recovery is not general visual or behavioral validation.
 
 ## Project structure
 
@@ -100,10 +102,10 @@ luajit tools/test_version.lua
 
 The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `SOTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. By default, the versioned fixture remains unchanged. `SOTD_DUMP_BASELINE_FIXTURE=1` only emits a candidate Lua fixture to stdout for inspection; it does not save or regenerate the versioned fixture. Updating that fixture requires a separate deliberate, reviewed change.
 
-The localization command is included above. See [Testing](docs/TESTING.md) for command scope and limitations. CSP runtime and visual validation remain pending.
+The localization command is included above. See [Testing](docs/TESTING.md) for command scope and limitations. Broader CSP runtime and visual validation remain pending beyond the limited UI recovery reported there.
 
 ## Credits and license
 
-SimOpenTrackDay is an independent derivative project based on the [original app](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), created by [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech). The original project is distributed under the MIT license, copyright © 2025 Andreas Grech; see [`LICENSE`](LICENSE). Git history and original credits are preserved.
+Current development is by **SnakeD**. SimOpenTrackDay is an independent derivative project based on the [original app](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday), created by [Andreas Grech (`dreasgrech`)](https://github.com/dreasgrech); he remains credited as the original author. The original project is distributed under the MIT license, copyright © 2025 Andreas Grech; see [`LICENSE`](LICENSE). Git history and original credits are preserved.
 
 The [AssettoCorsaCSPLuaCompatibilityManager](https://github.com/dreasgrech/AssettoCorsaCSPLuaCompatibilityManager) submodule and CSP SDK have their own origins/licenses; keep their files and license notices intact.

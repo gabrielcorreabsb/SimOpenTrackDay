@@ -7,7 +7,7 @@
 
 ## 1. Project overview
 
-**SimOpenTrackDay** is an independent derivative project under development, based on **Assetto Corsa Realistic Trackday**: a **Lua** app for **Assetto Corsa**, loaded through **Custom Shaders Patch (CSP)**. The original project is by Andreas Grech; see [credits and license](../README.md#credits-and-license) in the README.
+**SimOpenTrackDay** is an independent derivative project under development by **SnakeD**, based on **Assetto Corsa Realistic Trackday**: a **Lua** app for **Assetto Corsa**, loaded through **Custom Shaders Patch (CSP)**. The original project is by Andreas Grech, who remains credited as its original author; see [credits and license](../README.md#credits-and-license) in the README.
 
 It changes **AI** car behavior to act more like humans during a *track day* instead of bots following the *racing line* with “blinders.” Main behaviors:
 
@@ -175,6 +175,7 @@ Settings are saved **per track and game mode** (Practice, Qualify, Race, Hotlap,
 ```lua
 StorageManager.getStorage()
 StorageManager.getStorage_Global()
+StorageManager.getStorage_UI() -- App-wide language preference, not per track/mode.
 StorageManager.getStorage_Debugging()
 StorageManager.getStorage_Yielding()
 StorageManager.getStorage_Overtaking()

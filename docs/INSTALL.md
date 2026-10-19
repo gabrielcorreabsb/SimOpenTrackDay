@@ -1,6 +1,8 @@
 # SimOpenTrackDay — instalação
 
-O instalador copia a pasta `SimOpenTrackDay/` para dentro do `apps\lua\` do Assetto Corsa. É o único arquivo do mod distribuído ao usuário final; tudo o mais vive no repositório de desenvolvimento.
+O instalador copia os arquivos de runtime listados em `tools/payload.manifest` para `<Assetto Corsa>\apps\lua\SimOpenTrackDay\`. **Nunca copie os módulos diretamente para a raiz do jogo:** arquivos homônimos ali podem ser carregados antes dos módulos atuais e deixar as abas vazias. Veja o [incidente e o plano de prevenção](plans/MODULE_LOADING_HARDENING.md).
+
+O instalador atual apaga o conteúdo da pasta de destino antes de copiar. Não oferece backup nem rollback automático. Feche o jogo e o launcher, faça backup da instalação existente e preserve as configurações antes de prosseguir.
 
 ## Requisitos
 
@@ -9,25 +11,26 @@ O instalador copia a pasta `SimOpenTrackDay/` para dentro do `apps\lua\` do Asse
 
 ## Como instalar
 
-1. Dê duplo clique em `install.bat`. Uma janela preta do PowerShell vai abrir.
-2. Quando pedir o caminho da pasta `apps\lua`, cole o caminho completo. Exemplos:
-   - Steam: `D:\Steam\steamapps\common\assettocorsa\apps\lua`
-   - Epic: `C:\Program Files\Epic Games\AssettoCorsa\apps\lua`
-   - Custom: `C:\Jogos\AssettoCorsa\apps\lua`
-3. O instalador mostra o que vai fazer (apagar a pasta `SimOpenTrackDay\` atual dentro de `apps\lua\` e copiar a nova).
-4. Digite `YES` (exatamente, em maiúsculas) e pressione Enter para confirmar.
-5. Espere a mensagem final. A janela fecha sozinha quando termina com sucesso.
+1. No checkout, abra `tools\install.bat`. Uma janela do terminal vai abrir.
+2. Quando pedir o caminho da instalação, informe a **raiz do Assetto Corsa**, sem acrescentar `apps\lua`. Exemplos:
+   - Steam: `D:\Steam\steamapps\common\assettocorsa`
+   - Outra instalação: `C:\Jogos\AssettoCorsa`
+3. Confira o destino exibido: `<raiz informada>\apps\lua\SimOpenTrackDay\`. O script acrescenta `apps\lua` automaticamente.
+4. Digite `YES` e pressione Enter para confirmar; a comparação não diferencia maiúsculas de minúsculas. Qualquer outra resposta cancela.
+5. Leia o resultado. O `.bat` aguarda uma tecla ao final; confirme que a cópia terminou sem erro antes de abrir o jogo.
+
+Embora o parâmetro receba a raiz do jogo, os arquivos são copiados somente para a pasta do app. Se for instalar manualmente, use esse mesmo destino e o payload listado no manifest; não extraia o repositório inteiro na raiz do AC.
 
 ## Como atualizar
 
-É a mesma coisa. Rode `install.bat` de novo e cole o caminho. O instalador apaga a pasta antiga e coloca a nova — não precisa desinstalar antes.
+Faça um novo backup, feche o jogo/launcher e execute `tools\install.bat` novamente. O instalador substitui o conteúdo da pasta do app; arquivos adicionais colocados nela também serão removidos. Não é necessário apagar a instalação manualmente antes. As configurações externas à pasta do app não devem ser apagadas para atualizar ou diagnosticar a UI.
 
 ## Se der erro
 
-A janela mostra uma mensagem curta. O log completo (com o erro real e a stack trace do PowerShell) é gravado em
+A janela mostra uma mensagem curta. O motor PowerShell registra o destino, operações de cópia e a mensagem de erro em
 
 ```
-%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs\installer-AAAA-MM-DD-HH-MM-SS.txt
+%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs\installer-yyyyMMdd-HHmmss.txt
 ```
 
 Para abrir:
@@ -37,20 +40,24 @@ Para abrir:
 
 Erros comuns:
 
-- **`Caminho nao encontrado`** — você colou o caminho da raiz do AC (`...\assettocorsa`), não o de `apps\lua`. Cole o caminho completo até `apps\lua`.
-- **`Confirmacao nao confere`** — você digitou outra coisa no lugar de `YES`. Rode de novo.
-- **`Permissao negada`** — o Assetto Corsa está aberto. Feche o AC antes de instalar.
+- **`Folder not found` / `Assetto Corsa root not found`** — confira o caminho da instalação.
+- **`Missing apps\lua under` / `Expected apps\lua folder under`** — informe a raiz do jogo que contém `apps\lua`, não a própria pasta `apps\lua`.
+- **`Aborted`** — a confirmação não foi `YES`; nada foi instalado nessa execução.
+- **Acesso negado** — feche jogo/launcher e confira as permissões; a mensagem sozinha não determina a causa.
+- **Abas vazias / `drawContent` nil** — siga o [troubleshooting](TESTING.md#6-operational-troubleshooting). Reinstalar somente a pasta do app não remove cópias conflitantes de módulos na raiz do jogo. O instalador atual ainda não detecta essa situação automaticamente.
 
 ## O que o instalador copia
 
-Tudo o que está listado em `tools/payload.manifest`. Hoje são 66 arquivos: 35 `.lua` na raiz do mod, mais `manifest.ini`, `LICENSE`, as subpastas `DataStructures/`, `Strings/`, `CarStateMachine/`, `lib/uilib/`, `lib/AssettoCorsaCSPLuaCompatibilityManager/` e `lib/i18n/*.lua`. Para adicionar um arquivo novo, edite `tools/payload.manifest` adicionando o caminho relativo — não precisa mexer em `install.bat` nem em `installer.ps1`.
+Tudo o que está listado em `tools/payload.manifest`: módulos Lua da raiz do mod, `manifest.ini`, `LICENSE` e os caminhos de runtime das subpastas declaradas. A lista é a fonte de verdade; não copie arquivos de desenvolvimento por associação de nome. Para adicionar um arquivo de runtime, inclua seu caminho relativo no manifest e revise o payload.
 
 ## Para desenvolvedores
 
 `installer.ps1` é o motor. Pode ser chamado direto:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\installer.ps1" -AssettoCorsaRoot "C:\...\apps\lua"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\installer.ps1" -AssettoCorsaRoot "C:\Jogos\AssettoCorsa"
 ```
 
-Não instala em nenhuma pasta do AC automaticamente — você sempre informa o caminho. Testes de runtime Lua estão em `tools/test_*.lua` e `tools/check_lua_syntax.ps1`. Validação completa do app dentro do Assetto Corsa exige o jogo rodando; o instalador não testa isso.
+O motor chamado diretamente **não pede a confirmação `YES`**: ela pertence ao `.bat`. Revise o destino e faça backup antes de executar esse comando. Você sempre informa a raiz da instalação; o script define o destino dentro de `apps\lua`.
+
+Verificações locais estão em `tools/test_*.lua` e `tools/check_lua_syntax.ps1`, com limites descritos em [Testing](TESTING.md). O instalador não valida carregamento, renderização ou comportamento no CSP. Para desfazer uma atualização, feche o jogo e restaure manualmente o backup da pasta do app, preservando as configurações.

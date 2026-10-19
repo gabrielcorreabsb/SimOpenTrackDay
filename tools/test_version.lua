@@ -26,8 +26,8 @@ if about then
 end
 
 check(constants.APP_NAME == 'SimOpenTrackDay' and constants.APP_VERSION == '0.1' and
-  constants.APP_AUTHOR == 'dreasgrech',
-  'runtime Constants expose current app name, 0.1 version, and author')
+  constants.APP_AUTHOR == 'dreasgrech' and constants.APP_DEVELOPER == 'SnakeD',
+  'runtime Constants expose current app name/version, original author, and current developer')
 check(aboutValues.NAME == constants.APP_NAME and aboutValues.VERSION == constants.APP_VERSION and
   aboutValues.AUTHOR == constants.APP_AUTHOR,
   'manifest ABOUT metadata matches runtime Constants exactly')

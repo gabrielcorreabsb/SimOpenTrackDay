@@ -14,6 +14,7 @@ local ui_nextColumn = ui.nextColumn
 local ui_newLine = ui.newLine
 local ui_text_raw = ui.text
 local ui_text = function(message, ...) return ui_text_raw(Localization.text(message, ...)) end
+local ui_textWrapped = ui.textWrapped or ui.text
 local ui_separator = ui.separator
 local ui_textColored_raw = ui.textColored
 local ui_textColored = function(message, color, ...) return ui_textColored_raw(Localization.text(message, ...), color) end
@@ -29,8 +30,10 @@ local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
 local ColorManager = ColorManager
 local Theme = require('lib/uilib/Theme')
 local Section = require('lib/uilib/Section')
+local UIControls = require('lib/uilib/UIControls')
 local Slider = require('lib/uilib/Slider')
 local UIOperations_renderSlider = Slider.render
+local UIOperations_renderLateralSlider = Slider.renderStacked
 local UILateralOffsetsImageWidget = UILateralOffsetsImageWidget
 local UILateralOffsetsImageWidget_draw = UILateralOffsetsImageWidget.draw
 local UIOperations = UIOperations
@@ -70,6 +73,9 @@ local StorageManager_Options_PathFinding = SettingsModel.Options_PathFinding
 
 
 local ui_availableSpaceX = ui.availableSpaceX
+local ui_measureDWriteText = ui.measureDWriteText
+local ui_pushItemWidth = ui.pushItemWidth
+local ui_popItemWidth = ui.popItemWidth
 local function translatedLabel(text, id) return Localization.label(text, id) end
 
 local DEFAULT_SLIDER_WIDTH = 200
@@ -99,7 +105,7 @@ local drawAICarValuesSection = function()
 
     Section.section('Caution', function()
     ui_newLine(1)
-    ui_text('Caution determines how much space cars keep from each other while driving.\nA higher caution means a larger gap between cars.')
+    ui_textWrapped(Localization.text('Caution determines how much space cars keep from each other while driving.\nA higher caution means a larger gap between cars.'))
     ui_newLine(1)
 
     ui_pushStyleColor(ui_StyleColor.SliderGrab, getSliderColorForAICautionWhenSetToZero(storage_AICarValues.defaultAICaution))
@@ -124,7 +130,7 @@ local drawAICarValuesSection = function()
 
     Section.section('Aggression', function()
     ui_newLine(1)
-    ui_text('Aggression determines how aggressively cars drive on the track.\nA higher aggression means the cars will try to go faster and take more risks.')
+    ui_textWrapped(Localization.text('Aggression determines how aggressively cars drive on the track.\nA higher aggression means the cars will try to go faster and take more risks.'))
     ui_newLine(1)
 
     if ui_checkbox('Override original Aggression values when driving normally', storage_AICarValues.overrideOriginalAIAggression_drivingNormally) then storage_AICarValues.overrideOriginalAIAggression_drivingNormally = not storage_AICarValues.overrideOriginalAIAggression_drivingNormally end
@@ -157,7 +163,7 @@ local drawAICarValuesSection = function()
 
     Section.section('Difficulty', function()
     ui_newLine(1)
-    ui_text('Difficulty Level affects how effective the cars are with the pedals and how fast they can handle corners.\nA higher difficulty level means the cars will be overall faster and more competitive.')
+    ui_textWrapped(Localization.text('Difficulty Level affects how effective the cars are with the pedals and how fast they can handle corners.\nA higher difficulty level means the cars will be overall faster and more competitive.'))
     ui_newLine(1)
 
     if ui_checkbox('Override original Difficulty Level when driving normally', storage_AICarValues.overrideOriginalAIDifficultyLevel_drivingNormally) then storage_AICarValues.overrideOriginalAIDifficultyLevel_drivingNormally = not storage_AICarValues.overrideOriginalAIDifficultyLevel_drivingNormally end
@@ -194,23 +200,22 @@ local drawLateralOffsetsSection = function()
     Section.section('Lateral Offsets (Driving Lanes)', function()
     ui_newLine(1)
 
-    local wide = ui_availableSpaceX() >= 820
-    ui_columns(wide and 2 or 1, false, "lateralsSection")
-    if wide then ui_setColumnWidth(0, ui.windowWidth() * 0.46) end
+    -- Keep the controls above the diagram so long translated labels have the
+    -- full content width instead of competing with a fixed-width slider column.
 
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
 
     local overtakingSide = RaceTrackManager_getOvertakingSide()
     UIOperations_createDisabledSection(not handleOvertaking, function()
-        storage.overtakingLateralOffset =  UIOperations_renderSlider(translatedLabel(Localization.text('Overtaking Lateral Offset [-1..1] -> Overtaking side: %s', Localization.text(RaceTrackManager.TrackSideStrings[overtakingSide])), 'settings.offset.overtaking'), Localization.text('The lateral offset from the centerline that AI cars will drive to when overtaking another car.\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.overtakingLateralOffset, StorageManager_options_min[StorageManager_Options.OvertakingLateralOffset], StorageManager_options_max[StorageManager_Options.OvertakingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.OvertakingLateralOffset])
+        storage.overtakingLateralOffset =  UIOperations_renderLateralSlider(translatedLabel(Localization.text('Overtaking Lateral Offset [-1..1] -> Overtaking side: %s', Localization.text(RaceTrackManager.TrackSideStrings[overtakingSide])), 'settings.offset.overtaking'), Localization.text('The lateral offset from the centerline that AI cars will drive to when overtaking another car.\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.overtakingLateralOffset, StorageManager_options_min[StorageManager_Options.OvertakingLateralOffset], StorageManager_options_max[StorageManager_Options.OvertakingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.OvertakingLateralOffset])
     end)
 
-    storage.defaultLateralOffset =  UIOperations_renderSlider('Default Lateral Offset [-1..1]', 'The default lateral offset from the centerline that AI cars will try to maintain when not yielding or overtaking.\n-1 = fully to the left\n0 = center of the track (racing line)\n1 = fully to the right', storage.defaultLateralOffset, StorageManager_options_min[StorageManager_Options.DefaultLateralOffset], StorageManager_options_max[StorageManager_Options.DefaultLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.DefaultLateralOffset])
+    storage.defaultLateralOffset =  UIOperations_renderLateralSlider('Default Lateral Offset [-1..1]', 'The default lateral offset from the centerline that AI cars will try to maintain when not yielding or overtaking.\n-1 = fully to the left\n0 = center of the track (racing line)\n1 = fully to the right', storage.defaultLateralOffset, StorageManager_options_min[StorageManager_Options.DefaultLateralOffset], StorageManager_options_max[StorageManager_Options.DefaultLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.DefaultLateralOffset])
 
     local yieldingSide = RaceTrackManager_getYieldingSide()
     UIOperations_createDisabledSection(not handleYielding, function()
-        storage.yieldingLateralOffset =  UIOperations_renderSlider(translatedLabel(Localization.text('Yielding Lateral Offset [-1..1] -> Yielding side: %s', Localization.text(RaceTrackManager.TrackSideStrings[yieldingSide])), 'settings.offset.yielding'), Localization.text('The lateral offset from the centerline that AI cars will drive to when yielding (giving way to faster cars).\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.yieldingLateralOffset, StorageManager_options_min[StorageManager_Options.YieldingLateralOffset], StorageManager_options_max[StorageManager_Options.YieldingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.YieldingLateralOffset])
+        storage.yieldingLateralOffset =  UIOperations_renderLateralSlider(translatedLabel(Localization.text('Yielding Lateral Offset [-1..1] -> Yielding side: %s', Localization.text(RaceTrackManager.TrackSideStrings[yieldingSide])), 'settings.offset.yielding'), Localization.text('The lateral offset from the centerline that AI cars will drive to when yielding (giving way to faster cars).\n-1 = fully to the left\n0 = center of the track\n1 = fully to the right'), storage.yieldingLateralOffset, StorageManager_options_min[StorageManager_Options.YieldingLateralOffset], StorageManager_options_max[StorageManager_Options.YieldingLateralOffset], DEFAULT_SLIDER_WIDTH, DEFAULT_SLIDER_FORMAT, StorageManager_options_default[StorageManager_Options.YieldingLateralOffset])
     end)
 
     -- ui.newLine(1)
@@ -219,11 +224,7 @@ local drawLateralOffsetsSection = function()
       ui_textColored('Warning: Yielding side and overtaking side are the same!', Theme.colors.warning)
     end
 
-    if wide then ui_nextColumn() end
-
     UILateralOffsetsImageWidget_draw(storage)
-
-    ui_columns(1, false)
     end)
 end
 
@@ -238,7 +239,22 @@ local drawBehaviorSection = function()
     local profileIndex = SettingsModel.inferBehaviorProfile(storage_Behavior)
 
     local profileNames = {Localization.text('Casual'), Localization.text('Realistic'), Localization.text('Competitive')}
-    local newProfileIndex, profileChanged = ui_combo(translatedLabel('AI Behavior Profile', 'behavior.profile'), profileIndex, ui.ComboFlags.None, profileNames)
+    local profileText = Localization.text('AI Behavior Profile')
+    local profileAvailable = math.max(0, ui_availableSpaceX())
+    local profileLabelWidth = ui_measureDWriteText(profileText, Theme.type.control, -1).x
+    local profileLabel = translatedLabel('AI Behavior Profile', 'behavior.profile')
+    local comboProfileLabel = profileLabel
+    local profileComboWidth
+    if profileAvailable < Theme.layout.responsiveLabelThreshold then
+        if ui.textWrapped then ui.textWrapped(profileText) else ui_text(profileText) end
+        comboProfileLabel = '###behavior.profile'
+        profileComboWidth = profileAvailable
+    else
+        profileComboWidth = UIControls.comboWidth(profileAvailable, profileLabelWidth, Theme.layout.responsiveComboMaxWidth)
+    end
+    ui_pushItemWidth(profileComboWidth)
+    local newProfileIndex, profileChanged = ui_combo(comboProfileLabel, profileIndex, ui.ComboFlags.None, profileNames)
+    ui_popItemWidth()
     if profileChanged and newProfileIndex ~= profileIndex then
         profileIndex = newProfileIndex
         StorageManager_applyBehaviorProfile(profileIndex)
@@ -287,14 +303,13 @@ end
 
 local drawOperationalContent = function(tab)
     if tab == 'Overview' then
-        drawLateralOffsetsSection()
         return
     end
 
     if tab == 'Behavior' then
-        drawAICarValuesSection()
-        ui_newLine(1)
+        drawLateralOffsetsSection()
         drawBehaviorSection()
+        drawAICarValuesSection()
         return
     end
 

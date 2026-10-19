@@ -16,6 +16,8 @@ Browse by intent. Documents describe source; they do not prove installation or C
 - [Restructuring plan](RESTRUCTURING_PLAN.md) — current phased plan and acceptance gates.
 - [Project organization](plans/PROJECT_ORGANIZATION.md) — proposed documentation/context steps.
 - [UI identity](plans/UI_IDENTITY.md) — proposed direction and phases.
+- [UI standardization](plans/UI_STANDARDIZATION.md) — shared UI control tokens and phased validation plan.
+- [Lua module loading](plans/MODULE_LOADING_HARDENING.md) — resolved blank-UI incident, bootstrap implemented in source (CSP validation pending), and unapproved installer proposal.
 
 ## Historical inventory
 - [UI redesign discovery](UI_REDESIGN_DISCOVERY.md) — earlier inventory and status addendum; not a standalone redesign specification.
