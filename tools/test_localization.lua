@@ -118,7 +118,7 @@ check(mainWindowSource:find("Localization.text(tabSources[i])", 1, true) ~= nil 
   'all tab labels and compact navigation use localized text with stable IDs')
 check(mainWindowSource:find("Localization.label(storage.enabled and 'Enabled' or 'Disabled', 'settings.app.enabled')", 1, true) ~= nil and
   mainWindowSource:find("Localization.text('Language')", 1, true) ~= nil and
-  mainWindowSource:find("ui.combo('###settings.language'", 1, true) ~= nil,
+  mainWindowSource:find("pcall(ui.combo, '###settings.language'", 1, true) ~= nil,
   'global enabled and language controls retain their stable IDs in MainWindow')
 local settingsTabsSource = readSource('SettingsWindow.lua')
 check(settingsTabsSource:find("'Show Advanced Controls'", 1, true) ~= nil and
@@ -353,8 +353,13 @@ end
 check(sourceContains('UIAppNameVersionWidget.lua', "Localization.text('%s v%s | developed by %s | original author: %s'"),
   'version widget uses an unformatted developer/author template msgid')
 check(sourceContains('UIManager.lua', "T(CarStateMachine.CarStateTypeStrings[state] or '')"), 'car-list display routes state labels through localization')
-check(sourceContains('UIManager.lua', 'T(yieldingSideString)'), 'yielding side display routes side through localization')
-check(sourceContains('UIManager.lua', 'T(defaultDrivingSideString)'), 'default side display routes side through localization')
+check(sourceContains('UILateralOffsetsImageWidget.lua', "Localization.text('Choose where AI cars try to position themselves in each situation.')") and
+  sourceContains('UILateralOffsetsImageWidget.lua', "Localization.text('Configured targets, not live car positions.')") and
+  sourceContains('UILateralOffsetsImageWidget.lua', "Localization.text('The maneuver depends on traffic and safety conditions.')") and
+  sourceContains('UILateralOffsetsImageWidget.lua', 'Localization.text(row.label)'),
+    'shared-axis diagram localizes its guidance, target disclaimer, safety note and situation labels')
+check(sourceContains('UILateralOffsetsImageWidget.lua', "Localization.text('Active · %.3f'"),
+  'diagram status uses localized configured precision')
 
 check(localization.getLocale() == 'en', 'missing language falls back to English')
 check(localization.text('Current Mode: %s', 'Race') == 'Current Mode: Race', 'English formatting')

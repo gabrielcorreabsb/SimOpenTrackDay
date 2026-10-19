@@ -73,7 +73,7 @@ local StorageManager_Options_PathFinding = SettingsModel.Options_PathFinding
 
 
 local ui_availableSpaceX = ui.availableSpaceX
-local ui_measureDWriteText = ui.measureDWriteText
+local ui_measureText = ui.measureText
 local ui_pushItemWidth = ui.pushItemWidth
 local ui_popItemWidth = ui.popItemWidth
 local function translatedLabel(text, id) return Localization.label(text, id) end
@@ -241,7 +241,7 @@ local drawBehaviorSection = function()
     local profileNames = {Localization.text('Casual'), Localization.text('Realistic'), Localization.text('Competitive')}
     local profileText = Localization.text('AI Behavior Profile')
     local profileAvailable = math.max(0, ui_availableSpaceX())
-    local profileLabelWidth = ui_measureDWriteText(profileText, Theme.type.control, -1).x
+    local profileLabelWidth = ui_measureText(profileText, -1).x
     local profileLabel = translatedLabel('AI Behavior Profile', 'behavior.profile')
     local comboProfileLabel = profileLabel
     local profileComboWidth
@@ -253,8 +253,10 @@ local drawBehaviorSection = function()
         profileComboWidth = UIControls.comboWidth(profileAvailable, profileLabelWidth, Theme.layout.responsiveComboMaxWidth)
     end
     ui_pushItemWidth(profileComboWidth)
-    local newProfileIndex, profileChanged = ui_combo(comboProfileLabel, profileIndex, ui.ComboFlags.None, profileNames)
-    ui_popItemWidth()
+    local comboOk, newProfileIndex, profileChanged = pcall(ui_combo, comboProfileLabel, profileIndex, ui.ComboFlags.None, profileNames)
+    local popOk, popError = pcall(ui_popItemWidth)
+    if not comboOk then error(newProfileIndex, 0) end
+    if not popOk then error(popError, 0) end
     if profileChanged and newProfileIndex ~= profileIndex then
         profileIndex = newProfileIndex
         StorageManager_applyBehaviorProfile(profileIndex)

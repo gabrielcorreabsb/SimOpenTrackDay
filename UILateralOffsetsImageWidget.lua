@@ -1,247 +1,268 @@
 local UILateralOffsetsImageWidget = {}
 
--- local bindings
 local ui = ui
 local ui_drawRectFilled = ui.drawRectFilled
+local ui_drawRect = ui.drawRect
 local ui_drawLine = ui.drawLine
 local ui_getCursor = ui.getCursor
+local ui_setCursor = ui.setCursor
 local ui_availableSpaceX = ui.availableSpaceX
-local ui_drawRect = ui.drawRect
-local ui_dwriteDrawText = ui.dwriteDrawText
-local ui_measureDWriteText = ui.measureDWriteText
+local ui_measureText = ui.measureText
+local ui_text = ui.text
+local ui_textColored = ui.textColored
+local ui_textLineHeightWithSpacing = ui.textLineHeightWithSpacing
+local ui_itemRectMax = ui.itemRectMax
 local Localization = require('Localization')
-local ui_invisibleButton = ui.invisibleButton
+local Theme = require('lib/uilib/Theme')
 local math = math
-local math_abs = math.abs
+local math_max = math.max
 local vec2 = vec2
 
--- ========== CONFIGURABLE CONSTANTS ==========
--- Layout
-local PREVIEW_WIDTH              = 360
-local PREVIEW_HEIGHT             = 128
-local PREVIEW_MARGIN             = 12
-local CARD_ROUNDING              = 6
-local TRACK_ROUNDING             = 4
-local TRACK_HALF_HEIGHT          = 14
-local TICK_HEIGHT                = 10
-local TICK_HEIGHT_CENTER         = 20
+local GRAPH_MIN_WIDTH = 300
+local PANEL_PADDING = 12
+local NARROW_PADDING = 6
+local ROW_GAP = 10
+local TEXT_GAP = 4
+local BLOCK_GAP = 8
+local AXIS_GAP = 8
+local MARKER_SIZE = 10
+local TRACK_HEIGHT = 16
+local CONTENT_SAFETY = 2
+local PANEL_ROUNDING = 4
 
--- Marker (car) shape
-local CAR_WIDTH                  = 26
-local CAR_HEIGHT                 = 18
-local CAR_ROUNDING               = 4
-local CAR_NOSE_SIZE              = 6
-
--- If STACK_MARKERS = true, each marker is drawn on a separate "row" around track midline.
--- Row index is an integer offset from midline: -1 = above, 0 = center, +1 = below (you can use any integers).
-local STACK_MARKERS              = true
-local ROW_SPACING                = 18            -- pixels between rows
-local DEFAULT_ROW_INDEX          = 0             -- e.g., 0   (center)
-local YIELDING_ROW_INDEX         = 1             -- e.g., +1  (below)
-local OVERTAKE_ROW_INDEX         = -1            -- e.g., -1  (above)
-
--- If STACK_MARKERS = false, all markers share the same baseline (track midline).
--- You can still nudge captions using CAPTION_OFFSET_Y below.
-local CAPTION_OFFSET_Y           = 6             -- pixels below marker to place caption text
-
--- Colors
-local COLOR_CARD_BG              = rgbm(0.08, 0.08, 0.08, 0.90)
-local COLOR_CARD_BORDER          = rgbm(0.25, 0.25, 0.25, 1.00)
-local COLOR_TRACK_FILL           = rgbm(0.14, 0.14, 0.14, 1.00)
-local COLOR_TRACK_BORDER         = rgbm(0.32, 0.32, 0.32, 1.00)
-local COLOR_TICK                 = rgbm(0.55, 0.55, 0.55, 1.00)
-local COLOR_TEXT                 = rgbm(0.85, 0.85, 0.85, 1.00)
-local COLOR_TEXT_MINOR           = rgbm(0.80, 0.80, 0.80, 1.00)
-local COLOR_CAR_OUTLINE          = rgbm(0.00, 0.00, 0.00, 0.65)
-local COLOR_CURB_RED             = rgbm(0.85, 0.20, 0.20, 0.90)
-local COLOR_CURB_WHITE           = rgbm(0.92, 0.92, 0.95, 0.90)
-
--- Marker colors
-local COLOR_DEFAULT_MARKER       = rgbm(0.40, 1.00, 0.40, 1.00)
-local COLOR_YIELDING_MARKER      = rgbm(1.00, 0.70, 0.20, 1.00)
-local COLOR_OVERTAKE_MARKER      = rgbm(0.20, 0.65, 1.00, 1.00)
-
--- Lines/weights
-local CENTERLINE_THICKNESS       = 2
-local TICK_THICKNESS             = 1
-local MARKER_NOSE_THICKNESS      = 2
-
--- Fonts
-local CAPTION_FONT_SIZE          = 11
-local LABEL_FONT_SIZE            = 11
-
--- Labels/toggles
-local SHOW_EDGE_LABELS_L0R       = true        -- draw "L", "0", "R"
-local SHOW_CAPTIONS              = true        -- draw "Default", "Yielding", "Overtake" under markers
-local LABEL_LEFT_TEXT            = "L"
-local LABEL_CENTER_TEXT          = "0"
-local LABEL_RIGHT_TEXT           = "R"
-local CAPTION_DEFAULT_TEXT       = "Default"
-local CAPTION_YIELDING_TEXT      = "Yield"
-local CAPTION_OVERTAKE_TEXT      = "Overtake"
+-- Preserve the established semantic marker colors: normal, yielding and overtaking.
+local COLOR_DEFAULT = rgbm(0.40, 1.00, 0.40, 1.00)
+local COLOR_YIELDING = rgbm(1.00, 0.70, 0.20, 1.00)
+local COLOR_OVERTAKE = rgbm(0.20, 0.65, 1.00, 1.00)
 
 local storage_Yielding = StorageManager.getStorage_Yielding()
 local storage_Overtaking = StorageManager.getStorage_Overtaking()
+local wrappedLineScratch = {}
 
-local function clampNorm(x)
-  if x < -1 then return -1 end
-  if x >  1 then return  1 end
-  return x
+local ROWS = {
+  { label = 'Default', color = COLOR_DEFAULT, mode = 1 },
+  { label = 'Yielding', color = COLOR_YIELDING, mode = 2 },
+  { label = 'Overtaking', color = COLOR_OVERTAKE, mode = 3 },
+}
+local rowValues = { 0, 0, 0 }
+local rowStatuses = { '', '', '' }
+local rowTitleHeights = { 0, 0, 0 }
+
+local function clampNorm(value)
+  if value < -1 then return -1 end
+  if value > 1 then return 1 end
+  return value
 end
 
--- Map normalized lateral offset [-1..1] to an X pixel within the inner track bar.
-local function mapOffsetToX(offsetNormalized, trackLeftX, trackWidth)
-  local t = (clampNorm(offsetNormalized) * 0.5) + 0.5   -- -1 → 0, 0 → 0.5, +1 → 1
-  return trackLeftX + t * trackWidth
+local function nativeLineHeight()
+  if ui_textLineHeightWithSpacing then return ui_textLineHeightWithSpacing() end
+  return ui_measureText('M', -1).y
 end
 
-
--- Draw a simple rounded rectangle “car” with a small “nose” triangle.
-local function drawCarMarker(xCenter, midY, color)
-  local halfW = CAR_WIDTH * 0.5
-  local halfH = CAR_HEIGHT * 0.5
-  local p1 = vec2(xCenter - halfW, midY - halfH)
-  local p2 = vec2(xCenter + halfW, midY + halfH)
-
-  ui_drawRectFilled(p1, p2, color, CAR_ROUNDING)
-  ui_drawRect(p1, p2, COLOR_CAR_OUTLINE, CAR_ROUNDING)
-  ui_drawRect(vec2(xCenter - 5, midY - 4), vec2(xCenter + 5, midY + 4), COLOR_CAR_OUTLINE, 2)
-  ui_drawLine(vec2(xCenter - 11, p2.y), vec2(xCenter + 11, p2.y), color, 3)
-  ui_drawLine(vec2(xCenter - 8, p1.y), vec2(xCenter + 8, p1.y), color, 2)
-
-  -- nose pointing “up” to hint forward direction
-  local noseY = p1.y - CAR_NOSE_SIZE
-  ui_drawLine(vec2(xCenter - CAR_NOSE_SIZE, p1.y), vec2(xCenter, noseY), color, MARKER_NOSE_THICKNESS)
-  ui_drawLine(vec2(xCenter + CAR_NOSE_SIZE, p1.y), vec2(xCenter, noseY), color, MARKER_NOSE_THICKNESS)
+local function nativeTextWidth(text)
+  return ui_measureText(text, -1).x
 end
 
--- Compute baseline Y for a marker based on row index and STACK_MARKERS toggle.
-local function rowY(trackMidY, rowIndex)
-  if STACK_MARKERS then
-    return trackMidY + (rowIndex * ROW_SPACING)
-  else
-    return trackMidY
+local function pushWrappedLine(lineCount, line)
+  lineCount = lineCount + 1
+  wrappedLineScratch[lineCount] = line
+  return lineCount
+end
+
+local function nextUTF8Byte(text, index)
+  local first = string.byte(text, index)
+  if not first or first < 128 then return index + 1 end
+  if first < 224 then return index + 2 end
+  if first < 240 then return index + 3 end
+  return index + 4
+end
+
+-- Explicit line breaks keep native measurement and drawing inside the same panel width.
+local function wrapNativeText(text, maxWidth)
+  for i = #wrappedLineScratch, 1, -1 do wrappedLineScratch[i] = nil end
+  maxWidth = math_max(1, maxWidth)
+  local line, lineCount = '', 0
+  for word in text:gmatch('%S+') do
+    local candidate = line == '' and word or (line .. ' ' .. word)
+    if line ~= '' and nativeTextWidth(candidate) > maxWidth then
+      lineCount = pushWrappedLine(lineCount, line)
+      line = ''
+    end
+    if nativeTextWidth(word) <= maxWidth then
+      line = line == '' and word or (line .. ' ' .. word)
+    else
+      local index = 1
+      while index <= #word do
+        local nextIndex = nextUTF8Byte(word, index)
+        local glyph = word:sub(index, nextIndex - 1)
+        candidate = line .. glyph
+        if line ~= '' and nativeTextWidth(candidate) > maxWidth then
+          lineCount = pushWrappedLine(lineCount, line)
+          line = glyph
+        else
+          line = candidate
+        end
+        index = nextIndex
+      end
+    end
   end
+  if line ~= '' then lineCount = pushWrappedLine(lineCount, line) end
+  if lineCount == 0 then return '' end
+  return table.concat(wrappedLineScratch, '\n', 1, lineCount)
 end
 
-local function markerX(offset, trackLeftX, trackWidth, minX, maxX)
-  return math.max(minX, math.min(maxX, mapOffsetToX(offset, trackLeftX, trackWidth)))
+local function measuredBlockHeight(text, width)
+  local wrapped = wrapNativeText(text, width)
+  local measured = ui_measureText(wrapped, -1).y
+  return math_max(nativeLineHeight(), measured) + CONTENT_SAFETY
 end
 
-local function captionWidth(text)
-  return ui_measureDWriteText(text, CAPTION_FONT_SIZE, -1).x
+local function currentItemBottom()
+  local cursorBottom = ui_getCursor().y
+  if ui_itemRectMax then
+    local itemMax = ui_itemRectMax()
+    if itemMax then return math_max(cursorBottom, itemMax.y) end
+  end
+  return cursorBottom
 end
 
-local function captionX(width, x, cardLeft, cardRight)
-  return math.max(cardLeft + 4, math.min(cardRight - width - 4, x - width * 0.5))
+local function drawWrappedText(text, x, y, width, color)
+  local wrapped = wrapNativeText(text, width)
+  ui_setCursor(vec2(x, y))
+  if color then
+    ui_textColored(wrapped, color)
+  else
+    ui_text(wrapped)
+  end
+  return currentItemBottom()
+end
+
+local function drawSingleLine(text, color, x, y)
+  ui_setCursor(vec2(x, y))
+  ui_textColored(text, color)
+  return currentItemBottom()
+end
+
+local function markerPosition(value, trackLeft, trackWidth)
+  local normalized = (clampNorm(value) + 1) * 0.5
+  return trackLeft + normalized * trackWidth
+end
+
+local function loadRows(storage)
+  rowValues[1] = storage.defaultLateralOffset
+  rowValues[2] = storage.yieldingLateralOffset
+  rowValues[3] = storage.overtakingLateralOffset
+  rowStatuses[1] = Localization.text('Active · %.3f', rowValues[1])
+  rowStatuses[2] = storage_Yielding.handleYielding and
+    Localization.text('Enabled · %.3f', rowValues[2]) or Localization.text('Disabled · saved %.3f', rowValues[2])
+  rowStatuses[3] = storage_Overtaking.handleOvertaking and
+    Localization.text('Enabled · %.3f', rowValues[3]) or Localization.text('Disabled · saved %.3f', rowValues[3])
 end
 
 ---@param storage StorageTable
-function UILateralOffsetsImageWidget.draw(storage)
-  -- Reserve block area from current cursor
+---@param rightInset? number Optional inset reserved at the right edge of the containing section.
+function UILateralOffsetsImageWidget.draw(storage, rightInset)
   local cursor = ui_getCursor()
-  local availableWidth = math.max(0, ui_availableSpaceX())
-  local previewWidth = math.min(PREVIEW_WIDTH, availableWidth)
-  local handleYielding = storage_Yielding.handleYielding
-  local handleOvertaking = storage_Overtaking.handleOvertaking
-  local defaultCaption = SHOW_CAPTIONS and Localization.text(CAPTION_DEFAULT_TEXT) or nil
-  local yieldingCaption = SHOW_CAPTIONS and handleYielding and Localization.text(CAPTION_YIELDING_TEXT) or nil
-  local overtakeCaption = SHOW_CAPTIONS and handleOvertaking and Localization.text(CAPTION_OVERTAKE_TEXT) or nil
-  local defaultCaptionWidth = defaultCaption and captionWidth(defaultCaption) or 0
-  local yieldingCaptionWidth = yieldingCaption and captionWidth(yieldingCaption) or 0
-  local overtakeCaptionWidth = overtakeCaption and captionWidth(overtakeCaption) or 0
-  local widestCaption = 0
-  widestCaption = math.max(widestCaption, defaultCaptionWidth, yieldingCaptionWidth, overtakeCaptionWidth)
-  local minimumWidth = math.max(CAR_WIDTH + PREVIEW_MARGIN * 2, widestCaption + 8)
-  if previewWidth < minimumWidth then return end
-  local tl = vec2(cursor.x + math.max(0, (availableWidth - previewWidth) * 0.5), cursor.y)
-  local br = vec2(tl.x + previewWidth, cursor.y + PREVIEW_HEIGHT)
+  local availableWidth = math_max(0, ui_availableSpaceX())
+  if availableWidth < 80 and not rightInset then return end
 
-  -- Card
-  ui_drawRectFilled(tl, br, COLOR_CARD_BG, CARD_ROUNDING)
-  ui_drawRect(tl, br, COLOR_CARD_BORDER, CARD_ROUNDING)
+  rightInset = math_max(0, rightInset or 0)
+  local panelWidth = math_max(0, availableWidth - rightInset)
+  if panelWidth < 80 then return end
+  local graphEnabled = panelWidth >= GRAPH_MIN_WIDTH
+  local padding = panelWidth < 180 and NARROW_PADDING or PANEL_PADDING
+  local innerWidth = math_max(1, panelWidth - padding * 2)
+  local panelLeft = cursor.x
+  local contentLeft = panelLeft + padding
+  local instruction = Localization.text('Choose where AI cars try to position themselves in each situation.')
+  local targetNote = Localization.text('Configured targets, not live car positions.')
+  local safetyNote = Localization.text('The maneuver depends on traffic and safety conditions.')
+  local axisLeft = Localization.text('−1 · Left')
+  local axisCenter = Localization.text('0')
+  local axisRight = Localization.text('+1 · Right')
+  local lineHeight = nativeLineHeight()
 
-  -- Inner “track” rect
-  local trackTL   = vec2(tl.x + PREVIEW_MARGIN, tl.y + PREVIEW_MARGIN)
-  local trackBR   = vec2(br.x - PREVIEW_MARGIN, br.y - PREVIEW_MARGIN)
-  local trackMidY = (trackTL.y + trackBR.y) * 0.5
-  local trackW    = trackBR.x - trackTL.x
+  loadRows(storage)
+  local instructionHeight = measuredBlockHeight(instruction, innerWidth)
+  local targetHeight = measuredBlockHeight(targetNote, innerWidth)
+  local safetyHeight = measuredBlockHeight(safetyNote, innerWidth)
+  local panelHeight = padding + instructionHeight + BLOCK_GAP + targetHeight + BLOCK_GAP + safetyHeight + BLOCK_GAP
+  if graphEnabled then panelHeight = panelHeight + lineHeight + AXIS_GAP + 40 + TEXT_GAP end
+  for index = 1, 3 do
+    rowTitleHeights[index] = measuredBlockHeight(Localization.text(ROWS[index].label) .. ' · ' .. rowStatuses[index], innerWidth-14)
+    panelHeight = panelHeight + rowTitleHeights[index] + ROW_GAP
+  end
+  panelHeight = panelHeight + padding
 
-  -- Track fill and edges
-  ui_drawRectFilled(vec2(trackTL.x, trackMidY - TRACK_HALF_HEIGHT),
-                    vec2(trackBR.x, trackMidY + TRACK_HALF_HEIGHT),
-                    COLOR_TRACK_FILL, TRACK_ROUNDING)
-  ui_drawRect(vec2(trackTL.x, trackMidY - TRACK_HALF_HEIGHT),
-              vec2(trackBR.x, trackMidY + TRACK_HALF_HEIGHT),
-              COLOR_TRACK_BORDER, TRACK_ROUNDING)
+  local panelTL = vec2(panelLeft, cursor.y)
+  local panelBR = vec2(panelLeft + panelWidth, cursor.y + panelHeight)
+  ui_drawRectFilled(panelTL, panelBR, Theme.colors.surface, PANEL_ROUNDING)
+  ui_drawRect(panelTL, panelBR, Theme.colors.divider, PANEL_ROUNDING)
 
-  -- Curbs (zebras) on Left and Right track borders
-  ui_drawLine(vec2(trackTL.x, trackMidY - TRACK_HALF_HEIGHT), vec2(trackTL.x, trackMidY), COLOR_CURB_RED, 4)
-  ui_drawLine(vec2(trackTL.x, trackMidY), vec2(trackTL.x, trackMidY + TRACK_HALF_HEIGHT), COLOR_CURB_WHITE, 4)
-  ui_drawLine(vec2(trackBR.x, trackMidY - TRACK_HALF_HEIGHT), vec2(trackBR.x, trackMidY), COLOR_CURB_WHITE, 4)
-  ui_drawLine(vec2(trackBR.x, trackMidY), vec2(trackBR.x, trackMidY + TRACK_HALF_HEIGHT), COLOR_CURB_RED, 4)
+  local y = cursor.y + padding
+  local actualBottom = drawWrappedText(instruction, contentLeft, y, innerWidth)
+  y = math_max(y + instructionHeight, actualBottom) + BLOCK_GAP
+  actualBottom = drawWrappedText(targetNote, contentLeft, y, innerWidth)
+  y = math_max(y + targetHeight, actualBottom) + BLOCK_GAP
+  actualBottom = drawWrappedText(safetyNote, contentLeft, y, innerWidth)
+  y = math_max(y + safetyHeight, actualBottom) + BLOCK_GAP
 
-  -- Ticks at -1, -0.5, 0, 0.5, 1
-  local ticks = { -1.0, -0.5, 0.0, 0.5, 1.0 }
-  for i = 1, #ticks do
-    local x = mapOffsetToX(ticks[i], trackTL.x, trackW)
-    local h = (math_abs(ticks[i]) < 1e-4) and TICK_HEIGHT_CENTER or TICK_HEIGHT
-    local thick = (math_abs(ticks[i]) < 1e-4) and CENTERLINE_THICKNESS or TICK_THICKNESS
-    ui_drawLine(vec2(x, trackMidY - h), vec2(x, trackMidY + h), COLOR_TICK, thick)
+  local trackLeft = contentLeft + MARKER_SIZE * 0.5
+  local trackWidth = math_max(1, innerWidth - MARKER_SIZE)
+  if graphEnabled then
+    local centerWidth = nativeTextWidth(axisCenter)
+    local rightWidth = nativeTextWidth(axisRight)
+    drawSingleLine(axisLeft, Theme.colors.muted, contentLeft, y)
+    drawSingleLine(axisCenter, Theme.colors.muted, trackLeft + trackWidth * 0.5 - centerWidth * 0.5, y)
+    drawSingleLine(axisRight, Theme.colors.muted, contentLeft + innerWidth - rightWidth, y)
+    y = y + lineHeight + AXIS_GAP
   end
 
-  -- Edge labels "L | 0 | R"
-  if SHOW_EDGE_LABELS_L0R then
-    local edgeLabelY = trackMidY - LABEL_FONT_SIZE * 0.5
-    ui_dwriteDrawText(LABEL_LEFT_TEXT, LABEL_FONT_SIZE, vec2(trackTL.x - 9, edgeLabelY), COLOR_TEXT_MINOR)
-    
-    local cx = mapOffsetToX(0, trackTL.x, trackW)
-    ui_dwriteDrawText(LABEL_CENTER_TEXT, LABEL_FONT_SIZE, vec2(cx - 3, edgeLabelY), COLOR_TEXT_MINOR)
-
-    ui_dwriteDrawText(LABEL_RIGHT_TEXT, LABEL_FONT_SIZE, vec2(trackBR.x + 2, edgeLabelY), COLOR_TEXT_MINOR)
-  end
-
-  -- Read offsets from storage
-  local offDefault   = storage.defaultLateralOffset
-  local offYielding  = storage.yieldingLateralOffset
-  local offOvertake  = storage.overtakingLateralOffset
-
-  -- Marker positions (X)
-  local markerMinX, markerMaxX = trackTL.x + CAR_WIDTH * 0.5, trackBR.x - CAR_WIDTH * 0.5
-  local xDefault  = markerX(offDefault, trackTL.x, trackW, markerMinX, markerMaxX)
-  local xYielding = markerX(offYielding, trackTL.x, trackW, markerMinX, markerMaxX)
-  local xOvertake = markerX(offOvertake, trackTL.x, trackW, markerMinX, markerMaxX)
-
-  -- Marker positions (Y) — controlled by the new row index constants
-  local yDefault  = rowY(trackMidY, DEFAULT_ROW_INDEX)
-  local yYielding = rowY(trackMidY, YIELDING_ROW_INDEX)
-  local yOvertake = rowY(trackMidY, OVERTAKE_ROW_INDEX)
-
-  -- Draw markers
-  drawCarMarker(xDefault,  yDefault,  COLOR_DEFAULT_MARKER)
-  if handleYielding then
-    drawCarMarker(xYielding, yYielding, COLOR_YIELDING_MARKER)
-  end
-
-  if handleOvertaking then
-    drawCarMarker(xOvertake, yOvertake, COLOR_OVERTAKE_MARKER)
-  end
-
-  -- Captions under each marker
-  if SHOW_CAPTIONS then
-      ui_dwriteDrawText(defaultCaption, CAPTION_FONT_SIZE, vec2(captionX(defaultCaptionWidth, xDefault, tl.x, br.x), yDefault + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
-
-    if handleYielding then
-        ui_dwriteDrawText(yieldingCaption, CAPTION_FONT_SIZE, vec2(captionX(yieldingCaptionWidth, xYielding, tl.x, br.x), yYielding + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
+  if graphEnabled then
+    local railY=y+TRACK_HEIGHT*.5+12
+    ui_drawLine(vec2(trackLeft,railY),vec2(trackLeft+trackWidth,railY),Theme.colors.divider,2)
+    local centerX=trackLeft+trackWidth*.5
+    ui_drawLine(vec2(centerX,railY-5),vec2(centerX,railY+5),Theme.colors.muted,1)
+    -- Fixed vertical marker lanes prevent equal and near-equal targets obscuring identity.
+    for index=1,3 do
+      local row=ROWS[index]; local x=markerPosition(rowValues[index],trackLeft,trackWidth)
+      local markerY=railY+(index-2)*12
+      ui_drawLine(vec2(x,railY),vec2(x,markerY),row.color,1)
+      local a,b=vec2(x-5,markerY-5),vec2(x+5,markerY+5)
+      local enabled=index==1 or (index==2 and storage_Yielding.handleYielding) or (index==3 and storage_Overtaking.handleOvertaking)
+      if enabled then ui_drawRectFilled(a,b,row.color,index==1 and 0 or 5) else ui_drawRect(a,b,row.color,index==1 and 0 or 5) end
+      if index==1 then
+        -- square is the default marker
+      elseif index==2 then
+         ui_drawLine(vec2(x,markerY-5),vec2(x+5,markerY),row.color,2); ui_drawLine(vec2(x+5,markerY),vec2(x,markerY+5),row.color,2)
+        ui_drawLine(vec2(x,markerY+5),vec2(x-5,markerY),row.color,2); ui_drawLine(vec2(x-5,markerY),vec2(x,markerY-5),row.color,2)
+      else
+        ui_drawLine(vec2(x-4,markerY-4),vec2(x+4,markerY+4),row.color,2); ui_drawLine(vec2(x-4,markerY+4),vec2(x+4,markerY-4),row.color,2)
+      end
     end
-
-    if handleOvertaking then
-        ui_dwriteDrawText(overtakeCaption, CAPTION_FONT_SIZE, vec2(captionX(overtakeCaptionWidth, xOvertake, tl.x, br.x), yOvertake + (CAR_HEIGHT * 0.5) + CAPTION_OFFSET_Y), COLOR_TEXT)
+    y=y+40+TEXT_GAP
+  end
+  for index=1,3 do
+    local row=ROWS[index]; local label=Localization.text(row.label)
+    local status=rowStatuses[index]
+    local title=label..' · '..status
+    local markX=contentLeft+5; local markY=y+lineHeight*.5
+    if graphEnabled then
+    if index==1 then ui_drawRectFilled(vec2(markX-3,markY-3),vec2(markX+3,markY+3),row.color,0)
+    elseif index==2 then
+      ui_drawLine(vec2(markX,markY-4),vec2(markX+4,markY),row.color,2); ui_drawLine(vec2(markX+4,markY),vec2(markX,markY+4),row.color,2)
+      ui_drawLine(vec2(markX,markY+4),vec2(markX-4,markY),row.color,2); ui_drawLine(vec2(markX-4,markY),vec2(markX,markY-4),row.color,2)
+    else ui_drawLine(vec2(markX-3,markY-3),vec2(markX+3,markY+3),row.color,2); ui_drawLine(vec2(markX-3,markY+3),vec2(markX+3,markY-3),row.color,2) end
     end
+    local titleX=graphEnabled and contentLeft+14 or contentLeft
+    local titleWidth=graphEnabled and innerWidth-14 or innerWidth
+    actualBottom=drawWrappedText(title,titleX,y,titleWidth,row.color)
+    rowTitleHeights[index]=measuredBlockHeight(title,titleWidth)
+    y=math_max(y+rowTitleHeights[index],actualBottom)+ROW_GAP
   end
 
-  -- Reserve layout space so following UI doesn’t overlap the drawing
-  ui_invisibleButton("##lateralPreviewReserve", vec2(previewWidth, PREVIEW_HEIGHT))
+  local contentBottom = math_max(y - ROW_GAP + padding, cursor.y + panelHeight)
+  ui_setCursor(vec2(cursor.x, contentBottom))
 end
 
 return UILateralOffsetsImageWidget

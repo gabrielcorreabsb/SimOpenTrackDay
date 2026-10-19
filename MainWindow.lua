@@ -82,7 +82,7 @@ local function drawTabNavigation()
     local availableWidth = math.max(0, ui.availableSpaceX())
     local navigationText = Localization.text('Navigation')
     local navigationLabel = Localization.label('Navigation', 'main.tabs')
-    local navigationWidth = ui.measureDWriteText(navigationText, Theme.type.control, -1).x
+    local navigationWidth = ui.measureText(navigationText, -1).x
     local comboLabel = navigationLabel
     if availableWidth < LAYOUT.responsiveLabelThreshold then
       if ui_textWrapped then ui_textWrapped(navigationText) else ui.text(navigationText) end
@@ -92,8 +92,10 @@ local function drawTabNavigation()
       local comboWidth = UIControls.comboWidth(availableWidth, navigationWidth, LAYOUT.navigationComboMaxWidth)
       ui.pushItemWidth(comboWidth)
     end
-    local newIndex, changed = ui.combo(comboLabel, selectedIndex, ui.ComboFlags.None, tabLabels)
-    ui.popItemWidth()
+    local comboOk, newIndex, changed = pcall(ui.combo, comboLabel, selectedIndex, ui.ComboFlags.None, tabLabels)
+    local popOk, popError = pcall(ui.popItemWidth)
+    if not comboOk then error(newIndex, 0) end
+    if not popOk then error(popError, 0) end
     if changed then UIState.activeTab = tabSources[newIndex] or 'Overview' end
     return
   end
@@ -247,8 +249,10 @@ local function drawHeader()
     end
   end
   ui.pushItemWidth(languageWidth)
-  local languageIndex, languageChanged = ui.combo('###settings.language', localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
-  ui.popItemWidth()
+  local comboOk, languageIndex, languageChanged = pcall(ui.combo, '###settings.language', localeIndexes[Localization.getLocale()] or 1, ui.ComboFlags.None, Localization.localeNames)
+  local popOk, popError = pcall(ui.popItemWidth)
+  if not comboOk then error(languageIndex, 0) end
+  if not popOk then error(popError, 0) end
   controlsBottom = math.max(controlsBottom, currentItemBottom())
   if languageChanged then Localization.setLocale(locales[languageIndex] or 'en') end
 

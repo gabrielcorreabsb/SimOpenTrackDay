@@ -248,43 +248,15 @@ UIManager.drawUICarList = function()
 end
 
 UIManager.drawMainWindowLateralOffsetsSection = function()
-    -- ui.dwriteText('Driving Lanes', 15)
-    -- ui.newLine(1)
-
-    local wide = ui.availableSpaceX() >= 620
-    ui_columns(wide and 2 or 1, false, "mainWindow_lateralsSection")
-    if wide then ui_setColumnWidth(0, math.max(340, ui.availableSpaceX() * 0.48)) end
-
     local handleYielding = storage_Yielding.handleYielding
     local handleOvertaking = storage_Overtaking.handleOvertaking
-
     local yieldingSide = RaceTrackManager_getYieldingSide()
     local overtakingSide = RaceTrackManager_getOvertakingSide()
-    local defaultDrivingSide = RaceTrackManager_getDefaultDrivingSide()
-    local yieldingSideString = RaceTrackManager.TrackSideStrings[yieldingSide]
-    local overtakingSideString = RaceTrackManager.TrackSideStrings[overtakingSide]
-    local defaultDrivingSideString = RaceTrackManager.TrackSideStrings[defaultDrivingSide]
-
-    ui_newLine(1)
-    if handleOvertaking then
-      if ui_textWrapped then ui_textWrapped(T('Overtaking Lateral Offset: %.3f (%s)', storage.overtakingLateralOffset, T(overtakingSideString))) else ui_text(T('Overtaking Lateral Offset: %.3f (%s)', storage.overtakingLateralOffset, T(overtakingSideString))) end
-      ui_newLine(1)
-    end
-    if ui_textWrapped then ui_textWrapped(T('Default Lateral Offset: %.3f (%s)', storage.defaultLateralOffset, T(defaultDrivingSideString))) else ui_text(T('Default Lateral Offset: %.3f (%s)', storage.defaultLateralOffset, T(defaultDrivingSideString))) end
-    if handleYielding then
-      ui_newLine(1)
-      if ui_textWrapped then ui_textWrapped(T('Yielding Lateral Offset: %.3f (%s)', storage.yieldingLateralOffset, T(yieldingSideString))) else ui_text(T('Yielding Lateral Offset: %.3f (%s)', storage.yieldingLateralOffset, T(yieldingSideString))) end
-    end
-
-    if wide then ui_nextColumn() else ui_newLine(1) end
-
-    UILateralOffsetsImageWidget_draw(storage)
+    UILateralOffsetsImageWidget_draw(storage, Theme.spacing.md)
     if yieldingSide == overtakingSide then
       ui_textColored(T('Yielding side and overtaking side are the same!'), ColorManager.RGBM_Colors.Yellow)
     end
 
-    -- end the table
-    ui_columns(1, false)
     ui_newLine(1)
     ui_textColored(
       T('Adjust driving lane offsets in Behavior.'),

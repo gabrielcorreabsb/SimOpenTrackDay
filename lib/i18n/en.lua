@@ -1,4 +1,12 @@
 return {
+  ['Choose where AI cars try to position themselves in each situation.'] = 'Choose where AI cars try to position themselves in each situation.',
+  ['Configured targets, not live car positions.'] = 'Configured targets, not live car positions.',
+  ['Position the AI tries to maintain when not yielding or overtaking.'] = 'Position the AI tries to maintain when not yielding or overtaking.',
+  ['Position the AI tries to reach when it decides to give way.'] = 'Position the AI tries to reach when it decides to give way.',
+  ['Position the AI tries to reach when trying to pass another car.'] = 'Position the AI tries to reach when trying to pass another car.',
+  ['The maneuver depends on traffic and safety conditions.'] = 'The maneuver depends on traffic and safety conditions.',
+  ['Active · %.3f'] = 'Active · %.3f', ['Enabled · %.3f'] = 'Enabled · %.3f', ['Disabled · saved %.3f'] = 'Disabled · saved %.3f',
+  ['−1 · Left'] = '−1 · Left', ['+1 · Right'] = '+1 · Right',
   ['All'] = 'All', ['Incidents'] = 'Incidents', ['%s (%d)'] = '%s (%d)',
   ['Debugging'] = 'Debugging', ['Show UI Car List'] = 'Show UI Car List',
   ['Show car state overhead text'] = 'Show car state overhead text', ['Caution'] = 'Caution',

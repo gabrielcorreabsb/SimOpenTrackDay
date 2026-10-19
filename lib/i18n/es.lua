@@ -1,4 +1,12 @@
 return {
+  ['Choose where AI cars try to position themselves in each situation.'] = 'Elige dónde intenta colocarse la IA en cada situación.',
+  ['Configured targets, not live car positions.'] = 'Objetivos configurados, no posiciones actuales de los coches.',
+  ['Position the AI tries to maintain when not yielding or overtaking.'] = 'Posición que la IA intenta mantener cuando no cede el paso ni adelanta.',
+  ['Position the AI tries to reach when it decides to give way.'] = 'Posición que la IA intenta alcanzar cuando decide ceder el paso.',
+  ['Position the AI tries to reach when trying to pass another car.'] = 'Posición que la IA intenta alcanzar cuando intenta pasar a otro coche.',
+  ['The maneuver depends on traffic and safety conditions.'] = 'La maniobra depende del tráfico y de las condiciones de seguridad.',
+  ['Active · %.3f'] = 'Activo · %.3f', ['Enabled · %.3f'] = 'Activado · %.3f', ['Disabled · saved %.3f'] = 'Desactivado · guardado %.3f',
+  ['−1 · Left'] = '−1 · Izquierda', ['+1 · Right'] = '+1 · Derecha',
   ['All'] = 'Todos', ['Incidents'] = 'Incidentes', ['%s (%d)'] = '%s (%d)',
   ['Debugging'] = 'Depuración', ['Show UI Car List'] = 'Mostrar lista de coches en la interfaz',
   ['Show car state overhead text'] = 'Mostrar el estado del coche sobre él', ['Caution'] = 'Precaución',

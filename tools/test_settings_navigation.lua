@@ -44,7 +44,8 @@ package.loaded.Localization = {
 
 local disabledDepth, globalDisabled = 0, false
 local availableWidth, currentItemWidth = 700, nil
-local combos, wrappedLabels = {}, {}
+local combos, wrappedLabels, nativeMeasures = {}, {}, {}
+local dwriteMeasures, throwCombo = 0, false
 local function disabled() return globalDisabled or disabledDepth > 0 end
 local ui = {
   StyleColor = { SliderGrab = 1 },
@@ -53,13 +54,14 @@ local ui = {
   popDisabled = function() globalDisabled = false end,
   pushStyleColor = function() end, popStyleColor = function() end,
   itemHovered = function() return false end, availableSpaceX = function() return availableWidth end,
-  measureDWriteText = function(text) return { x = #text * 8, y = 18 } end,
+  measureDWriteText = function(text) dwriteMeasures = dwriteMeasures + 1; return { x = #text * 8, y = 18 } end,
+  measureText = function(text, wrap) nativeMeasures[#nativeMeasures + 1] = { text = text, wrap = wrap }; return { x = #text * 11, y = 19 } end,
   pushItemWidth = function(w) currentItemWidth = w end, popItemWidth = function() currentItemWidth = nil end,
   columns = function() end, setColumnWidth = function() end, nextColumn = function() end,
   newLine = function() end, text = function() end, textColored = function() end,
   textWrapped = function(text) wrappedLabels[#wrappedLabels + 1] = text end,
   checkbox = function() return false end,
-  combo = function(label) combos[#combos + 1] = { label = label, width = currentItemWidth }; return 1, false end,
+  combo = function(label) combos[#combos + 1] = { label = label, width = currentItemWidth }; if throwCombo then error('injected settings combo failure') end; return 1, false end,
   separator = function() end, setTooltip = function() end, windowWidth = function() return availableWidth end,
 }
 _G.ui = ui
@@ -125,6 +127,17 @@ for _, combo in ipairs(combos) do
 end
 check(profileCombo and profileCombo.label == 'AI Behavior Profile###behavior.profile',
   'profile combo keeps its visible label and stable ID at normal width')
+local measuredProfileNatively = false
+for _, measure in ipairs(nativeMeasures) do if measure.text == 'AI Behavior Profile' and measure.wrap == -1 then measuredProfileNatively = true end end
+check(measuredProfileNatively and dwriteMeasures == 0,
+  'profile combo width uses native-font metrics matching its native wrapped label')
+availableWidth = 340
+combos = {}
+SettingsWindow.drawContent('Behavior', true)
+profileCombo = nil
+for _, combo in ipairs(combos) do if combo.label:find('behavior.profile', 1, true) then profileCombo = combo end end
+check(profileCombo and profileCombo.width == math.min(420, math.max(0, 340 - #('AI Behavior Profile') * 11 - 8)),
+  'normal-width profile combo fits from the measured native label width')
 storage.defaultLateralOffset, storage.overtakingLateralOffset, storage.yieldingLateralOffset = 0.1, 0.2, 0.3
 
 availableWidth = 240
@@ -137,6 +150,11 @@ check(profileCombo and profileCombo.label == '###behavior.profile' and profileCo
 local wrappedProfile = false
 for _, text in ipairs(wrappedLabels) do if text == 'AI Behavior Profile' then wrappedProfile = true end end
 check(wrappedProfile, 'narrow profile label is shown separately as wrapped text')
+throwCombo = true
+local comboOk, comboError = pcall(SettingsWindow.drawContent, 'Behavior', true)
+throwCombo = false
+check(not comboOk and tostring(comboError):find('injected settings combo failure', 1, true) and currentItemWidth == nil,
+  'profile combo failure is rethrown after item-width scope cleanup (ok=' .. tostring(comboOk) .. ', width=' .. tostring(currentItemWidth) .. ', error=' .. tostring(comboError) .. ')')
 availableWidth = 700
 storage.defaultLateralOffset, storage.overtakingLateralOffset, storage.yieldingLateralOffset = 0.1, 0.2, 0.3
 

@@ -26,6 +26,10 @@ The repository checker is `tools/check_lua_syntax.ps1`. It traverses `.lua` file
 
 ## 2. Local source checks
 
+The lateral-offset diagram has focused headless coverage in `tools/test_lateral_layout.lua` (native text measurement mock with wrapped-string/bounds checks, localized copy, one shared horizontal axis with independent targets, responsive text-only fallback, endpoint/center/equal/near-equal mapping, shape-matched legends, marker/text separation, disabled-marker outlines, read-only configured values, and all enable combinations). The panel uses the section's available content width, preserving the app/section insets rather than drawing to the physical window edge. Its test font metrics/wrapping and height ceiling are simulated, not CSP rendering or performance evidence. `tools/test_ui_manager.lua` also exercises the real widget through `UIManager` and checks that no empty column is created while the equal-side warning and Behavior guidance remain. Neither test establishes CSP font metrics, clipping, panel rendering, or in-game behavior. Manually review at 480/700/900 px in English, Brazilian Portuguese, and Spanish before treating visual validation as complete.
+
+The focused native-controls checks are `tools/test_native_controls.lua`, `tools/test_settings_navigation.lua`, and `tools/test_main_window.lua`. These cover native-font measurement/layout contracts and combo item-width cleanup on UI errors, but mock font widths do not establish CSP rendering or clipping. Recheck translated controls and responsive widths in CSP before closing UI standardization.
+
 ### 2.1 Check syntax (dynamic count)
 
 ```powershell

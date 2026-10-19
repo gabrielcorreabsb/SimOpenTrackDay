@@ -18,6 +18,7 @@ local sliderEvents = {}
 local rects, lines, captions, buttons = {}, {}, {}, {}
 local width, cursorX, cursorY, hovered, rightClicked, sliderDisabled = 700, 30, 50, false, false, false
 local measurements = {}
+local textItems, itemBottom, itemCursor = {}, 0, { x = cursorX, y = cursorY }
 local ui = {
   availableSpaceX = function() return width end,
   pushItemWidth = function(w) itemWidths[#itemWidths + 1] = w end,
@@ -32,15 +33,28 @@ local ui = {
   mouseClicked = function(button) return button == 1 and rightClicked end,
   setTooltip = function(s) tooltips[#tooltips + 1] = s end,
   textWrapped = function(s) wrapped[#wrapped + 1] = s; sliderEvents[#sliderEvents + 1] = 'wrapped' end,
-  drawRectFilled = function(a, b) rects[#rects + 1] = { a = a, b = b, filled = true } end,
-  drawRect = function(a, b) rects[#rects + 1] = { a = a, b = b } end,
-  drawLine = function(a, b) lines[#lines + 1] = { a = a, b = b } end,
+  drawRectFilled = function(a, b, color, rounding) rects[#rects + 1] = { a = a, b = b, color = color, rounding = rounding or 0, filled = true } end,
+  drawRect = function(a, b, color, rounding) rects[#rects + 1] = { a = a, b = b, color = color, rounding = rounding or 0 } end,
+  drawLine = function(a, b, color, thickness) lines[#lines + 1] = { a = a, b = b, color = color, thickness = thickness or 1 } end,
   getCursor = function() return { x = cursorX, y = cursorY } end,
-  drawTextClipped = function(text, a, b) captions[#captions + 1] = { text = text, a = a, b = b } end,
-  dwriteDrawText = function(text, size, p) captions[#captions + 1] = { text = text, size = size, p = p } end,
+  setCursor = function(p) cursorX, cursorY = p.x, p.y; itemCursor = { x = p.x, y = p.y } end,
+  itemRectMax = function() return { x = itemCursor.x + 1, y = itemBottom } end,
+  textLineHeightWithSpacing = function() return 20 end,
+  text = function(s) textItems[#textItems + 1] = { text = s, x = cursorX, y = cursorY }; local sz = ui.measureText(s, -1); itemBottom = math.max(itemBottom, cursorY + sz.y); cursorY = cursorY + sz.y end,
+  textColored = function(s) textItems[#textItems + 1] = { text = s, x = cursorX, y = cursorY }; local sz = ui.measureText(s, -1); itemBottom = math.max(itemBottom, cursorY + sz.y); cursorY = cursorY + sz.y end,
+  textWrapped = function(s) textItems[#textItems + 1] = { text = s, x = cursorX, y = cursorY }; sliderEvents[#sliderEvents + 1] = 'wrapped'; wrapped[#wrapped + 1] = s end,
+  drawTextClipped = function() error('lateral widget must not use DirectWrite or clipped legacy text') end,
+  dwriteDrawText = function() error('lateral widget must not use DirectWrite or clipped legacy text') end,
   measureText = function(text, wrap)
     measurements[#measurements + 1] = { text = text, native = true, wrap = wrap }
-    return { x = #text * 9, y = 18 }
+    local maxChars, lines = 0, 0
+    for line in (text .. '\n'):gmatch('(.-)\n') do
+      local chars = #line
+      if wrap and wrap > 0 and chars * 9 > wrap then
+        local n = math.ceil(chars * 9 / wrap); lines = lines + n; maxChars = math.max(maxChars, math.floor(wrap / 9))
+      else lines = lines + 1; maxChars = math.max(maxChars, chars) end
+    end
+    return { x = maxChars * 9, y = math.max(1, lines) * 20 }
   end,
   measureDWriteText = function(text, size, wrap)
     measurements[#measurements + 1] = { text = text, size = size, wrap = wrap }
@@ -129,65 +143,181 @@ for _, loc in ipairs({ 'en', 'pt-BR', 'es' }) do
   end
 end
 
-local function drawPreview(w, yielding, overtaking)
-  width = w
-  rects, lines, captions, buttons = {}, {}, {}, {}
+local function drawPreview(w, yielding, overtaking, offsets, withoutWrappedHelper, sectionInset)
+  width = sectionInset and (w - sectionInset) or w
+  rects, lines, captions, buttons, textItems = {}, {}, {}, {}, {}
+  measurements = {}
+  local oldTextWrapped = ui.textWrapped
+  if withoutWrappedHelper then ui.textWrapped = nil end
+  cursorX, cursorY, itemBottom = sectionInset and 30 + sectionInset or 30, 50, 50
   yieldingStorage.handleYielding = yielding
   overtakingStorage.handleOvertaking = overtaking
-  Widget.draw({ defaultLateralOffset = -1, yieldingLateralOffset = 1, overtakingLateralOffset = 1 })
+  offsets = offsets or { -1, 1, 1 }
+  local storage = { defaultLateralOffset = offsets[1], yieldingLateralOffset = offsets[2], overtakingLateralOffset = offsets[3] }
+  local savedValues = { storage.defaultLateralOffset, storage.yieldingLateralOffset, storage.overtakingLateralOffset }
+  local savedFlags = { yieldingStorage.handleYielding, overtakingStorage.handleOvertaking }
+  Widget.draw(storage, sectionInset)
+  ui.textWrapped = oldTextWrapped
+  if sectionInset and w == 80 then
+    check(#rects == 0 and #lines == 0 and #textItems == 0 and cursorY == 50,
+      '80px Section safely skips diagram when symmetric insets leave less than minimum useful width')
+    return 0
+  end
   local card = rects[1]
-  if not card then
-    local longest = math.max(#localization.text('Default'), yielding and #localization.text('Yield') or 0,
-      overtaking and #localization.text('Overtake') or 0) * 8 + 8
-    check(w < math.max(26, longest), 'preview omission is only permitted below measured caption minimum at width ' .. w)
-    return
+  check(card ~= nil, 'panel remains readable at width ' .. w)
+  if sectionInset then
+    check(card.a.x==30+sectionInset and math.abs(card.a.x-30-sectionInset)<.01 and
+      math.abs((30+w)-card.b.x-sectionInset)<.01,
+      'simulated Section content inset yields equal external left/right margins')
+  else
+    check(card.a.x == 30 and math.abs((card.b.x-card.a.x)-w) < 0.01,
+      'panel spans exactly the available section width without escaping its inset')
   end
   check(card.b.x - card.a.x <= math.max(0, w), 'card width fits available width ' .. w)
-  check(#buttons == 1 and buttons[1].size.x <= math.max(0, w), 'reserved item width is clamped ' .. w)
-  if card.b.x > card.a.x then
-    check(card.b.y - card.a.y >= 100, 'card reserves positive height for track, markers, and captions')
-    local filledCount = 0
-    for _, r in ipairs(rects) do
-      if r.filled then
-        filledCount = filledCount + 1
-        check(r.a.x >= card.a.x and r.b.x <= card.b.x and r.a.y >= card.a.y and r.b.y <= card.b.y,
-          'complete filled geometry stays within card bounds')
-      end
+  local allText = ''
+  for _, item in ipairs(textItems) do
+    allText = allText .. item.text .. '\n'
+    local size = ui.measureText(item.text, -1)
+    check(item.x >= card.a.x and item.x + size.x <= card.b.x + 0.01, 'text horizontal bounds fit panel: ' .. item.text)
+    check(item.y >= card.a.y and item.y + size.y <= card.b.y + 0.01, 'text vertical bounds fit panel: ' .. item.text)
+    local found = false
+    for _, measurement in ipairs(measurements) do
+      if measurement.native == true and measurement.wrap == -1 and measurement.text == item.text then found = true; break end
     end
-    check(filledCount == 3 + (yielding and 1 or 0) + (overtaking and 1 or 0), 'default and enabled markers are present')
-    check(#lines >= 5, 'track markers/ticks geometry is emitted')
-    local imageCaptions = {}
-    local edgeLabels = { L = true, ['0'] = true, R = true }
-    local edgeCount = 0
-    local captionLabels = {
-      [localization.text('Default')] = true,
-      [localization.text('Yield')] = true,
-      [localization.text('Overtake')] = true,
-    }
-    for _, c in ipairs(captions) do
-      if c.p and captionLabels[c.text] then imageCaptions[#imageCaptions + 1] = c end
-      if c.p and edgeLabels[c.text] then
-        edgeCount = edgeCount + 1
-        check(c.p.x >= card.a.x and c.p.x + #c.text * 8 <= card.b.x + 1,
-          'simulated edge-label text bounds stay inside card: ' .. c.text)
-        check(c.p.y + 14 <= card.b.y + 1, 'simulated edge-label height fits reserved card: ' .. c.text)
-      end
-    end
-    check(edgeCount == 3, 'L/0/R edge labels are distinguished from captions')
-    check(#imageCaptions == 1 + (yielding and 1 or 0) + (overtaking and 1 or 0), 'caption conditionals match enabled controls')
-    -- Simulated font metrics (8 px per byte) make containment assertions explicit,
-    -- including translated/long captions; this does not model CSP text rendering.
-    for _, c in ipairs(imageCaptions) do
-      local estimatedWidth = #c.text * 8
-      check(c.p.x >= card.a.x and c.p.x + estimatedWidth <= card.b.x + 1,
-        'simulated caption text bounds stay inside card: ' .. c.text)
-      check(c.p.y + 14 <= card.b.y + 1, 'simulated caption height fits reserved card: ' .. c.text)
-    end
+    check(found, 'rendered text was measured with the same native-font string: ' .. item.text)
   end
+  check(card.b.y > card.a.y and cursorY >= card.b.y, 'background and item reservation contain all text')
+  if w == 360 then
+    check(card.b.y - card.a.y < 700,
+      'compact 360px mock layout stays below a generous 700px text-flow ceiling (not a CSP rendering guarantee)')
+  end
+  local searchable = allText:gsub('%s+', '')
+  local function hasText(source) return searchable:find(source:gsub('%s+', ''), 1, true) ~= nil end
+  check(hasText(localization.text('Choose where AI cars try to position themselves in each situation.')), 'instruction is visible')
+  check(hasText(localization.text('Configured targets, not live car positions.')), 'configured targets are distinguished from live positions')
+  check(hasText(localization.text('The maneuver depends on traffic and safety conditions.')), 'safety qualification is visible')
+  for _, row in ipairs({ 'Default', 'Yielding', 'Overtaking' }) do check(hasText(localization.text(row)), 'row label visible: ' .. row) end
+  check(not allText:find('racing line', 1, true), 'zero is not described as racing line')
+  for _, r in ipairs(rects) do
+    check(r.a.x >= card.a.x and r.b.x <= card.b.x and r.a.y >= card.a.y and r.b.y <= card.b.y,
+      'filled and outlined geometry remains within panel')
+  end
+  for _, line in ipairs(lines) do
+    local half = (line.thickness or 1) * 0.5
+    check(math.min(line.a.x, line.b.x) - half >= card.a.x and math.max(line.a.x, line.b.x) + half <= card.b.x and
+      math.min(line.a.y, line.b.y) - half >= card.a.y and math.max(line.a.y, line.b.y) + half <= card.b.y,
+      'line including stroke thickness remains within panel')
+  end
+  if w >= 300 then check(#lines >= 4, 'one shared rail and marker details are drawn')
+  else check(#lines == 0, 'very narrow panel uses the text-only fallback') end
+  check(#buttons == 0, 'diagram adds no interactive controls')
+  check(#measurements > 0, 'text layout emits native measurements')
+  for _, measurement in ipairs(measurements) do check(measurement.native == true, 'all active layout measurements use native metrics') end
+  if w >= 300 then
+    local rails, markers = {}, {}
+    for _, line in ipairs(lines) do
+      if line.b.x > line.a.x and math.abs(line.b.y - line.a.y) < 0.001 and line.thickness == 2 then rails[#rails + 1] = line end
+    end
+    for _, r in ipairs(rects) do
+      if r.b.x - r.a.x == 10 and r.b.y - r.a.y == 10 then markers[#markers + 1] = r end
+    end
+    check(#rails == 1 and #markers == 3, 'one horizontal 2px rail and three filled/outlined square marker bounds exist')
+    local expected = { storage.defaultLateralOffset, storage.yieldingLateralOffset, storage.overtakingLateralOffset }
+    for i = 1, 3 do
+      local expectedX = rails[1].a.x + (expected[i] + 1) * 0.5 * (rails[1].b.x - rails[1].a.x)
+      check(math.abs(markers[i].a.x + 5 - expectedX) < 0.01, 'marker maps to configured target ' .. i)
+      check(markers[i].color ~= nil, 'marker carries its semantic color ' .. i)
+      check(markers[i].a.y >= rails[1].a.y - 17 and markers[i].b.y <= rails[1].a.y + 17,
+        'marker fits within reserved 40px graph height ' .. i)
+    end
+    if offsets[1] == -1 and offsets[2] == 0 and offsets[3] == 1 then
+      check(math.abs(markers[1].a.x + 5 - rails[1].a.x) < .01 and math.abs(markers[3].a.x + 5 - rails[1].b.x) < .01,
+        'real axis endpoints represent configured -1 and +1 targets')
+    end
+    if offsets[1] == .020 and offsets[2] == .021 and offsets[3] == .022 then
+      check(markers[1].a.x < markers[2].a.x and markers[2].a.x < markers[3].a.x and
+        markers[3].a.x - markers[1].a.x < (rails[1].b.x - rails[1].a.x) * .01,
+        'near-equal .020/.021/.022 targets retain their ordered, closely spaced positions')
+    end
+    check(math.abs(markers[1].a.y - markers[2].a.y) >= 10 and math.abs(markers[2].a.y - markers[3].a.y) >= 10,
+      'vertical marker lanes have at least 10px separation')
+    local legendPositions = {}
+    for _, item in ipairs(textItems) do
+      if item.text:find(' · ', 1, true) and item.text:match('%d%.%d%d%d') then
+        legendPositions[#legendPositions + 1] = item
+      end
+      if w >= 300 then
+        local size = ui.measureText(item.text, -1)
+        for _, marker in ipairs(markers) do
+          check(item.x + size.x <= marker.a.x or item.x >= marker.b.x or
+            item.y + size.y <= marker.a.y or item.y >= marker.b.y,
+            'native text bounds do not intersect marker geometry: ' .. item.text)
+        end
+        for _, line in ipairs(lines) do
+          local half = (line.thickness or 1) * .5
+          check(item.x + size.x <= math.min(line.a.x, line.b.x) - half or
+            item.x >= math.max(line.a.x, line.b.x) + half or
+            item.y + size.y <= math.min(line.a.y, line.b.y) - half or
+            item.y >= math.max(line.a.y, line.b.y) + half,
+            'native text bounds do not intersect stroked line geometry: ' .. item.text)
+        end
+      end
+    end
+    check(#legendPositions == 3, 'three row legends are present')
+    for _, marker in ipairs(markers) do check(marker.b.y < legendPositions[1].y, 'marker bounds do not intersect legend text') end
+    check(markers[1].rounding == 0, 'default square marker uses zero rounding')
+    local legendSquare = false
+    for _, r in ipairs(rects) do
+      if r.color == markers[1].color and r.b.x - r.a.x == 6 and r.b.y - r.a.y == 6 and r.rounding == 0 then legendSquare = true end
+    end
+    check(legendSquare, 'default legend repeats the graphic square form')
+    check(markers[2].color ~= markers[1].color and markers[3].color ~= markers[1].color and markers[2].color ~= markers[3].color,
+      'marker colors distinguish semantic rows')
+    local function diagonal(color)
+      for _, line in ipairs(lines) do
+        if line.color == color and line.a.x ~= line.b.x and line.a.y ~= line.b.y then return true end
+      end
+      return false
+    end
+    check(diagonal(markers[2].color), 'yielding diamond has diagonal strokes independently of its color')
+    check(diagonal(markers[3].color), 'overtaking X has diagonal strokes independently of its color')
+    for legendIndex = 2, 3 do
+      local strokes = 0
+      for _, line in ipairs(lines) do
+        if line.color == markers[legendIndex].color and line.a.x ~= line.b.x and line.a.y ~= line.b.y and
+          math.min(line.a.y, line.b.y) >= legendPositions[legendIndex].y and
+          math.max(line.a.y, line.b.y) <= legendPositions[legendIndex].y + 20 then strokes = strokes + 1 end
+      end
+      check(strokes >= (legendIndex == 2 and 4 or 2),
+        legendIndex == 2 and 'yielding legend repeats diamond form' or 'overtaking legend repeats X form')
+    end
+    if offsets[1] == offsets[2] and offsets[2] == offsets[3] then
+      check(math.abs(markers[1].a.x - markers[2].a.x) < 0.01 and math.abs(markers[2].a.x - markers[3].a.x) < 0.01,
+        'equal configured values share the same horizontal target')
+    end
+    check(storage.defaultLateralOffset == savedValues[1] and storage.yieldingLateralOffset == savedValues[2] and
+      storage.overtakingLateralOffset == savedValues[3], 'drawing preserves all configured values')
+    check(yieldingStorage.handleYielding == savedFlags[1] and overtakingStorage.handleOvertaking == savedFlags[2], 'drawing preserves both enabled flags')
+    check((markers[2].filled == true) == yielding and (markers[3].filled == true) == overtaking,
+      'enabled/disabled state is represented by filled versus outlined markers')
+  end
+  return card.b.y-card.a.y
 end
 for _, loc in ipairs({ 'en', 'pt-BR', 'es' }) do
   check(localization.setLocale(loc), 'preview uses real locale ' .. loc)
-  for _, w in ipairs({ 480, 700, 900, 1024, 1200, 120, 80, 50, 24, 0 }) do drawPreview(w, true, true) end
+  local heightAt360
+  for _, w in ipairs({ 80, 360, 480, 700, 900, 1200, 1760 }) do
+    local height=drawPreview(w, true, true, { -1, 0, 1 })
+    if w==360 then heightAt360=height end
+    if w>360 then check(height<=heightAt360, 'wider full-width panel does not increase wrapped text/panel height ('..loc..', '..w..'px)') end
+  end
+  for _, sectionW in ipairs({80,360,480,900}) do drawPreview(sectionW,true,true,{-1,0,1},false,Theme.spacing.md) end
 end
-drawPreview(700, false, false)
+drawPreview(700, false, false, { 0.25, 0.25, 0.25 })
+drawPreview(700, true, true, { .020, .021, .022 })
+drawPreview(700, true, true, { 0, 0, 0 })
+for _, yielding in ipairs({ false, true }) do for _, overtaking in ipairs({ false, true }) do
+  drawPreview(480, yielding, overtaking, { -1, 0, 1 })
+end end
+drawPreview(80, false, false, { -1, 0, 1 }, true)
 print('lateral runtime contract checks passed (mocked CSP geometry; no rendering validation)')

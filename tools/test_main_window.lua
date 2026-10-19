@@ -27,7 +27,7 @@ local state = {
   measureRequests = {},
   cursor = vec2(8, 8), scroll = vec2(0, 0), windowSize = vec2(1024, 768), windowPos = vec2(0, 0),
   preserveCursorForNextDraw = false,
-  pendingButton = nil, pendingIconButton = nil, pendingCheckbox = nil, pendingCombo = {},
+  pendingButton = nil, pendingIconButton = nil, pendingCheckbox = nil, pendingCombo = {}, throwCombo = nil,
   iconRows = {}, idStack = {}, throwIconButton = false,
   windowOpenCalls = {},
   comboRows = {}, buttonRows = {}, checkboxRows = {}, wrappedRows = {}, text = {}, wrapped = {}, gradients = {}, measuredTexts = {},
@@ -167,6 +167,7 @@ _G.ui = {
     event('dwrite', text)
   end,
   combo = function(label, index, _, options)
+    if state.throwCombo and label:find(state.throwCombo, 1, true) then error('injected combo failure: ' .. label) end
     state.comboRows[#state.comboRows + 1] = { label = label, index = index, options = options, disabled = state.disabledDepth > 0, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y, width = state.itemWidth, height = 32 }
     event('combo', label)
     advanceMockItem(32)
@@ -773,7 +774,36 @@ state.availableWidth = expectedTabWidth - 1
 draw(function() return true end, false, nil)
 check(findCombo('main.tabs') ~= nil,
   'navigation switches to compact combo one pixel below measured widths plus gaps')
+local measuredNavigationNatively = false
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == 'Navigation' and request.font == ui.Font.Title and request.wrap == -1 then measuredNavigationNatively = true end
+end
+local navigationMeasuredByDWrite = false
+for _, request in ipairs(state.measureRequests) do if request.text == 'Navigation' then navigationMeasuredByDWrite = true end end
+check(measuredNavigationNatively and not navigationMeasuredByDWrite,
+  'compact navigation label width uses the same native Title font as its rendered text')
+state.availableWidth = 400
+draw(function() return true end, false, nil)
+local measuredWidthNavigation = findCombo('main.tabs')
+local navigationWidthFromNative = nil
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == 'Navigation' and request.wrap == -1 then navigationWidthFromNative = request.width end
+end
+check(measuredWidthNavigation and navigationWidthFromNative and
+  measuredWidthNavigation.width == math.min(350, math.max(0, 400 - navigationWidthFromNative - Theme.spacing.sm)),
+  'compact navigation combo width subtracts the native-font visible-label width')
+state.availableWidth = expectedTabWidth - 1
+state.throwCombo = 'main.tabs'
+local navComboOK, navComboError = pcall(draw, function() return true end, false, nil)
+state.throwCombo = nil
+check(not navComboOK and tostring(navComboError):find('injected combo failure:', 1, true) and state.widthDepth == 0,
+  'compact navigation combo error is rethrown after item-width cleanup (ok=' .. tostring(navComboOK) .. ', depth=' .. tostring(state.widthDepth) .. ', error=' .. tostring(navComboError) .. ')')
 state.availableWidth = 1200
+state.throwCombo = 'settings.language'
+local languageComboOK, languageComboError = pcall(draw, function() return true end, false, nil)
+state.throwCombo = nil
+check(not languageComboOK and tostring(languageComboError):find('injected combo failure:', 1, true) and state.widthDepth == 0,
+  'language combo error is rethrown after item-width cleanup')
 
 -- Style.windowBegin pins the fill to the viewport with nonzero scroll and window position.
 state.cursor, state.scroll = vec2(-29, -83), vec2(37, 91)

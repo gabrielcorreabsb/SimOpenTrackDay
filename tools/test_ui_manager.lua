@@ -40,8 +40,12 @@ local catalogs = {
   es = require('lib/i18n/es'),
 }
 local ui
+local mainStorage = { defaultLateralOffset = 0, yieldingLateralOffset = -0.4, overtakingLateralOffset = 0.4 }
+local yieldingStorage, overtakingStorage = { handleYielding = true }, { handleOvertaking = true }
+local columnsCalls, nextColumnCalls = 0, 0
+local yieldingSide, overtakingSide = 2, 1
 ui = {
-  columns = function() end, setColumnWidth = function() end, nextColumn = function() end,
+  columns = function() columnsCalls = columnsCalls + 1 end, setColumnWidth = function() end, nextColumn = function() nextColumnCalls = nextColumnCalls + 1 end,
   newLine = function(lines) cursor.x = 0; cursor.y = cursor.y + (lines or 1) * 18 end,
   separator = function() separatorCount = separatorCount + 1; advanceItem(currentWidth, 1) end,
   text = function(text)
@@ -84,7 +88,7 @@ ui = {
     end
     return index, false
   end,
-  textColored = function() end,
+  textColored = function(text) renderedText[#renderedText + 1] = text end,
   measureText = function(text) return { x = #text * 7, y = 18 } end,
   getCursor = function() return { x = cursor.x, y = cursor.y } end,
   itemRectMax = function() return lastItem and { x = lastItem.max.x, y = lastItem.max.y } or { x = cursor.x, y = cursor.y } end,
@@ -93,6 +97,8 @@ ui = {
     barColors[#barColors + 1] = color
     barRects[#barRects + 1] = { min = min, max = max, color = color }
   end,
+  drawRect = function(min, max) barRects[#barRects + 1] = { min = min, max = max, outline = true } end,
+  drawLine = function(a, b, color, thickness) barRects[#barRects + 1] = { min = a, max = b, color = color, thickness = thickness or 1, line = true } end,
   pushStyleColor = function(index, color) stylePushes[#stylePushes + 1] = { index = index, color = color } end,
   popStyleColor = function() stylePopCount = stylePopCount + 1 end,
   textLineHeightWithSpacing = function() return 18 end,
@@ -128,9 +134,9 @@ _G.ac = {
   setWindowOpen = function() end, isWindowOpen = function() return false end,
 }
 _G.StorageManager = {
-  getStorage = function() return {} end,
-  getStorage_Yielding = function() return {} end,
-  getStorage_Overtaking = function() return {} end,
+  getStorage = function() return mainStorage end,
+  getStorage_Yielding = function() return yieldingStorage end,
+  getStorage_Overtaking = function() return overtakingStorage end,
   getStorage_Debugging = function()
     debugGetterCalls = debugGetterCalls + 1
     error('UIManager must not read legacy debug settings')
@@ -138,12 +144,22 @@ _G.StorageManager = {
 }
 _G.RaceTrackManager = {
   getDefaultDrivingSide = function() return 1 end,
-  getOvertakingSide = function() return 1 end,
-  getYieldingSide = function() return 2 end,
+  getOvertakingSide = function() return overtakingSide end,
+  getYieldingSide = function() return yieldingSide end,
   TrackSideStrings = { [1] = 'Left', [2] = 'Right' },
 }
 _G.ColorManager = { RGBM_Colors = { Violet = {}, Yellow = {}, DarkGray = {}, Red = {}, Green = {} } }
-_G.UILateralOffsetsImageWidget = { draw = function() end }
+package.loaded.Localization = {
+  text = function(source, ...)
+    local translated = catalogs[activeLocale][source] or source
+    if select('#', ...) > 0 then return string.format(translated, ...) end
+    return translated
+  end,
+  label = function(text, id) return text .. '###' .. id end,
+}
+_G.rgbm = function() return {} end
+_G.vec2 = function(x, y) return { x = x, y = y } end
+_G.UILateralOffsetsImageWidget = require('UILateralOffsetsImageWidget')
 _G.CarStateMachine = {
   CarStateTypeStrings = stateNames,
   CarStateType = {
@@ -180,14 +196,6 @@ _G.UIOperations = {}
 _G.Constants = { IS_ONLINE = false }
 _G.rgbm = function() return {} end
 _G.vec2 = function(x, y) return { x = x, y = y } end
-package.loaded.Localization = {
-  text = function(source, ...)
-    local translated = catalogs[activeLocale][source] or source
-    if select('#', ...) > 0 then return string.format(translated, ...) end
-    return translated
-  end,
-  label = function(text, id) return text .. '###' .. id end,
-}
 package.loaded.UIManager = nil
 local manager = require('UIManager')
 
@@ -535,5 +543,33 @@ check(legacyDebugStorage.drawCarList and legacyDebugStorage.debugShowCarStateOve
   'legacy debug flags can remain enabled independently of the UI')
 check(debugGetterCalls == 0, 'UIManager never calls the debug-storage getter')
 check(separatorCount > 0, 'car list section separator remains present')
+
+activeLocale, currentWidth = 'pt-BR', 900
+resetDraw()
+columnsCalls, nextColumnCalls = 0, 0
+yieldingSide, overtakingSide = 1, 1
+local sectionInset = require('lib/uilib/Theme').spacing.md
+cursor = { x = sectionInset, y = 50 } -- Section callback origin; availableSpaceX is width minus cursor.x.
+manager.drawMainWindowLateralOffsetsSection()
+check(columnsCalls == 0 and nextColumnCalls == 0,
+  'lateral diagram integration does not create or advance an empty column')
+local railCount = 0
+for _, item in ipairs(barRects) do
+  if item.line and item.max.x > item.min.x and math.abs(item.max.y - item.min.y) < 0.001 and item.thickness == 2 then railCount = railCount + 1 end
+end
+check(railCount == 1, 'UIManager renders the real horizontal shared-axis widget in place')
+local sectionCard = barRects[1]
+check(sectionCard and sectionCard.min.x == sectionInset and
+  math.abs(sectionCard.min.x - sectionInset) < 0.01 and
+  math.abs((currentWidth - sectionCard.max.x) - sectionInset) < 0.01,
+  'UIManager passes the Section right inset so the widget has equal outer margins')
+check(renderedText[#renderedText] == catalogs['pt-BR']['Adjust driving lane offsets in Behavior.'],
+  'behavior adjustment guidance remains after the integrated diagram')
+local warningSeen = false
+for _, text in ipairs(renderedText) do
+  if text == 'Yielding side and overtaking side are the same!' then warningSeen = true end
+end
+check(warningSeen, 'equal-side warning remains visible after diagram integration')
+check(nextColumnCalls == 0, 'warning and guidance remain in the same layout flow')
 
 print(string.format('UIManager tests passed: %d checks.', checks))
