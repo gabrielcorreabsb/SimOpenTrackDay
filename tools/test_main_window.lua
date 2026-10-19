@@ -27,7 +27,8 @@ local state = {
   measureRequests = {},
   cursor = vec2(8, 8), scroll = vec2(0, 0), windowSize = vec2(1024, 768), windowPos = vec2(0, 0),
   preserveCursorForNextDraw = false,
-  pendingButton = nil, pendingCheckbox = nil, pendingCombo = {},
+  pendingButton = nil, pendingIconButton = nil, pendingCheckbox = nil, pendingCombo = {},
+  iconRows = {}, idStack = {}, throwIconButton = false,
   windowOpenCalls = {},
   comboRows = {}, buttonRows = {}, checkboxRows = {}, wrappedRows = {}, text = {}, wrapped = {}, gradients = {}, measuredTexts = {},
   dwriteRows = {}, columnLayouts = {}, columnWidths = {},
@@ -35,6 +36,7 @@ local state = {
   shouldRunCalls = 0, carListCalls = 0, notRunningCalls = 0, errors = 0,
   clipDepth = 0, clipRects = {}, nativeMeasureRequests = {}, tooltips = {}, hovered = false,
   groupDepth = 0, throwBackgroundFill = false, throwLaneContent = false,
+  throwContextText = false,
   lastItemMaxY = 0, separatorRows = {},
 }
 local function event(kind, ...)
@@ -43,12 +45,16 @@ end
 local function wrappedLineCount(text, width)
   local lines = 0
   width = math.max(1, width or state.availableWidth)
+  local charWidth = state.fontStack[#state.fontStack] == 'title-font' and 12 or 10
   for line in (text .. '\n'):gmatch('(.-)\n') do
     local explicitLines = 1
     for _ in line:gmatch('\n') do explicitLines = explicitLines + 1 end
-    lines = lines + math.max(explicitLines, math.ceil(#line * 12 / width))
+    lines = lines + math.max(explicitLines, math.ceil(#line * charWidth / width))
   end
   return math.max(1, lines)
+end
+local function mockFontLineHeight()
+  return state.fontStack[#state.fontStack] == 'title-font' and 24 or 18
 end
 local function advanceMockItem(height)
   state.lastItemMaxY = state.cursor.y + height
@@ -56,6 +62,7 @@ local function advanceMockItem(height)
 end
 local function clearFrame()
   state.events, state.children, state.comboRows, state.buttonRows = {}, {}, {}, {}
+  state.iconRows, state.idStack = {}, {}
   state.childFontStacks = {}
   state.text, state.wrapped, state.wrappedFonts, state.gradients = {}, {}, {}, {}
   state.checkboxRows, state.wrappedRows = {}, {}
@@ -76,6 +83,7 @@ local throwFooterText = false
 _G.ui = {
   ComboFlags = { None = 0 }, SelectableFlags = { None = 0 },
   Font = { Title = 'title-font', Main = 'main-font' },
+  Icons = { Cancel = 'cancel-icon' },
   StyleColor = styleColor,
   pushStyleColor = function(index, value)
     state.styles[#state.styles + 1] = { index = index, value = value }
@@ -116,25 +124,36 @@ _G.ui = {
     state.fontDepth = state.dwriteFontDepth + state.nativeFontDepth
     event('font-', popped)
   end,
+  pushID = function(value)
+    state.idStack[#state.idStack + 1] = value
+    event('id+', value)
+  end,
+  popID = function()
+    assert(#state.idStack > 0, 'ID stack underflow')
+    local value = state.idStack[#state.idStack]
+    state.idStack[#state.idStack] = nil
+    event('id-', value)
+  end,
   pushItemWidth = function(width) state.widthDepth = state.widthDepth + 1; state.itemWidth = width; event('width+', width) end,
   popItemWidth = function() assert(state.widthDepth > 0); state.widthDepth = state.widthDepth - 1; event('width-') end,
   pushDisabled = function() state.disabledDepth = state.disabledDepth + 1 end,
   popDisabled = function() assert(state.disabledDepth > 0); state.disabledDepth = state.disabledDepth - 1 end,
   text = function(text) state.text[#state.text + 1] = text; event('text', text) end,
   textWrapped = function(text)
-    if throwFooterText and state.fontStack[#state.fontStack] == ui.Font.Main then
+    if state.throwContextText and text:find('Mock Track', 1, true) then error('injected context text failure') end
+    if throwFooterText and state.fontStack[#state.fontStack] == ui.Font.Main and text:find('SnakeD', 1, true) then
       error('injected footer text failure')
     end
     state.wrapped[#state.wrapped + 1] = text
     state.wrappedFonts[#state.wrappedFonts + 1] = state.fontStack[#state.fontStack]
-    local row = { text = text, x = state.cursor.x, y = state.cursor.y }
+    local row = { text = text, x = state.cursor.x, y = state.cursor.y, font = state.fontStack[#state.fontStack] }
     state.wrappedRows[#state.wrappedRows + 1] = row
     event('wrapped', text)
-    row.height = wrappedLineCount(text, math.max(1, state.availableWidth - math.max(0, state.cursor.x - 8))) * 20
+    row.height = wrappedLineCount(text, math.max(1, state.availableWidth - math.max(0, state.cursor.x - 8))) * mockFontLineHeight()
     advanceMockItem(row.height)
     row.bottom = state.lastItemMaxY
   end,
-  textColored = function(text) state.text[#state.text + 1] = text; state.coloredRows = state.coloredRows or {}; state.coloredRows[#state.coloredRows + 1] = { text = text, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y }; event('colored', text); advanceMockItem(20) end,
+  textColored = function(text) state.text[#state.text + 1] = text; state.coloredRows = state.coloredRows or {}; state.coloredRows[#state.coloredRows + 1] = { text = text, font = state.fontStack[#state.fontStack], x = state.cursor.x, y = state.cursor.y }; event('colored', text); advanceMockItem(mockFontLineHeight()) end,
   beginGroup = function() state.groupDepth = state.groupDepth + 1; event('group+') end,
   endGroup = function()
     assert(state.groupDepth > 0, 'group stack underflow')
@@ -164,8 +183,8 @@ _G.ui = {
     state.checkboxRows[#state.checkboxRows + 1] = { label = label, x = state.cursor.x, y = state.cursor.y }
     event('checkbox', label)
     local lines = select(2, label:gsub('\n', '\n')) + 1
-    state.checkboxRows[#state.checkboxRows].height = lines * 20
-    advanceMockItem(lines * 20)
+    state.checkboxRows[#state.checkboxRows].height = lines * mockFontLineHeight()
+    advanceMockItem(lines * mockFontLineHeight())
     state.checkboxRows[#state.checkboxRows].bottom = state.lastItemMaxY
     if state.pendingCheckbox == label then state.pendingCheckbox = nil; return true end
     return false
@@ -175,6 +194,18 @@ _G.ui = {
     event('button', label)
     state.lastButton = label
     if state.pendingButton == label then state.pendingButton = nil; return true end
+    return false
+  end,
+  iconButton = function(iconID, size, color, bgColor, framePadding)
+    if state.throwIconButton then error('injected iconButton failure') end
+    local row = { icon = iconID, id = state.idStack[#state.idStack], width = size.x, height = size.y,
+      x = state.cursor.x, y = state.cursor.y, font = state.fontStack[#state.fontStack],
+      color = color, bgColor = bgColor, framePadding = framePadding }
+    state.iconRows[#state.iconRows + 1] = row
+    event('iconButton', row.id)
+    advanceMockItem(size.y)
+    row.bottom = state.lastItemMaxY
+    if state.pendingIconButton == row.id then state.pendingIconButton = nil; return true end
     return false
   end,
   separator = function() state.separatorRows[#state.separatorRows + 1] = { y = state.cursor.y }; event('separator', state.cursor.y) end,
@@ -217,11 +248,13 @@ _G.ui = {
     return vec2(#text * 8, 14)
   end,
   measureText = function(text, wrap)
-    local height = wrap and wrap > 0 and wrappedLineCount(text, wrap) * 20 or 20
+    local charWidth, lineHeight = state.fontStack[#state.fontStack] == 'title-font' and 12 or 10, mockFontLineHeight()
+    local height = wrap and wrap > 0 and wrappedLineCount(text, wrap) * lineHeight or lineHeight
+    local width = #text * charWidth
     state.nativeMeasureRequests[#state.nativeMeasureRequests + 1] = {
-      text = text, wrap = wrap, font = state.fontStack[#state.fontStack], width = #text * 12, height = height,
+      text = text, wrap = wrap, font = state.fontStack[#state.fontStack], width = width, height = height,
     }
-    return vec2(#text * 12, height)
+    return vec2(width, height)
   end,
   itemHovered = function() return state.hovered end,
   setTooltip = function(text) state.tooltips[#state.tooltips + 1] = text end,
@@ -417,23 +450,27 @@ for _, row in ipairs(state.dwriteRows) do
 end
 check(nativeLaneMeasure and not dwriteLaneTitle,
   'Section title dimensions and rendering use the same native Title font, not DirectWrite')
-local closeID = Localization.label('Close', 'main.window.close')
-local closeButton
-for _, row in ipairs(state.buttonRows) do if row.label == closeID then closeButton = row end end
-check(closeButton and closeButton.width > 0 and closeButton.width <= state.availableWidth and
-  closeButton.x + closeButton.width == 8 + state.availableWidth,
-  'visible header close control keeps its stable ID and fits the main content width')
-check(#state.gradients >= 2 and findEvent('clip+') < findEvent('fill') and findEvent('fill') < findEvent('clip-'),
+local closeIcon
+for _, row in ipairs(state.iconRows) do if row.id == 'main.window.close' then closeIcon = row end end
+check(closeIcon and closeIcon.icon == ui.Icons.Cancel and closeIcon.width == Theme.layout.closeButtonSize and
+  closeIcon.height == Theme.layout.closeButtonSize and closeIcon.framePadding == -1 and
+  closeIcon.x + closeIcon.width == 8 + state.availableWidth and
+  closeIcon.y + closeIcon.height / 2 == 8 + Theme.layout.headerTitleRowHeight / 2 and
+  Theme.layout.closeButtonSize < Theme.layout.tabHeight,
+  'native Cancel target is slightly smaller than tabs and centered in the unchanged title row')
+check(#state.idStack == 0, 'icon close ID scope is balanced after drawing')
+check(#state.gradients == 0 and findEvent('clip+') < findEvent('fill') and findEvent('fill') < findEvent('clip-'),
   'background fill is clipped to the viewport and restores the prior clip before header drawing')
 check(state.clipRects[1] and state.clipRects[1].p1.x == 0 and state.clipRects[1].p1.y == 0 and
   state.clipRects[1].p2.x == state.windowSize.x and state.clipRects[1].p2.y == state.windowSize.y and
   state.clipRects[1].intersect == false,
   'background fill uses a non-intersecting clip limited to the window viewport')
-check(state.gradients[1][3] == Theme.colors.headerGradientTopLeft and
-  state.gradients[1][4] == Theme.colors.headerGradientTopRight and
-  state.gradients[1][5] == Theme.colors.headerGradientBottomRight and
-  state.gradients[1][6] == Theme.colors.headerGradientBottomLeft,
-  'header uses static Theme gradient colors through drawRectFilledMultiColor')
+local surfaceFillCount = 0
+for _, item in ipairs(state.events) do
+  if item[1] == 'fill' and item[4] == Theme.colors.surface then surfaceFillCount = surfaceFillCount + 1 end
+end
+check(surfaceFillCount >= 2 and #state.gradients == 0,
+  'main header and Section use the same flat surface fill without decorative gradients')
 local selectedTabUsesWhiteText = false
 for _, push in ipairs(state.stylePushes) do
   if push.index == styleColor.Text and push.value == Theme.colors.white then selectedTabUsesWhiteText = true end
@@ -477,9 +514,9 @@ for _, font in ipairs(state.fontPushes) do
   if font == ui.Font.Main then usedMainFont = true end
 end
 check(usedTitleFont and usedMainFont, 'rendered header/navigation and controls use explicit Title and Main font roles')
-check(state.checkboxFonts['Enabled###settings.app.enabled'] == ui.Font.Title and
-  findCombo('settings.language').font == ui.Font.Title and state.contentCalls[1].font == ui.Font.Title,
-  'enabled, language, and settings content controls use Title font scope')
+check(state.checkboxFonts['Enabled###settings.app.enabled'] == ui.Font.Main and
+  findCombo('settings.language').font == ui.Font.Main and state.contentCalls[1].font == ui.Font.Title,
+  'header controls use Main while existing settings content retains the Title scope')
 check(state.wrappedFonts[#state.wrappedFonts] == ui.Font.Main,
   'footer credit text is rendered under Main font scope')
 local titleNavButtons = 0
@@ -496,6 +533,23 @@ for _, row in ipairs(state.coloredRows or {}) do
   if row.text == 'SimOpenTrackDay' and row.font == ui.Font.Title then titleHeader = true end
 end
 check(titleHeader, 'main application title renders under the native Title font without DirectWrite')
+local titleMeasure, contextMeasure = false, false
+local titleMeasureHeight, contextMeasureHeight
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == 'SimOpenTrackDay' and request.font == ui.Font.Title then titleMeasure, titleMeasureHeight = true, request.height end
+  if request.text:find('Mock Track', 1, true) and request.font == ui.Font.Main then contextMeasure, contextMeasureHeight = true, request.height end
+end
+check(titleMeasure and contextMeasure and titleMeasureHeight > contextMeasureHeight,
+  'header title and wrapped context are measured with distinct Title and Main native font roles')
+local contextRow
+for _, row in ipairs(state.wrappedRows) do if row.text:find('Mock Track', 1, true) then contextRow = row end end
+check(contextRow and contextRow.font == ui.Font.Main,
+  'track and session context renders in the native Main font')
+local mutedContextStyle = false
+for _, push in ipairs(state.stylePushes) do
+  if push.index == styleColor.Text and push.value == Theme.colors.muted then mutedContextStyle = true end
+end
+check(mutedContextStyle, 'secondary track/session context uses the shared muted text color')
 check(not pcall(ui.popFont), 'native font mock rejects underflow')
 
 -- Exercise the real word-wrapping Toggle while retaining its native checkbox ID.
@@ -610,32 +664,37 @@ verifyHeaderVerticalBounds(true)
 state.availableWidth = 1200
 UIState.activeTab = 'Behavior'
 storage.enabled = true
-state.pendingButton = Localization.label('Close', 'main.window.close')
+state.pendingIconButton = 'main.window.close'
+state.hovered = true
 local windowCallsBeforeClose = #state.windowOpenCalls
 draw(function() return true end, false, nil)
 check(#state.windowOpenCalls == windowCallsBeforeClose + 1 and
   state.windowOpenCalls[#state.windowOpenCalls].id == 'mainWindow' and
   state.windowOpenCalls[#state.windowOpenCalls].open == false,
-  'header close button requests mainWindow closed through ac.setWindowOpen')
+  'native icon close requests mainWindow closed through ac.setWindowOpen')
+check(findEvent('iconButton', 'main.window.close') and #state.idStack == 0 and
+  state.tooltips[#state.tooltips] == Localization.text('Close'),
+  'native icon close retains its stable ID scope and localized tooltip')
 check(storage.enabled and UIState.activeTab == 'Behavior',
   'closing the window leaves app enablement and active tab unchanged')
 
 state.windowSize = vec2(480, 768)
 state.availableWidth = 464
 draw(function() return true end, false, nil)
-local normalCloseButton, normalCloseEvent
-for _, row in ipairs(state.buttonRows) do
-  if row.label == Localization.label('Close', 'main.window.close') then normalCloseButton = row end
-end
-normalCloseEvent = findEvent('button', Localization.label('Close', 'main.window.close'))
+local normalCloseButton
+for _, row in ipairs(state.iconRows) do if row.id == 'main.window.close' then normalCloseButton = row end end
 local wordmarkRow
 for _, row in ipairs(state.coloredRows or {}) do if row.text == 'SimOpenTrackDay' then wordmarkRow = row end end
+local wordmarkWidth
+for _, request in ipairs(state.nativeMeasureRequests) do
+  if request.text == 'SimOpenTrackDay' and request.font == ui.Font.Title then wordmarkWidth = request.width end
+end
 check(normalCloseButton and normalCloseButton.width <= 464 and
   normalCloseButton.x + normalCloseButton.width == state.windowSize.x - Theme.layout.windowInset and
-  normalCloseButton.y == Theme.layout.windowInset and wordmarkRow and
+  normalCloseButton.y + normalCloseButton.height / 2 == Theme.layout.windowInset + Theme.layout.headerTitleRowHeight / 2 and wordmarkRow and
   wordmarkRow.x == Theme.layout.windowInset and
-  wordmarkRow.x + ui.measureText('SimOpenTrackDay', -1).x + Theme.spacing.sm <= normalCloseButton.x,
-  '480 px header aligns native-font brand and Close to the same inset without overlap')
+  wordmarkWidth and wordmarkRow.x + wordmarkWidth + Theme.spacing.sm <= normalCloseButton.x,
+  '480 px header aligns native Title brand and Cancel icon without overlap')
 
 -- At narrow content widths, hide branding that cannot fit beside the close
 -- control instead of allowing the rectangles to overlap.
@@ -644,50 +703,34 @@ state.availableWidth = 64
 UIState.activeTab = 'Overview'
 draw(function() return true end, false, nil)
 local narrowClose, narrowBrand
-for index, item in ipairs(state.events) do
+for _, item in ipairs(state.events) do
   if item[1] == 'colored' and item[2] == 'SimOpenTrackDay' then narrowBrand = true end
 end
-for _, row in ipairs(state.buttonRows) do
-  if row.label:match('###(.*)$') == 'main.window.close' then narrowClose = row end
-end
+for _, row in ipairs(state.iconRows) do if row.id == 'main.window.close' then narrowClose = row end end
 check(narrowClose and narrowClose.width <= 64 and
   narrowClose.x >= Theme.layout.windowInset and
   narrowClose.x + narrowClose.width <= state.windowSize.x - Theme.layout.windowInset and
   not narrowBrand,
-  '80 px viewport prioritizes the accessible Close control when brand cannot fit')
+  '80 px viewport prioritizes the native Cancel icon when brand cannot fit')
 
 for _, locale in ipairs({ 'en', 'pt-BR', 'es' }) do
   Localization.setLocale(locale)
   state.windowSize, state.availableWidth = vec2(480, 768), 464
+  state.hovered = true
   draw(function() return true end, false, nil)
   local fullClose
-  for _, row in ipairs(state.buttonRows) do
-    if row.label:match('###(.*)$') == 'main.window.close' then fullClose = row end
-  end
-  local nativeCloseMeasure
-  for _, request in ipairs(state.nativeMeasureRequests) do
-    if request.text == Localization.text('Close') then nativeCloseMeasure = request end
-  end
-  local fullVisible, fullID
-  if fullClose then fullVisible, fullID = fullClose.label:match('^(.-)###(.*)$') end
-  check(fullClose and fullVisible == Localization.text('Close') and fullID == 'main.window.close' and
-    nativeCloseMeasure and nativeCloseMeasure.font == ui.Font.Title and
-    fullClose.width == nativeCloseMeasure.width + Theme.spacing.md,
-    string.format('full close label uses current native font measurement and stable ID in %s', locale))
-  local dwriteMeasuredClose = false
-  for _, text in ipairs(state.measureRequests) do if text.text == Localization.text('Close') then dwriteMeasuredClose = true end end
-  check(not dwriteMeasuredClose, 'close label width is not measured with the DirectWrite font')
+  for _, row in ipairs(state.iconRows) do if row.id == 'main.window.close' then fullClose = row end end
+  check(fullClose and fullClose.icon == ui.Icons.Cancel and fullClose.width == Theme.layout.closeButtonSize and
+    state.tooltips[#state.tooltips] == Localization.text('Close'),
+    string.format('native Cancel icon and localized Close tooltip remain available in %s', locale))
 
   state.windowSize, state.availableWidth, state.hovered = vec2(80, 768), 64, true
   draw(function() return true end, false, nil)
   local compactClose
-  for _, row in ipairs(state.buttonRows) do
-    if row.label:match('###(.*)$') == 'main.window.close' then compactClose = row end
-  end
-  check(compactClose and compactClose.label == 'X###main.window.close' and
-    compactClose.width == ui.measureText('X', -1).x + Theme.spacing.md and compactClose.width <= 64 and
+  for _, row in ipairs(state.iconRows) do if row.id == 'main.window.close' then compactClose = row end end
+  check(compactClose and compactClose.icon == ui.Icons.Cancel and compactClose.width == Theme.layout.closeButtonSize and compactClose.width <= 64 and
     state.tooltips[#state.tooltips] == Localization.text('Close'),
-    string.format('narrow close uses compact stable control and localized hover text in %s', locale))
+    string.format('80 px close prioritizes native icon, stable ID and localized hover text in %s', locale))
   state.hovered = false
 end
 Localization.setLocale('en')
@@ -923,7 +966,21 @@ local entryFile = assert(io.open('SimOpenTrackDay.lua', 'rb'))
 local entrySource = entryFile:read('*a')
 entryFile:close()
 check(entrySource:find('CSPCompatibilityManager.addFunction(function() return ui.drawRectFilledMultiColor end, "ui.drawRectFilledMultiColor"', 1, true) ~= nil,
-  'entrypoint registers ui.drawRectFilledMultiColor used by the shared Overview Section')
+  'entrypoint retains the ui.drawRectFilledMultiColor compatibility registration')
+local function countSourceOccurrences(source, needle)
+  local count, position = 0, 1
+  while true do
+    position = source:find(needle, position, true)
+    if not position then return count end
+    count, position = count + 1, position + #needle
+  end
+end
+local iconButtonRegistration = 'CSPCompatibilityManager.addFunction(function() return ui.iconButton end, "ui.iconButton")'
+local cancelIconRegistration = 'CSPCompatibilityManager.addFunction(function() return ui.Icons.Cancel end, "ui.Icons.Cancel")'
+check(countSourceOccurrences(entrySource, iconButtonRegistration) == 1,
+  'entrypoint registers ui.iconButton exactly once for the optional native close control')
+check(countSourceOccurrences(entrySource, cancelIconRegistration) == 1,
+  'entrypoint registers ui.Icons.Cancel exactly once for the optional native close control')
 local declaration = 'function script.MANIFEST__FUNCTION_MAIN(dt)'
 local startAt = assert(entrySource:find(declaration, 1, true), 'one-window entry callback declaration remains')
 local finishAt = assert(entrySource:find('\nend', startAt, true), 'main callback terminator remains')
@@ -1012,11 +1069,35 @@ check(#state.styles == 0 and #state.childFontStacks == 0,
   'footer-error cleanup leaves style and child font snapshots balanced')
 throwFooterText = false
 
+state.throwIconButton = true
+clearFrame()
+state.cursor = vec2(8, 8)
+local iconFailureOK, iconFailure = pcall(MainWindow.draw, function() return true end, false, nil)
+state.throwIconButton = false
+check(not iconFailureOK and tostring(iconFailure):find('injected iconButton failure', 1, true) ~= nil,
+  'native icon rendering failure is rethrown')
+check(#state.idStack == 0 and #state.styles == 0 and #state.fontStack == 0 and
+  state.dwriteFontDepth == 0 and state.nativeFontDepth == 0,
+  'icon failure balances pushID, button/context styles and nested native-font scopes')
+
+state.throwContextText = true
+clearFrame()
+state.cursor = vec2(8, 8)
+local contextFailureOK, contextFailure = pcall(MainWindow.draw, function() return true end, false, nil)
+state.throwContextText = false
+check(not contextFailureOK and tostring(contextFailure):find('injected context text failure', 1, true) ~= nil and
+  #state.styles == 0 and #state.fontStack == 0 and state.dwriteFontDepth == 0 and state.nativeFontDepth == 0,
+  'context text failure restores its muted style and native Main/Title font scopes')
+
 -- Optional native stack APIs can be absent; legacy DWrite behavior remains safe.
 local savedFont, savedPushFont, savedPopFont = ui.Font, ui.pushFont, ui.popFont
+local savedIconButton, savedIcons, savedPushID, savedPopID = ui.iconButton, ui.Icons, ui.pushID, ui.popID
 ui.Font, ui.pushFont, ui.popFont = nil, nil, nil
+ui.iconButton, ui.Icons, ui.pushID, ui.popID = nil, nil, nil, nil
 package.loaded.MainWindow = nil
 MainWindow = require('MainWindow')
+state.pendingButton = Localization.label('Close', 'main.window.close')
+local fallbackWindowCallsBefore = #state.windowOpenCalls
 draw(function() return true end, true, 'Required CSP item missing (native-font fallback)')
 check(state.dwriteFontDepth == 0 and state.nativeFontDepth == 0,
   'MainWindow remains drawable when optional native font APIs are absent')
@@ -1025,6 +1106,18 @@ check(table.concat(state.wrapped, '\n'):find('Required CSP item missing (native-
 check(findCombo('settings.language') ~= nil and findCombo('main.tabs') ~= nil and
   state.checkboxValues['Enabled###settings.app.enabled'] == true,
   'native-font fallback retains default enabled, language, and navigation controls without crashing')
+local fallbackClose
+for _, row in ipairs(state.buttonRows) do
+  if row.label:find('###main.window.close', 1, true) then fallbackClose = row end
+end
+check(fallbackClose and fallbackClose.label == Localization.label('Close', 'main.window.close') and
+  #state.idStack == 0,
+  'missing icon APIs fall back to the localized native Close button with its stable ID')
+check(#state.windowOpenCalls == fallbackWindowCallsBefore + 1 and
+  state.windowOpenCalls[#state.windowOpenCalls].id == 'mainWindow' and
+  state.windowOpenCalls[#state.windowOpenCalls].open == false,
+  'localized Close fallback retains the existing window-close action')
 ui.Font, ui.pushFont, ui.popFont = savedFont, savedPushFont, savedPopFont
+ui.iconButton, ui.Icons, ui.pushID, ui.popID = savedIconButton, savedIcons, savedPushID, savedPopID
 
 print(string.format('MainWindow headless checks passed: %d checks.', checks))

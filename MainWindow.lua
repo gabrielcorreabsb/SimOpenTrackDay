@@ -29,10 +29,13 @@ local TAB_GAP = Theme.spacing.sm
 local LAYOUT = Theme.layout
 local ui_textWrapped = ui.textWrapped
 local ui_drawRectFilled = ui.drawRectFilled
-local ui_drawRectFilledMultiColor = ui.drawRectFilledMultiColor
 local ui_pushFont = ui.pushFont
 local ui_popFont = ui.popFont
 local ui_Font = ui.Font
+local ui_iconButton = ui.iconButton
+local ui_Icons = ui.Icons
+local ui_pushID = ui.pushID
+local ui_popID = ui.popID
 local drawState = {
   shouldAppRun = nil,
   anyMissingCSPElements = false,
@@ -42,6 +45,11 @@ local drawState = {
   childOpen = false,
   footerFontOpen = false,
   nativeFontOpen = false,
+  headerFontOpen = false,
+  brandFontOpen = false,
+  contextStyleOpen = false,
+  closeIDOpen = false,
+  closeButtonStyleOpen = false,
   fontOpen = false,
   styleOpen = false
 }
@@ -119,18 +127,33 @@ local function currentItemBottom()
 end
 
 local function drawHeader()
+  if ui_pushFont and ui_popFont and ui_Font and ui_Font.Main then
+    ui_pushFont(ui_Font.Main)
+    drawState.headerFontOpen = true
+  end
   local headerTop = ui.getCursor()
   local headerWidth = ui.availableSpaceX()
   local closeText = Localization.text('Close')
   local closeLabel = Localization.label('Close', 'main.window.close')
   local closeTextWidth = ui.measureText(closeText, -1).x
-  local closeCompact = closeTextWidth + Theme.spacing.md > headerWidth
+  local iconClose = ui_iconButton and ui_Icons and ui_Icons.Cancel and ui_pushID and ui_popID
+  local closeCompact = not iconClose and closeTextWidth + Theme.spacing.md > headerWidth
   if closeCompact then closeLabel = 'X###main.window.close' end
-  local closeWidth = math.min(math.max(0, headerWidth),
-    (closeCompact and ui.measureText('X', -1).x or closeTextWidth) + Theme.spacing.md)
+  local closeButtonSize = iconClose and LAYOUT.closeButtonSize or LAYOUT.tabHeight
+  local closeWidth = math.min(math.max(0, headerWidth), iconClose and closeButtonSize or
+    ((closeCompact and ui.measureText('X', -1).x or closeTextWidth) + Theme.spacing.md))
   local brandText = 'SimOpenTrackDay'
-  local brandWidth = ui.measureText(brandText, -1).x
-  local titleY = headerTop.y + math.max(0, (LAYOUT.headerTitleRowHeight - ui.measureText(brandText, -1).y) / 2)
+  if ui_pushFont and ui_popFont and ui_Font and ui_Font.Title then
+    ui_pushFont(ui_Font.Title)
+    drawState.brandFontOpen = true
+  end
+  local brandSize = ui.measureText(brandText, -1)
+  local brandWidth = brandSize.x
+  local titleY = headerTop.y + math.max(0, (LAYOUT.headerTitleRowHeight - brandSize.y) / 2)
+  if drawState.brandFontOpen then
+    ui_popFont()
+    drawState.brandFontOpen = false
+  end
   local trackName = RaceTrackManager.getTrackName()
   local sessionName = Localization.text(RaceTrackManager.getSessionTypeName())
   local context = trackName .. ' | ' .. sessionName
@@ -142,28 +165,44 @@ local function drawHeader()
     local headerRight = headerTop.x + headerWidth
     local headerBottom = headerTop.y + headerHeight
     ui_drawRectFilled(headerTop, vec2(headerRight, headerBottom), Theme.colors.surface, 8, 0)
-    ui_drawRectFilledMultiColor(
-      vec2(headerTop.x + 6, headerTop.y + 1), vec2(headerRight - 6, headerBottom - 1),
-      Theme.colors.headerGradientTopLeft, Theme.colors.headerGradientTopRight,
-      Theme.colors.headerGradientBottomRight, Theme.colors.headerGradientBottomLeft)
-    if headerWidth > 16 then
-      ui_drawRectFilled(vec2(headerTop.x + 8, headerBottom - 2), vec2(headerRight - 8, headerBottom), Theme.colors.accentSoft, 1, 0)
-    end
   end
   if headerWidth >= brandWidth + closeWidth + Theme.spacing.lg then
+    if ui_pushFont and ui_popFont and ui_Font and ui_Font.Title then
+      ui_pushFont(ui_Font.Title)
+      drawState.brandFontOpen = true
+    end
     ui.setCursor(vec2(headerTop.x, titleY))
     ui.textColored(brandText, Theme.colors.white)
+    if drawState.brandFontOpen then
+      ui_popFont()
+      drawState.brandFontOpen = false
+    end
   end
   local closePosition = vec2(headerTop.x + headerWidth - closeWidth,
-    headerTop.y + math.max(0, (LAYOUT.headerTitleRowHeight - LAYOUT.tabHeight) / 2))
+    headerTop.y + math.max(0, (LAYOUT.headerTitleRowHeight - closeButtonSize) / 2))
   ui.setCursor(closePosition)
   Style.pushButton('windowChrome')
-  local closeClicked = ui.button(closeLabel, vec2(closeWidth, LAYOUT.tabHeight))
+  drawState.closeButtonStyleOpen = true
+  local closeClicked
+  if iconClose then
+    ui_pushID('main.window.close')
+    drawState.closeIDOpen = true
+    closeClicked = ui_iconButton(ui_Icons.Cancel, vec2(closeWidth, closeButtonSize), Theme.colors.text, nil, -1)
+    ui_popID()
+    drawState.closeIDOpen = false
+  else
+    closeClicked = ui.button(closeLabel, vec2(closeWidth, LAYOUT.tabHeight))
+  end
   Style.popButton()
-  if closeCompact and ui.itemHovered() then ui.setTooltip(closeText) end
+  drawState.closeButtonStyleOpen = false
+  if (iconClose or closeCompact) and ui.itemHovered() then ui.setTooltip(closeText) end
   if closeClicked and ac_setWindowOpen then ac_setWindowOpen('mainWindow', false) end
   ui.setCursor(vec2(headerTop.x, contextY))
+  Style.push(ui.StyleColor.Text, Theme.colors.muted)
+  drawState.contextStyleOpen = true
   if ui_textWrapped then ui_textWrapped(context) else ui.text(context) end
+  Style.pop()
+  drawState.contextStyleOpen = false
 
   local controlsY = headerTop.y + headerHeight + Theme.spacing.sm
   local headerControlsWide = headerWidth >= LAYOUT.headerWideControlThreshold
@@ -238,6 +277,10 @@ local function drawHeader()
     controlsBottom = math.max(controlsBottom, currentItemBottom())
   end
   ui.setCursor(vec2(headerTop.x, controlsBottom + LAYOUT.headerControlGap))
+  if drawState.headerFontOpen then
+    ui_popFont()
+    drawState.headerFontOpen = false
+  end
 end
 
 local function drawDrivingLanesSection()
@@ -296,6 +339,31 @@ end
 
 local function closeWindowScopes()
   local cleanupOk, cleanupError = true, nil
+  if drawState.closeIDOpen then
+    drawState.closeIDOpen = false
+    local ok, err = pcall(ui_popID)
+    if not ok then cleanupOk, cleanupError = false, err end
+  end
+  if drawState.closeButtonStyleOpen then
+    drawState.closeButtonStyleOpen = false
+    local ok, err = pcall(Style.popButton)
+    if not ok and cleanupOk then cleanupOk, cleanupError = false, err end
+  end
+  if drawState.contextStyleOpen then
+    drawState.contextStyleOpen = false
+    local ok, err = pcall(Style.pop)
+    if not ok and cleanupOk then cleanupOk, cleanupError = false, err end
+  end
+  if drawState.brandFontOpen then
+    drawState.brandFontOpen = false
+    local ok, err = pcall(ui_popFont)
+    if not ok and cleanupOk then cleanupOk, cleanupError = false, err end
+  end
+  if drawState.headerFontOpen then
+    drawState.headerFontOpen = false
+    local ok, err = pcall(ui_popFont)
+    if not ok and cleanupOk then cleanupOk, cleanupError = false, err end
+  end
   if drawState.footerFontOpen then
     drawState.footerFontOpen = false
     local ok, err = pcall(ui_popFont)

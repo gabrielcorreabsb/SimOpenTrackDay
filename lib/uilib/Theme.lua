@@ -14,16 +14,11 @@ Theme.colors = {
   success = rgbm(73 / 255, 184 / 255, 121 / 255, 1),
   white = rgbm(1, 1, 1, 1),
   transparent = rgbm(0, 0, 0, 0),
-  danger = rgbm(232 / 255, 90 / 255, 90 / 255, 1),
-  headerGradientTopLeft = rgbm(30 / 255, 57 / 255, 100 / 255, 1),
-  headerGradientTopRight = rgbm(25 / 255, 38 / 255, 49 / 255, 1),
-  headerGradientBottomRight = rgbm(16 / 255, 24 / 255, 32 / 255, 1),
-  headerGradientBottomLeft = rgbm(22 / 255, 43 / 255, 73 / 255, 1),
-  sectionGradientLeft = rgbm(31 / 255, 54 / 255, 82 / 255, 1),
-  sectionGradientRight = rgbm(25 / 255, 38 / 255, 49 / 255, 1)
+  danger = rgbm(232 / 255, 90 / 255, 90 / 255, 1)
 }
 
 Theme.spacing = { xs = 4, sm = 8, md = 14, lg = 22, xl = 32 }
+-- DirectWrite sizing references; these are not pixel sizes for native ui.Font roles.
 Theme.type = { caption = 13, body = 15, control = 18, tab = 19, section = 18, title = 26, carDetail = 16 }
 Theme.slider = { width = 220, compactWidth = 180, stackedMaxWidth = 460 }
 Theme.button = {
@@ -63,6 +58,7 @@ Theme.layout = {
   headerLanguageStartRatio = 0.31,
   headerStatusStartRatio = 0.76,
   tabHeight = 34,
+  closeButtonSize = 28,
   tabUnderlineHeight = 3,
   chipHeight = 28,
   chipGap = Theme.spacing.sm,

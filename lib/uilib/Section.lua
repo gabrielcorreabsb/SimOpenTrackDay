@@ -3,11 +3,10 @@ local ui = ui
 local Theme = require('lib/uilib/Theme')
 local vec2 = vec2
 local Localization = require('Localization')
-local ui_drawRectFilledMultiColor = ui.drawRectFilledMultiColor
 local EMPTY_OPTIONS = {}
 
--- Uses a restrained heading/divider treatment rather than an overlaying draw-list
--- background, so native controls always remain visible and first-frame sizing is safe.
+-- Uses one flat shared surface for the heading; the border remains a quiet divider
+-- around content and no inset gradient layer can create a contrasting left strip.
 Section.section = function(label, callback, opts)
   opts = opts or EMPTY_OPTIONS
   local left = ui.getCursor()
@@ -18,12 +17,6 @@ Section.section = function(label, callback, opts)
   local headerRight = left.x + available
   local headerBottom = left.y + headerHeight
   ui.drawRectFilled(left, vec2(headerRight, headerBottom), Theme.colors.surface, 7, 0)
-  if available > 10 then
-    ui_drawRectFilledMultiColor(
-      vec2(left.x + 5, left.y + 1), vec2(headerRight - 5, headerBottom - 1),
-      Theme.colors.sectionGradientLeft, Theme.colors.sectionGradientRight,
-      Theme.colors.surface, Theme.colors.sectionGradientLeft)
-  end
   ui.setCursor(vec2(left.x + Theme.spacing.md, left.y + Theme.spacing.sm))
   ui.beginGroup()
   ui.textColored(title, Theme.colors.white)

@@ -37,6 +37,8 @@ CSPCompatibilityManager.addFunction(function() return ac.getCarMaxSpeedWithGear 
 CSPCompatibilityManager.addFunction(function() return ac.setWindowOpen end, "ac.setWindowOpen")
 
 CSPCompatibilityManager.addFunction(function() return ui.button end, "ui.button")
+CSPCompatibilityManager.addFunction(function() return ui.iconButton end, "ui.iconButton")
+CSPCompatibilityManager.addFunction(function() return ui.Icons.Cancel end, "ui.Icons.Cancel")
 CSPCompatibilityManager.addFunction(function() return ui.newLine end, "ui.newLine")
 CSPCompatibilityManager.addFunction(function() return ui.text end, "ui.text")
 CSPCompatibilityManager.addFunction(function() return ui.drawRect end, "ui.drawRect")
