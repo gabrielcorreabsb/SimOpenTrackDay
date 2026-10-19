@@ -75,7 +75,8 @@ local requiredMsgids = {
   'Use the enable control in the header.', 'Adjust driving lane offsets in Behavior.',
   'Behavior', 'Yielding', 'Overtaking', 'Advanced', 'Navigation',
   'Show Advanced Controls', 'Hide Advanced Controls',
-  'Car #%02d - %s', 'Speed: %d km/h | Lane offset: %.3f',
+  'Car #%02d', 'Speed: %d km/h', 'Lane offset: %.3f',
+  'No cars available.', 'No initialized cars available.', 'No cars match this filter.',
   'yes #%d', '%s v%s | developed by %s | original author: %s', 'Center', 'Left', 'Right',
   'Undefined', 'Practice', 'Qualify', 'Race', 'Hotlap', 'TimeAttack', 'Drift', 'Drag',
   'DrivingNormally', 'EasingInYield', 'StayingOnYieldingLane', 'EasingOutYield',
@@ -100,14 +101,16 @@ local function readSource(path)
   return source
 end
 local uiManagerSource = readSource('UIManager.lua')
-check(uiManagerSource:find("T('Car #%02d - %s', carIndex, stateName)", 1, true) ~= nil and
-  uiManagerSource:find("Localization.label(T('Car #%02d - %s', carIndex, stateName), 'car.row.' .. carIndex)", 1, true) ~= nil,
-  'car list state row uses the translated formatted msgid')
-check(uiManagerSource:find("T('Speed: %d km/h | Lane offset: %.3f', math_floor(car.speedKmh), actualTrackLateralOffset)", 1, true) ~= nil and
+check(uiManagerSource:find("T('Car #%02d', carIndex)", 1, true) ~= nil and
+  uiManagerSource:find("Localization.label(numberLabel, 'car.row.' .. carIndex)", 1, true) ~= nil and
+  uiManagerSource:find('T(CarStateMachine.CarStateTypeStrings[state] or', 1, true) ~= nil,
+  'selectable car number retains its stable ID and state remains independently translated')
+check(uiManagerSource:find("T('Speed: %d km/h', math_floor(car.speedKmh))", 1, true) ~= nil and
+  uiManagerSource:find("T('Lane offset: %.3f', actualTrackLateralOffset)", 1, true) ~= nil and
   uiManagerSource:find('if ui_textWrapped then', 1, true) ~= nil and
-  uiManagerSource:find('ui_textWrapped(statusLine)', 1, true) ~= nil and
-  uiManagerSource:find('ui_text(statusLine)', 1, true) ~= nil,
-  'car list speed/lane-offset row uses the translated msgid in wrapped and fallback paths')
+  uiManagerSource:find('ui_textWrapped(speedText)', 1, true) ~= nil and
+  uiManagerSource:find('ui_text(offsetText)', 1, true) ~= nil,
+  'car list telemetry uses separate translated values with native wrapped/inline text paths')
 local mainWindowSource = readSource('MainWindow.lua')
 check(mainWindowSource:find("Localization.text(tabSources[i])", 1, true) ~= nil and
   mainWindowSource:find("Localization.label(tabSources[i], 'main.tab.' .. tabIDs[i])", 1, true) ~= nil and

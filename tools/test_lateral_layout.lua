@@ -38,6 +38,10 @@ local ui = {
   getCursor = function() return { x = cursorX, y = cursorY } end,
   drawTextClipped = function(text, a, b) captions[#captions + 1] = { text = text, a = a, b = b } end,
   dwriteDrawText = function(text, size, p) captions[#captions + 1] = { text = text, size = size, p = p } end,
+  measureText = function(text, wrap)
+    measurements[#measurements + 1] = { text = text, native = true, wrap = wrap }
+    return { x = #text * 9, y = 18 }
+  end,
   measureDWriteText = function(text, size, wrap)
     measurements[#measurements + 1] = { text = text, size = size, wrap = wrap }
     return { x = #text * 8, y = 14 }
@@ -97,15 +101,16 @@ for _, loc in ipairs({ 'en', 'pt-BR', 'es' }) do
 
   local autoLabel = localization.label('Yielding Lateral Offset', 'settings.offset.yielding')
   local visible = autoLabel:match('^(.-)###')
-  local measuredLabel = #visible * 8
+  local measuredLabel = #visible * 9
   width = measuredLabel + 220 + Theme.spacing.sm
   resetSlider()
   Slider.render(autoLabel, 'Tip', 0.5, -1, 1, 220, '%.2f', 0)
   check(#wrapped == 0 and itemWidths[1] == 220,
     'automatic slider stays inline at exact measured-label/slider/gap fit (' .. loc .. ')')
   local exactID = sliders[1].label:match('###(.*)$') or sliders[1].label
-  check(measurements[#measurements].size == Theme.type.control and measurements[#measurements].wrap == -1,
-    'automatic layout measures the control label using Theme typography')
+  check(measurements[#measurements].native and measurements[#measurements].text == visible and
+    measurements[#measurements].wrap == -1,
+    'automatic layout measures the visible control label using native font metrics')
 
   width = width - 1
   resetSlider()

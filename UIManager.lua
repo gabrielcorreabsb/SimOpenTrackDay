@@ -23,6 +23,7 @@ local ui_pushStyleColor = ui.pushStyleColor
 local ui_popStyleColor = ui.popStyleColor
 local ui_StyleColor_Text = ui.StyleColor and ui.StyleColor.Text
 local ui_getCursor = ui.getCursor
+local ui_itemRectMax = ui.itemRectMax
 local ui_setCursor = ui.setCursor
 local ui_drawRectFilled = ui.drawRectFilled
 local ui_button = ui.button
@@ -31,6 +32,7 @@ local ui_StyleColor_ButtonHovered = ui.StyleColor and ui.StyleColor.ButtonHovere
 local ui_StyleColor_ButtonActive = ui.StyleColor and ui.StyleColor.ButtonActive
 local ui_availableSpaceX = ui.availableSpaceX
 local ui_measureDWriteText = ui.measureDWriteText
+local ui_measureText = ui.measureText
 local ui_combo = ui.combo
 local ui_pushItemWidth = ui.pushItemWidth
 local ui_popItemWidth = ui.popItemWidth
@@ -156,11 +158,31 @@ local function drawCarFilterChips()
   return selectedIndex
 end
 
+local function currentItemBottom()
+  local cursorBottom = ui_getCursor().y
+  if ui_itemRectMax then
+    local itemMax = ui_itemRectMax()
+    if itemMax then return math.max(cursorBottom, itemMax.y) end
+  end
+  return cursorBottom
+end
+
 UIManager.drawUICarList = function()
   local filterIndex = drawCarFilterChips()
   ui_separator()
   local sortedCarsList = CarManager.currentSortedCarsList
   if not sortedCarsList or #sortedCarsList == 0 then
+    if ui_textWrapped then ui_textWrapped(T('No cars available.')) else ui_text(T('No cars available.')) end
+    return
+  end
+
+  if filterCounts[1] == 0 then
+    if ui_textWrapped then ui_textWrapped(T('No initialized cars available.')) else ui_text(T('No initialized cars available.')) end
+    return
+  end
+
+  if filterIndex ~= 1 and filterCounts[filterIndex] == 0 then
+    if ui_textWrapped then ui_textWrapped(T('No cars match this filter.')) else ui_text(T('No cars match this filter.')) end
     return
   end
 
@@ -172,31 +194,54 @@ UIManager.drawUICarList = function()
         (filterIndex == 1 or stateFilterIndex[CarStateMachine_getCurrentState(carIndex)] == filterIndex) then
         local state = CarStateMachine_getCurrentState(carIndex)
         local stateName = T(CarStateMachine.CarStateTypeStrings[state] or '')
-        local rowLabel = Localization.label(T('Car #%02d - %s', carIndex, stateName), 'car.row.' .. carIndex)
+        local numberLabel = T('Car #%02d', carIndex)
+        local rowLabel = Localization.label(numberLabel, 'car.row.' .. carIndex)
         local isSelected = carIndex == uiCarListSelectedIndex
         local rowStart = ui_getCursor()
         local indentedX = rowStart.x + CAR_ROW_INDENT
+        local rowWidth = math.max(0, (ui_availableSpaceX and ui_availableSpaceX() or 500) - CAR_ROW_INDENT)
+        local numberWidth = ui_measureText and ui_measureText(numberLabel, -1).x + Theme.spacing.md or 76
+        numberWidth = math.min(rowWidth, numberWidth)
         ui_setCursor(vec2(indentedX, rowStart.y))
-        if ui_selectable(rowLabel, isSelected, ui.SelectableFlags.None, vec2(0, ui_textLineHeightWithSpacing())) then
+        if ui_selectable(rowLabel, isSelected, ui.SelectableFlags.None,
+          vec2(rowWidth, ui_textLineHeightWithSpacing())) then
           uiCarListSelectedIndex = carIndex
           CameraManager_followCarWithChaseCamera(carIndex)
         end
+
+        local stateMeasure = ui_measureText and ui_measureText(stateName, -1).x or rowWidth
+        local stateInline = numberWidth + Theme.spacing.sm + stateMeasure <= rowWidth
+        local stateX = stateInline and (indentedX + numberWidth + Theme.spacing.sm) or indentedX
+        local titleY = rowStart.y + (stateInline and 0 or ui_textLineHeightWithSpacing())
+        ui_setCursor(vec2(stateX, titleY))
+        if ui_textWrapped then ui_textWrapped(stateName) else ui_text(stateName) end
+        local titleBottom = currentItemBottom()
+
         local actualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, car.position)
-        local statusLine = T('Speed: %d km/h | Lane offset: %.3f', math_floor(car.speedKmh), actualTrackLateralOffset)
-        local afterRow = ui_getCursor()
-        ui_setCursor(vec2(indentedX, afterRow.y))
-        -- Native text (not DirectWrite): dwriteText inside the scrolling child rendered corrupted glyphs.
-        ui_pushStyleColor(ui_StyleColor_Text, Theme.colors.muted)
-        if ui_textWrapped then
-          ui_textWrapped(statusLine)
-        else
-          ui_text(statusLine)
-        end
-        ui_popStyleColor()
-        local rowEnd = ui_getCursor()
+        local telemetryY = math.max(titleBottom, rowStart.y + ui_textLineHeightWithSpacing())
+        local telemetryWidth = math.max(1, rowWidth * 0.5)
+        local speedText = T('Speed: %d km/h', math_floor(car.speedKmh))
+        local offsetText = T('Lane offset: %.3f', actualTrackLateralOffset)
+        local speedWidth = ui_measureText and ui_measureText(speedText, -1).x or telemetryWidth + 1
+        local offsetWidth = ui_measureText and ui_measureText(offsetText, -1).x or telemetryWidth + 1
+        local telemetryInline = speedWidth <= telemetryWidth and offsetWidth <= telemetryWidth
+        ui_setCursor(vec2(indentedX, telemetryY))
+        -- Native text (not DirectWrite): wrapped columns stay aligned without clipping long translations.
+        if telemetryInline then ui_text(speedText)
+        elseif ui_textWrapped then ui_textWrapped(speedText)
+        else ui_text(speedText) end
+        local speedBottom = currentItemBottom()
+        local offsetX = telemetryInline and (indentedX + telemetryWidth) or indentedX
+        local offsetY = telemetryInline and telemetryY or speedBottom
+        ui_setCursor(vec2(offsetX, offsetY))
+        if telemetryInline then ui_text(offsetText)
+        elseif ui_textWrapped then ui_textWrapped(offsetText)
+        else ui_text(offsetText) end
+        local offsetBottom = currentItemBottom()
+        local rowEndY = math.max(titleBottom, speedBottom, offsetBottom)
         local barColor = carIndex == 0 and Theme.colors.accent or carStateColors[state] or Theme.colors.disabled
-        ui_drawRectFilled(vec2(rowStart.x, rowStart.y), vec2(rowStart.x + CAR_BAR_WIDTH, rowEnd.y), barColor, 1, 0)
-        ui_newLine(0.5)
+        ui_drawRectFilled(vec2(rowStart.x, rowStart.y), vec2(rowStart.x + CAR_BAR_WIDTH, rowEndY), barColor, 1, 0)
+        ui_setCursor(vec2(rowStart.x, rowEndY))
       end
     end
   end
