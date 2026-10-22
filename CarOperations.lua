@@ -54,6 +54,10 @@ local render_createRay = render.createRay
 local VecPool_getTempVec3 = VecPool.getTempVec3
 local table_clear = table.clear
 
+local function canWriteCar(carIndex)
+  return CarManager and CarManager.isWritableAICar and CarManager.isWritableAICar(carIndex) == true
+end
+
 -- Reusable scratch objects for getSideAnchorPoints to avoid per-call allocations.
 -- NOTE: these are distinct vec3 instances (VecPool.getTempVec3 returns a single shared singleton).
 CarOperations._reusableSideAnchorTable = CarOperations._reusableSideAnchorTable or {}
@@ -148,6 +152,8 @@ CarOperations.CarPedals = {
 ---@param carPedal CarOperations.CarPedals
 ---@param pedalPosition number
 CarOperations.setPedalPosition = function(carIndex, carPedal, pedalPosition)
+  if not canWriteCar(carIndex) or type(pedalPosition) ~= 'number' or pedalPosition ~= pedalPosition
+    or type(ac_overrideCarControls) ~= 'function' then return false end
   local carInput = ac_overrideCarControls(carIndex)
   if not carInput then return end
 
@@ -164,6 +170,7 @@ end
 ---@param carIndex integer
 ---@param carPedal CarOperations.CarPedals
 CarOperations.resetPedalPosition = function(carIndex, carPedal)
+  if not canWriteCar(carIndex) or type(ac_overrideCarControls) ~= 'function' then return false end
   local carInput = ac_overrideCarControls(carIndex)
   if not carInput then return end
 
@@ -200,6 +207,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param limit number @0 for limit gas pedal to 0, 1 to remove limitation.
 CarOperations.setAIThrottleLimit = function(carIndex, limit)
+    if not canWriteCar(carIndex) or type(limit) ~= 'number' or limit ~= limit or type(physics_setAIThrottleLimit) ~= 'function' then return false end
     physics_setAIThrottleLimit(carIndex, limit)
     CarManager.cars_throttleLimit[carIndex] = limit
 end
@@ -213,6 +221,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param limit number @Speed in km/h.
 CarOperations.setAITopSpeed = function(carIndex, limit)
+    if not canWriteCar(carIndex) or type(limit) ~= 'number' or limit ~= limit or type(physics_setAITopSpeed) ~= 'function' then return false end
     physics_setAITopSpeed(carIndex, limit)
 
     --[===[
@@ -235,7 +244,7 @@ end
 ---@param yieldingCarIndex integer
 ---@param overtakingCarIndex integer
 CarOperations.applyAntiDragRaceLimit = function(yieldingCarIndex, overtakingCarIndex)
-  if not yieldingCarIndex or not overtakingCarIndex then return end
+  if not canWriteCar(yieldingCarIndex) or not yieldingCarIndex or not overtakingCarIndex then return end
   local overtakingCar = ac_getCar(overtakingCarIndex)
   if not overtakingCar or overtakingCar.speedKmh < 5 then
     CarOperations.removeAntiDragRaceLimit(yieldingCarIndex)
@@ -244,6 +253,7 @@ CarOperations.applyAntiDragRaceLimit = function(yieldingCarIndex, overtakingCarI
   local safeOvertakingSpeedKmh = overtakingCar.speedKmh * 0.95
   local currentTopSpeedLimit = CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex]
   if currentTopSpeedLimit ~= safeOvertakingSpeedKmh then
+    if type(physics_setAITopSpeed) ~= 'function' then return end
     physics_setAITopSpeed(yieldingCarIndex, safeOvertakingSpeedKmh)
     CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] = safeOvertakingSpeedKmh
   end
@@ -265,6 +275,7 @@ CarOperations._currentAntiDragRaceTopSpeeds = CarOperations._currentAntiDragRace
 ---@param carIndex integer @0-based car index.
 ---@param caution number @AI caution from 0 to 16.
 CarOperations.setAICaution = function(carIndex, caution)
+    if not canWriteCar(carIndex) or type(caution) ~= 'number' or caution ~= caution or type(physics_setAICaution) ~= 'function' then return false end
     physics_setAICaution(carIndex, caution)
     CarManager.cars_aiCaution[carIndex] = caution
 end
@@ -279,6 +290,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param aggression number @AI aggression from 0 to 1. Note: aggression level set in a launcher will be multiplied by 0.95, so to set 100% aggression here, pass 0.95.
 CarOperations.setAIAggression = function(carIndex, aggression)
+    if not canWriteCar(carIndex) or type(aggression) ~= 'number' or aggression ~= aggression or type(physics_setAIAggression) ~= 'function' then return false end
     physics_setAIAggression(carIndex, aggression)
     CarManager.cars_aiAggression[carIndex] = aggression
 end
@@ -294,6 +306,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param aiDifficultyLevel integer @AI difficulty level from 0 to 2.
 CarOperations.setAIDifficultyLevel = function(carIndex, aiDifficultyLevel)
+    if not canWriteCar(carIndex) or type(aiDifficultyLevel) ~= 'number' or aiDifficultyLevel ~= aiDifficultyLevel or type(physics_setAILevel) ~= 'function' then return false end
     physics_setAILevel(carIndex, aiDifficultyLevel)
     CarManager.cars_aiDifficultyLevel[carIndex] = aiDifficultyLevel
 end
@@ -310,6 +323,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param time number @Time in seconds.
 CarOperations.setAIStopCounter = function(carIndex, time)
+    if not canWriteCar(carIndex) or type(time) ~= 'number' or time ~= time or type(physics_setAIStopCounter) ~= 'function' then return false end
     physics_setAIStopCounter(carIndex, time)
     CarManager.cars_aiStopCounter[carIndex] = time
 end
@@ -318,6 +332,7 @@ end
 ---@param carIndex integer
 ---@param grip number @grip value
 CarOperations.setGrip = function(carIndex, grip)
+    if not canWriteCar(carIndex) or type(grip) ~= 'number' or grip ~= grip or type(physics_setExtraAIGrip) ~= 'function' then return false end
     physics_setExtraAIGrip(carIndex, grip)
 
     CarManager.cars_grip[carIndex] = grip
@@ -333,6 +348,7 @@ end
 ---@param carIndex integer
 ---@param collisionsEnabled boolean
 CarOperations.toggleCarCollisions = function(carIndex, collisionsEnabled)
+  if not canWriteCar(carIndex) or type(collisionsEnabled) ~= 'boolean' or type(physics_disableCarCollisions) ~= 'function' then return false end
   physics_disableCarCollisions(carIndex, not collisionsEnabled, true)
 end
 
@@ -340,6 +356,7 @@ end
 ---@param carIndex integer @0-based car index.
 ---@param stop boolean? @Default value: `true`.
 CarOperations.setGentleStop = function(carIndex, stop)
+    if not canWriteCar(carIndex) or type(stop) ~= 'boolean' or type(physics_setGentleStop) ~= 'function' then return false end
     physics_setGentleStop(carIndex, stop)
     CarManager.cars_gentleStop[carIndex] = stop
 end
@@ -427,6 +444,7 @@ end
 ---Applies a bunch of values to stop the car
 ---@param carIndex integer
 function CarOperations.stopCarAfterAccident(carIndex)
+    if not canWriteCar(carIndex) then return false end
     -- stop the car
     CarOperations.setAIThrottleLimit(carIndex, 0)
     CarOperations.setAITopSpeed(carIndex, 0)
@@ -441,6 +459,7 @@ end
 ---If not moving, they will still retire some time after this function is called, unless you’ll keep calling it.
 ---@param carIndex integer @0-based car index.
 function CarOperations.preventAIFromRetiring(carIndex)
+    if not canWriteCar(carIndex) or type(physics_preventAIFromRetiring) ~= 'function' then return false end
     physics_preventAIFromRetiring(carIndex)
 end
 
@@ -450,6 +469,7 @@ end
 ---@param worldDirection vec3|nil
 ---@param doNotResetCarAfterTeleport boolean @If true, the car will not be reset after teleporting.
 CarOperations.teleportCarToWorldPosition = function(carIndex, worldPosition, worldDirection, doNotResetCarAfterTeleport)
+    if not canWriteCar(carIndex) or not physics or type(physics.setCarPosition) ~= 'function' then return false end
     physics.setCarPosition(carIndex, worldPosition, worldDirection)
 
     if doNotResetCarAfterTeleport then
@@ -459,6 +479,7 @@ end
 
 ---@param turningLights ac.TurningLights
 function CarOperations.toggleTurningLights(carIndex, turningLights)
+    if not canWriteCar(carIndex) or type(ac_setTargetCar) ~= 'function' or type(ac_setTurningLights) ~= 'function' then return false end
     -- local c = ac.getCar(carIndex)
     -- if not c.hasTurningLights then
         -- Logger.warn(string.format("CarOperations.toggleTurningLights: Car %d has no turning lights", carIndex))
@@ -527,6 +548,7 @@ end
 ---@return boolean
 -- function CarOperations.driveSafelyToSide(carIndex, dt, car, side, driveToSideMaxOffset, rampSpeed_mps, overrideAiAwareness, sideCheck)
 function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset, rampSpeed_mps, overrideAiAwareness, sideCheck, useIndicatorLights)
+    if not canWriteCar(carIndex) or type(dt) ~= 'number' or dt ~= dt or dt <= 0 or dt == math.huge then return false end
     -- calculate the side we're driving to based on the car's current lateral offset and the target lateral offset
     local carPosition = car.position
     local currentActualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, carPosition)
@@ -592,6 +614,7 @@ function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset,
 
       -- set the spline offset on the ai car
       -- local overrideAiAwareness = storage.overrideAiAwareness -- TODO: check what this does
+      if type(physics_setAISplineOffset) ~= 'function' then return false end
       physics_setAISplineOffset(carIndex, currentSplineOffset, overrideAiAwareness)
 
       -- keep the turning lights on while driving to the side

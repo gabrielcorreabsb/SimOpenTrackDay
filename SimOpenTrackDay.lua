@@ -123,7 +123,14 @@ CSPCompatibilityManager.addFunction(function() return physics.disableCarCollisio
 CSPCompatibilityManager.addFunction(function() return physics.setGentleStop end, "physics.setGentleStop")
 CSPCompatibilityManager.addFunction(function() return physics.preventAIFromRetiring end, "physics.preventAIFromRetiring")
 CSPCompatibilityManager.addFunction(function() return physics.setAISplineOffset end, "physics.setAISplineOffset")
+CSPCompatibilityManager.addFunction(function() return physics.allowed end, "physics.allowed")
+CSPCompatibilityManager.addFunction(function() return physics.setAILevel end, "physics.setAILevel")
 CSPCompatibilityManager.addFunction(function() return physics.overrideRacingFlag end, "physics.overrideRacingFlag")
+-- Car swap notification is optional on older CSP versions; validate it when present without
+-- making it a hard compatibility requirement.
+if type(ac.onCarSwap) == 'function' then
+  CSPCompatibilityManager.addFunction(function() return ac.onCarSwap end, "ac.onCarSwap")
+end
 
 CSPCompatibilityManager.addSimStateFunction(function(sim) return sim.trackLengthM end, "ac.getSim().trackLengthM")
 CSPCompatibilityManager.addSimStateFunction(function(sim) return sim.raceSessionType end, "ac.getSim().raceSessionType")
@@ -234,6 +241,9 @@ local CarManager = CarManager
 local CarManager_ensureDefaults = CarManager.ensureDefaults
 local CarManager_saveCarSpeed = CarManager.saveCarSpeed
 local CarManager_sortCarListByTrackPosition = CarManager.sortCarListByTrackPosition
+local CarManager_isWritableAICar = CarManager.isWritableAICar
+local CarManager_hasPhysicsPermission = CarManager.hasPhysicsPermission
+local CarManager_observeCarIdentity = CarManager.observeCarIdentity
 local CarOperations = CarOperations
 local CarOperations_setAITopSpeed = CarOperations.setAITopSpeed
 local CarStateMachine = CarStateMachine
@@ -241,6 +251,7 @@ local CarStateMachine_setReasonWhyCantOvertake = CarStateMachine.setReasonWhyCan
 local CarStateMachine_setReasonWhyCantYield = CarStateMachine.setReasonWhyCantYield
 local CarStateMachine_updateCar = CarStateMachine.updateCar
 local CarStateMachine_handleQueuedAccidents = CarStateMachine.handleQueuedAccidents
+local CarStateMachine_clearPendingLifecycle = CarStateMachine.clearPendingLifecycle
 local UIManager = UIManager
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
@@ -254,6 +265,65 @@ local CAN_APP_RUN = Constants.CAN_APP_RUN
 local storage = StorageManager.getStorage()
 
 local math_huge = math.huge
+
+local gateDiagnosticSessionGeneration = CarManager.sessionGeneration
+local loggedGateReasons = {}
+local loggedSuspensionReasons = {}
+local loggedNoAISample = false
+
+local function syncGateDiagnosticSession()
+  local sessionGeneration = CarManager.sessionGeneration
+  if gateDiagnosticSessionGeneration == sessionGeneration then return end
+  for reason in pairs(loggedGateReasons) do loggedGateReasons[reason] = nil end
+  for reason in pairs(loggedSuspensionReasons) do loggedSuspensionReasons[reason] = nil end
+  loggedNoAISample = false
+  gateDiagnosticSessionGeneration = sessionGeneration
+end
+
+local function logSuspensionDiagnostic(reason, sim)
+  local key = reason or 'live'
+  if loggedSuspensionReasons[key] then return end
+  loggedSuspensionReasons[key] = true
+  Logger.log(string_format('[M1a-GATE] mode=%s runtimeEnabled=%s runtimePaused=%s runtimeLive=%s simLive=%s simReplayActive=%s sessionStarted=%s',
+    key, tostring(CarManager.runtimeEnabled), tostring(CarManager.runtimePaused), tostring(CarManager.runtimeLive),
+    tostring(sim and sim.isLive), tostring(sim and sim.isReplayActive), tostring(sim and sim.isSessionStarted)))
+end
+
+local function logGateSample(carIndex, car, sim, reason)
+  if loggedGateReasons[reason] then return end
+  loggedGateReasons[reason] = true
+  local physicsCheck = 'not-checked'
+  if reason == 'physics-allowed-error' then
+    physicsCheck = 'error'
+  elseif reason == 'physics-denied' then
+    physicsCheck = 'false'
+  elseif reason == 'physics-allowed-not-true' then
+    physicsCheck = 'non-true'
+  elseif reason == 'physics-missing' or reason == 'physics-allowed-missing'
+    or reason == 'physics-allowed-not-callable' then
+    physicsCheck = 'unavailable'
+  elseif reason == 'eligible' or reason == 'car-missing' or reason == 'car-index-mismatch'
+    or reason == 'car-not-ai' or reason == 'car-not-connected' or reason == 'car-not-active' then
+    physicsCheck = 'true'
+  end
+  local allowedApi = physics and physics.allowed
+  Logger.log(string_format('[M1a-GATE] sample car=%d result=%s generation=%d session=%d runtimeEnabled=%s runtimePaused=%s runtimeLive=%s suspension=%s simLive=%s simReplayActive=%s sessionStarted=%s carAI=%s connected=%s active=%s physicsCheck=%s physicsAllowedType=%s physicsAllowedValue=%s physicsTopSpeedType=%s',
+    carIndex, reason, CarManager.getCarGeneration(carIndex) or -1, CarManager.sessionGeneration,
+    tostring(CarManager.runtimeEnabled), tostring(CarManager.runtimePaused), tostring(CarManager.runtimeLive),
+    tostring(CarManager.runtimeSuspensionReason or 'none'), tostring(sim and sim.isLive),
+    tostring(sim and sim.isReplayActive), tostring(sim and sim.isSessionStarted),
+    tostring(car.isAIControlled), tostring(car.isConnected), tostring(car.isActive), physicsCheck,
+    type(allowedApi), tostring(allowedApi), type(physics and physics.setAITopSpeed)))
+end
+
+local function logNoAISample(frameId)
+  if loggedNoAISample then return end
+  loggedNoAISample = true
+  Logger.log(string_format('[M1a-GATE] no non-player AI sample available session=%d frame=%d',
+    CarManager.sessionGeneration, frameId))
+end
+
+Logger.log('[M1a-GATE] TEMP diagnostic active; acting gate policy unchanged')
 
 
 -- A 1-based index collection of all the cars sorted by their spline position
@@ -269,7 +339,6 @@ local function awake()
   end
 
   -- Logger.log('Initializing')
-  CarManager_ensureDefaults(0) -- ensure defaults on local player car
 
   -- Logger.log(ac.getTrackFullID())
   -- Logger.log(ac.getSim().raceSessionType)
@@ -288,10 +357,18 @@ local function awake()
     local originalCarAIAggression = car.aiAggression
     local originalCarAILevel = car.aiLevel
 
-    CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] = originalCarAIAggression
+    if carIndex > 0 and car.isAIControlled == true and car.isConnected == true and car.isActive == true
+      and type(originalCarAIAggression) == 'number' and originalCarAIAggression == originalCarAIAggression
+      and originalCarAIAggression >= 0 and originalCarAIAggression <= 1 then
+      CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] = originalCarAIAggression
+    end
     -- Logger.log(string.format('Original #%d AI Aggression: %.3f', i, car.aiAggression))
 
-    CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] = originalCarAILevel
+    if carIndex > 0 and car.isAIControlled == true and car.isConnected == true and car.isActive == true
+      and type(originalCarAILevel) == 'number' and originalCarAILevel == originalCarAILevel
+      and originalCarAILevel >= 0 and originalCarAILevel <= 2 then
+      CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] = originalCarAILevel
+    end
     -- Logger.log(string.format('Original #%d AI Difficulty Level: %.3f', i, originalCarAILevel))
   end
 end
@@ -308,9 +385,21 @@ local function shouldAppRun()
         and storage.enabled
 end
 
+local function clearOwnedGlobalFlag()
+  if physics and type(physics.overrideRacingFlag) == 'function' and ac and ac.FlagType and ac.FlagType.None then
+    local allowed = CarManager_hasPhysicsPermission()
+    if allowed then physics.overrideRacingFlag(ac.FlagType.None) end
+  end
+end
+
+local function canWriteGlobalFlag()
+  if not physics or type(physics.overrideRacingFlag) ~= 'function' then return false end
+  return CarManager_hasPhysicsPermission()
+end
+
 ---The callback function for when a car collision event occurs
 ---@param carIndex integer
-OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collision] = function (carIndex)
+OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collision] = function (carIndex, event)
   -- local storage = StorageManager.getStorage()
   if storage.handleAccidents then
       -- Register an accident for the car collision
@@ -328,7 +417,7 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collisio
 
       CarStateMachine.informAboutAccident(accidentIndex)
       --]====]
-      AccidentManager_registerCollision(carIndex, car.collisionPosition, car.collidedWith)
+      AccidentManager_registerCollision(carIndex, event.collisionPosition, event.collidedWith, event)
   end
 end
 
@@ -339,44 +428,70 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Jumped] 
   AccidentManager_informAboutCarReset(carIndex)
 
   -- local setInitializedDefaults = not (CarManager.cars_doNoResetAfterNextCarJump[carIndex] or CarManager.cars_justTeleportedDueToManualAccidentSimulation[carIndex])
-  local doNoResetAfterNextCarJump = CarManager.cars_doNoResetAfterNextCarJump[carIndex]
-  if doNoResetAfterNextCarJump then
-    Logger.log(string_format("Not resetting car #%d data after jump due to doNoResetAfterNextCarJump flag being set.  Removing flag now", carIndex))
-    CarManager.cars_doNoResetAfterNextCarJump[carIndex] = false
-    return
-  end
-
   -- finally reset all our car data
   -- if setInitializedDefaults then
     -- Logger.log(string_format("Resetting car #%d data.  Teleported due to custom AI Flood: %s, Teleported due to manual accident simulation: %s", carIndex, tostring(CarManager.cars_doNoResetAfterNextCarJump[carIndex]), tostring(CarManager.cars_justTeleportedDueToManualAccidentSimulation[carIndex])))
     Logger.log(string_format("Resetting car #%d data.", carIndex))
-    CarManager.setInitializedDefaults(carIndex)
+    CarManager.clearCarMemory(carIndex)
+    CarManager_ensureDefaults(carIndex)
   -- else
     -- Logger.warn(string_format("Not resetting car #%d data.  Teleported due to custom AI Flood: %s, Teleported due to manual accident simulation: %s", carIndex, tostring(CarManager.cars_doNoResetAfterNextCarJump[carIndex]), tostring(CarManager.cars_justTeleportedDueToManualAccidentSimulation[carIndex])))
   -- end
 end
 
 -- Monitor car collisions so we can register an accident
-ac.onCarCollision(-1, function (carIndex)
-    if (not shouldAppRun()) then return end
-    local car = ac_getCar(carIndex)
-    if not car then return end
+local function isFiniteIntegerCarIndex(index)
+  return type(index) == 'number' and index == index and index >= 0
+    and index < math_huge and index % 1 == 0
+end
 
-    OnCarEventManager.enqueueOnCarEvent(OnCarEventManager.OnCarEventType.Collision, carIndex)
+ac.onCarCollision(-1, function (carIndex)
+    if not shouldAppRun() or not isFiniteIntegerCarIndex(carIndex)
+      or not CarManager_isWritableAICar(carIndex) then return end
+    local car = ac_getCar(carIndex)
+    if not car or car.index ~= carIndex then return end
+    local collidedWith = car.collidedWith
+    if not isFiniteIntegerCarIndex(collidedWith) then return end
+    local victim
+    if collidedWith > 0 then
+      local victimIndex = collidedWith - 1
+      if not isFiniteIntegerCarIndex(victimIndex) then return end
+      victim = ac_getCar(victimIndex)
+      if not victim or victim.index ~= victimIndex then return end
+    end
+    OnCarEventManager.enqueueOnCarEvent(OnCarEventManager.OnCarEventType.Collision, carIndex, car.collisionPosition, collidedWith, car, victim)
 end)
 
 -- Monitor flood ai cars cycle event so that we also reset our state
 ac.onCarJumped(-1, function(carIndex)
-    if (not shouldAppRun()) then return end
-    local car = ac_getCar(carIndex)
-    if not car then return end
-
+    local sim = ac_getSim()
+    if not shouldAppRun() or not sim or sim.isLive ~= true or sim.isReplayActive ~= false or sim.isSessionStarted ~= true then
+      if CarManager.invalidateCarLifecycle(carIndex) then
+        OnCarEventManager.clear()
+        CarStateMachine_clearPendingLifecycle()
+      end
+      return
+    end
     OnCarEventManager.enqueueOnCarEvent(OnCarEventManager.OnCarEventType.Jumped, carIndex)
 end)
 
-ac.onSessionStart(function()
-  if (not shouldAppRun()) then return end
+if type(ac.onCarSwap) == 'function' then
+  ac.onCarSwap(-1, function(carIndex)
+    if CarManager.invalidateCarLifecycle(carIndex) then
+      OnCarEventManager.clear()
+      CarStateMachine_clearPendingLifecycle()
+    end
+  end)
+end
 
+ac.onSessionStart(function()
+  CarManager.resetSession()
+  syncGateDiagnosticSession()
+  OnCarEventManager.clear()
+  CarStateMachine_clearPendingLifecycle()
+  HumanErrorManager.resetAll()
+  AccidentManager.resetSession()
+  if not shouldAppRun() then return end
   SessionDetails.informSessionInitiated()
 end)
 
@@ -406,13 +521,42 @@ end
 -- wiki: called after a whole simulation update
 ---
 function script.MANIFEST__UPDATE(dt)
-  if (not shouldAppRun()) then return end
-
+  syncGateDiagnosticSession()
+  local running = shouldAppRun()
   local sim = ac_getSim()
+  local suspensionReason
+  if not running then
+    suspensionReason = 'disabled'
+  elseif not sim or sim.isSessionStarted ~= true then
+    suspensionReason = 'not-live'
+  elseif sim.isReplayActive == true then
+    suspensionReason = 'replay'
+  elseif sim.isLive ~= true then
+    suspensionReason = sim.isPaused == true and 'pause' or 'not-live'
+  end
+  local previousSuspensionReason = CarManager.runtimeSuspensionReason
+  local paused = suspensionReason == 'pause'
+  local live = suspensionReason == nil
+  CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = running, paused, live
+  CarManager.runtimeSuspensionReason = suspensionReason
+  logSuspensionDiagnostic(suspensionReason, sim)
+  if previousSuspensionReason ~= suspensionReason then
+    OnCarEventManager.clear()
+    CarStateMachine_clearPendingLifecycle()
+    local pauseOnlyBoundary = (previousSuspensionReason == nil or previousSuspensionReason == 'pause')
+      and (suspensionReason == nil or suspensionReason == 'pause')
+    if not pauseOnlyBoundary then
+      HumanErrorManager.resetAll()
+      CarManager.suspendLifecycle()
+      CarStateMachine_clearPendingLifecycle()
+      AccidentManager.resetSession()
+    end
+    clearOwnedGlobalFlag()
+  end
+  if not live then return end
 
+  if type(dt) ~= 'number' or dt ~= dt or dt <= 0 or dt == math.huge then return end
   GameTimeManager.update(dt)
-
-  if sim.isPaused then return end
 
   -- invalidate the per-frame caches (e.g. the actual track lateral offset cache)
   CarManager._currentFrameId = (CarManager._currentFrameId or 0) + 1
@@ -436,9 +580,9 @@ function script.MANIFEST__UPDATE(dt)
   if cameraFocusedCar then
     local cameraFocusedCarSplinePosition = cameraFocusedCar.splinePosition
     local isFocusedCarInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCarSplinePosition)
-    if isFocusedCarInYellowFlagZone then
+    if isFocusedCarInYellowFlagZone and canWriteGlobalFlag() then
       RaceFlagManager_setRaceFlag(ac.FlagType.Caution)
-    else
+    elseif canWriteGlobalFlag() then
       RaceFlagManager_removeRaceFlag()
     end
   end
@@ -454,11 +598,16 @@ function script.MANIFEST__UPDATE(dt)
 
   ---@type SortedCarsList
   local carList = CarManager.cars_currentReusableList
+  local diagnosticSampleCar, diagnosticSampleIndex
   table.clear(carList)
   for i, car in ac_iterateCars() do
     carList[i] = car
 
     local carIndex = car.index
+    if not diagnosticSampleCar and carIndex > 0 and car.isAIControlled == true then
+      diagnosticSampleCar, diagnosticSampleIndex = car, carIndex
+    end
+    CarManager_observeCarIdentity(car)
     CarManager_ensureDefaults(carIndex) -- Ensure defaults are set if this car hasn't been initialized yet
 
     CarManager_saveCarSpeed(car)
@@ -470,6 +619,13 @@ function script.MANIFEST__UPDATE(dt)
     -- local isCarComingUpToAccident = AccidentManager.isCarComingUpToAccident(car)
     -- if isCarComingUpToAccident then
     -- end
+  end
+  CarManager.finishIdentityObservation(CarManager._currentFrameId)
+  if diagnosticSampleCar then
+    local _, _, reason = CarManager_isWritableAICar(diagnosticSampleIndex)
+    logGateSample(diagnosticSampleIndex, diagnosticSampleCar, sim, reason or 'reason-unavailable')
+  else
+    logNoAISample(CarManager._currentFrameId)
   end
   local sortedCars = CarManager_sortCarListByTrackPosition(carList)
 
@@ -505,8 +661,10 @@ function script.MANIFEST__UPDATE(dt)
 
       -- Apply the global top speed limit to this car
       local requestedCarTopSpeedLimitKmh = CarManager.cars_aiTopSpeed[carIndex]
-      local appliedCarTopSpeedLimitKmh = math_min(requestedCarTopSpeedLimitKmh, globalTopSpeedLimitKmh)
-      CarOperations_setAITopSpeed(carIndex, appliedCarTopSpeedLimitKmh)
+      if requestedCarTopSpeedLimitKmh ~= nil then
+        local appliedCarTopSpeedLimitKmh = math_min(requestedCarTopSpeedLimitKmh, globalTopSpeedLimitKmh)
+        CarOperations_setAITopSpeed(carIndex, appliedCarTopSpeedLimitKmh)
+      end
     end
   end
 

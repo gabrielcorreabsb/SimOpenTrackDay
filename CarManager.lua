@@ -117,6 +117,155 @@ CarManager._currentFrameId = 0
 ---Cache of the last spline position per car, used to detect cars that moved between frames
 ---@type table<integer,number>
 CarManager.cars_previousSplinePosition = {}
+CarManager.cars_anchorPoints = CarManager.cars_anchorPoints or {}
+
+-- Session/index lifecycle stamps. Index identity is only observable as the
+-- connected/AI classification exposed by CSP; silent same-class recycling is unknowable.
+CarManager.sessionGeneration = 0
+CarManager.carGeneration = {}
+CarManager.carIdentityState = {}
+CarManager.carIdentityLastSeen = {}
+CarManager.runtimeEnabled = true
+CarManager.runtimePaused = false
+CarManager.runtimeLive = true
+
+local function validObservedIndex(index)
+  return type(index) == 'number' and index == index and index >= 0
+    and index < math.huge and index % 1 == 0
+end
+
+local function validIndex(index)
+  return validObservedIndex(index) and index >= 1
+end
+
+local function identityStateCode(value)
+  if value == true then return 2 end
+  if value == false then return 1 end
+  return 0
+end
+
+function CarManager.isWritableAICar(carIndex)
+  if not validIndex(carIndex) then return false, nil, 'invalid-index' end
+  if not CarManager.runtimeEnabled then return false, nil, 'runtime-disabled' end
+  if CarManager.runtimePaused then return false, nil, 'runtime-paused' end
+  if not CarManager.runtimeLive then return false, nil, 'runtime-not-live' end
+  local sim = ac and ac.getSim and ac.getSim()
+  if not sim then return false, nil, 'sim-missing' end
+  if sim.isLive ~= true then return false, nil, 'sim-not-live' end
+  if sim.isReplayActive == true then return false, nil, 'sim-replay-active' end
+  if sim.isReplayActive ~= false then return false, nil, 'sim-replay-state-unknown' end
+  if sim.isSessionStarted ~= true then return false, nil, 'sim-session-not-started' end
+  local hasPermission, permissionReason = CarManager.hasPhysicsPermission()
+  if not hasPermission then return false, nil, permissionReason end
+  local car = ac and ac.getCar and ac.getCar(carIndex)
+  if not car then return false, nil, 'car-missing' end
+  if car.index ~= carIndex then return false, nil, 'car-index-mismatch' end
+  if car.isAIControlled ~= true then return false, nil, 'car-not-ai' end
+  if car.isConnected ~= true then return false, nil, 'car-not-connected' end
+  if car.isActive ~= true then return false, nil, 'car-not-active' end
+  return true, car, 'eligible'
+end
+
+function CarManager.hasPhysicsPermission()
+  if not physics then return false, 'physics-missing' end
+  local allowedApi = physics.allowed
+  if allowedApi == nil then return false, 'physics-allowed-missing' end
+  local allowedType = type(allowedApi)
+  if allowedType ~= 'function' and allowedType ~= 'cdata' then
+    return false, 'physics-allowed-not-callable'
+  end
+  local ok, allowed = pcall(allowedApi)
+  if not ok then return false, 'physics-allowed-error' end
+  if allowed == false then return false, 'physics-denied' end
+  if allowed ~= true then return false, 'physics-allowed-not-true' end
+  return true, 'physics-allowed'
+end
+
+function CarManager.getCarGeneration(carIndex)
+  if not validObservedIndex(carIndex) then return nil end
+  return CarManager.carGeneration[carIndex] or 0
+end
+
+function CarManager.bumpCarGeneration(carIndex)
+  if validObservedIndex(carIndex) then
+    CarManager.carGeneration[carIndex] = (CarManager.carGeneration[carIndex] or 0) + 1
+  end
+end
+
+function CarManager.invalidateCarLifecycle(carIndex)
+  if not validObservedIndex(carIndex) then return false end
+  CarManager.bumpCarGeneration(carIndex)
+  CarManager.clearCarMemory(carIndex)
+  CarManager.carIdentityState[carIndex] = nil
+  CarManager.carIdentityLastSeen[carIndex] = nil
+  return true
+end
+
+function CarManager.invalidateSession()
+  CarManager.sessionGeneration = CarManager.sessionGeneration + 1
+  for index in pairs(CarManager.carGeneration) do CarManager.bumpCarGeneration(index) end
+end
+
+function CarManager.resetSession()
+  CarManager.invalidateSession()
+  for index in pairs(CarManager.carIdentityState) do
+    CarManager.clearCarMemory(index)
+    CarManager.cars_initialized[index] = nil
+    CarManager.cars_ORIGINAL_AI_AGGRESSION[index] = nil
+    CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[index] = nil
+  end
+  table.clear(CarManager.cars_currentReusableList)
+  CarManager.currentSortedCarsList = CarManager.cars_currentReusableList
+  table.clear(CarManager.sortedCarList_carIndexToSortedIndex)
+end
+
+function CarManager.suspendLifecycle()
+  for index in pairs(CarManager.carIdentityState) do
+    CarManager.bumpCarGeneration(index)
+    CarManager.clearCarMemory(index)
+    CarManager.cars_initialized[index] = nil
+    CarManager.cars_ORIGINAL_AI_AGGRESSION[index] = nil
+    CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[index] = nil
+  end
+  table.clear(CarManager.cars_currentReusableList)
+  CarManager.currentSortedCarsList = CarManager.cars_currentReusableList
+  table.clear(CarManager.sortedCarList_carIndexToSortedIndex)
+end
+
+function CarManager.observeCarIdentity(car, frameId)
+  if not car or not validObservedIndex(car.index) then return end
+  local index = car.index
+  CarManager.carIdentityLastSeen[index] = frameId or CarManager._currentFrameId
+  local signature = identityStateCode(car.isAIControlled) * 9 + identityStateCode(car.isConnected) * 3 + identityStateCode(car.isActive)
+  if CarManager.carIdentityState[index] ~= signature then
+    if CarManager.carIdentityState[index] ~= nil then
+      CarManager.bumpCarGeneration(index)
+      CarManager.cars_ORIGINAL_AI_AGGRESSION[index] = nil
+      CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[index] = nil
+      if HumanErrorManager and HumanErrorManager.resetCar then HumanErrorManager.resetCar(index) end
+      if AccidentManager and AccidentManager.informAboutCarReset then AccidentManager.informAboutCarReset(index) end
+      CarManager.clearCarMemory(index)
+      CarManager.cars_initialized[index] = nil
+    end
+    CarManager.carIdentityState[index] = signature
+  end
+end
+
+function CarManager.finishIdentityObservation(frameId)
+  for index in pairs(CarManager.carIdentityState) do
+    if CarManager.carIdentityLastSeen[index] ~= frameId then
+      CarManager.bumpCarGeneration(index)
+      CarManager.cars_ORIGINAL_AI_AGGRESSION[index] = nil
+      CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[index] = nil
+      if HumanErrorManager and HumanErrorManager.resetCar then HumanErrorManager.resetCar(index) end
+      if AccidentManager and AccidentManager.informAboutCarReset then AccidentManager.informAboutCarReset(index) end
+      CarManager.clearCarMemory(index)
+      CarManager.cars_initialized[index] = nil
+      CarManager.carIdentityState[index] = nil
+      CarManager.carIdentityLastSeen[index] = nil
+    end
+  end
+end
 
 -- -- evacuate state so we don’t re-trigger while a car is already evacuating
 -- local evacuating = {}
@@ -156,8 +305,16 @@ CarManager.GripValues = {
 
 ---Sets all the default values for a car
 ---@param carIndex number
-CarManager.setInitializedDefaults = function(carIndex)
-  CarManager.cars_initialized[carIndex] = true
+CarManager.clearCarMemory = function(carIndex)
+  if not validObservedIndex(carIndex) then return end
+  if AccidentManager and AccidentManager.informAboutCarReset then AccidentManager.informAboutCarReset(carIndex) end
+  if HumanErrorManager and HumanErrorManager.resetCar then HumanErrorManager.resetCar(carIndex) end
+  if CarStateMachine and CarStateMachine.invalidateReferencesToCar then
+    CarStateMachine.invalidateReferencesToCar(carIndex)
+  end
+  CarManager.cars_initialized[carIndex] = nil
+  CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] = nil
+  CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] = nil
 
   CarManager.setCalculatedTrackLateralOffset(carIndex, 0)
   CarManager.cars_targetSplineOffset[carIndex] = 0
@@ -174,12 +331,15 @@ CarManager.setInitializedDefaults = function(carIndex)
   -- CarManager.cars_evacuating[carIndex] = false
   -- CarManager.cars_anchorPoints[carIndex] = nil
   CarManager.cars_totalSideBlockRaysData[carIndex] = 0
-  CarManager.cars_sideBlockRaysData[carIndex] = {} -- since this is used as a list, initialize to empty list
+  local rays = CarManager.cars_sideBlockRaysData[carIndex]
+  if rays then table.clear(rays) else CarManager.cars_sideBlockRaysData[carIndex] = {} end
   CarManager.cars_currentlyOvertakingCarIndex[carIndex] = nil
   CarManager.cars_currentlyYieldingCarToIndex[carIndex] = nil
   CarManager.cars_timeInCurrentState[carIndex] = 0
-  CarManager.cars_statesExitReason_NAME[carIndex] = {}
-  CarManager.cars_speedBuffer[carIndex] = {}
+  local exitReasons = CarManager.cars_statesExitReason_NAME[carIndex]
+  if exitReasons then table.clear(exitReasons) else CarManager.cars_statesExitReason_NAME[carIndex] = {} end
+  local speedBuffer = CarManager.cars_speedBuffer[carIndex]
+  if speedBuffer then table.clear(speedBuffer) else CarManager.cars_speedBuffer[carIndex] = {} end
   CarManager.cars_speedBufferIndex[carIndex] = 0
   CarManager.cars_speedBufferTotal[carIndex] = 0
   CarManager.cars_speedSampleCount[carIndex] = 0
@@ -192,46 +352,58 @@ CarManager.setInitializedDefaults = function(carIndex)
   -- CarManager.cars_navigatingAroundCarIndex[carIndex] = nil
   CarManager.sortedCarList_carIndexToSortedIndex[carIndex] = nil
   CarManager.cars_doNoResetAfterNextCarJump[carIndex] = false
+  CarManager.cars_aiStopCounter[carIndex] = nil
+  CarManager.cars_gentleStop[carIndex] = nil
+  CarManager.cars_throttleLimit[carIndex] = nil
+  CarManager.cars_aiCaution[carIndex] = nil
+  CarManager.cars_aiAggression[carIndex] = nil
+  CarManager.cars_aiDifficultyLevel[carIndex] = nil
+  CarManager.cars_aiTopSpeed[carIndex] = nil
+  if CarOperations and CarOperations._currentAntiDragRaceTopSpeeds then
+    CarOperations._currentAntiDragRaceTopSpeeds[carIndex] = nil
+  end
+  CarManager.cars_grip[carIndex] = nil
+  CarManager.cars_lateralOffsetCacheByCar[carIndex] = nil
+  CarManager.cars_previousSplinePosition[carIndex] = nil
+  CarManager.cars_AABBSIZE[carIndex] = nil
+  CarManager.cars_HALF_AABSIZE[carIndex] = nil
+  CarManager.cars_anchorPoints[carIndex] = nil
   AccidentManager.setCarNavigatingAroundAccident(carIndex, nil, nil)
   CarStateMachine.initializeCarInStateMachine(carIndex)
-
-  -- remove speed limitations which could have occured during an accident
-  CarOperations.resetAIThrottleLimit(carIndex)
-  CarOperations.removeAITopSpeed(carIndex)
-  CarOperations.setAIStopCounter(carIndex, 0)
-  CarOperations.setGentleStop(carIndex, false)
-  CarOperations.removeAICaution(carIndex)
-  CarOperations.setDefaultAIAggression(carIndex)
-  CarOperations.setDefaultAIDifficultyLevel(carIndex)
-  CarOperations.setDefaultAIGrip(carIndex)
-
-  -- reset any pedal positions we may have set
-  CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
-  CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Gas)
-  CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Clutch )
-
-  CarOperations.toggleCarCollisions(carIndex, true) -- TODO: make sure this doesn't interfere with CSP's disabling of car collisions when an ai flood car cycles to a new position
-  -- CarOperations.toggleCarCollisions(carIndex, false) -- TODO: SETTING TO FALSE TO SEE IF IT ACTUALLY WORKS
-
-  local car = ac.getCar(carIndex)
-  if car then
-    CarManager.cars_AABBSIZE[carIndex] = car.aabbSize
-    CarManager.cars_HALF_AABSIZE[carIndex] = car.aabbSize * 0.5
-
-    -- Turn off any turning lights
-    ac.setTargetCar(carIndex)
-    ac.setTurningLights(ac.TurningLights.None)
-  end
 end
 
 ---If the car hasn't been initialized yet, initializes it to default values
 ---@param carIndex number
 function CarManager.ensureDefaults(carIndex)
+  if not validObservedIndex(carIndex) then return false end
+  local car = ac and ac.getCar and ac.getCar(carIndex)
+  if not car or car.index ~= carIndex then return false end
   if CarManager.cars_initialized[carIndex] then
-    return
+    if CarManager.isWritableAICar(carIndex) then
+      local aggression, level = car.aiAggression, car.aiLevel
+      if CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] == nil and type(aggression) == 'number' and aggression == aggression and aggression >= 0 and aggression <= 1 then
+        CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] = aggression
+      end
+      if CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] == nil and type(level) == 'number' and level == level and level >= 0 and level <= 2 then
+        CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] = level
+      end
+    end
+    return true
   end
-
-  CarManager.setInitializedDefaults(carIndex)
+  local aggression, level = car.aiAggression, car.aiLevel
+  CarManager.clearCarMemory(carIndex)
+  if CarManager.isWritableAICar(carIndex) then
+    if type(aggression) == 'number' and aggression == aggression and aggression >= 0 and aggression <= 1 then
+      CarManager.cars_ORIGINAL_AI_AGGRESSION[carIndex] = aggression
+    end
+    if type(level) == 'number' and level == level and level >= 0 and level <= 2 then
+      CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[carIndex] = level
+    end
+  end
+  CarManager.cars_initialized[carIndex] = true
+  CarManager.cars_AABBSIZE[carIndex] = car.aabbSize
+  if car.aabbSize then CarManager.cars_HALF_AABSIZE[carIndex] = car.aabbSize * 0.5 end
+  return true
 end
 
 --- returns the calculated spline offset of the car, which is the one we use when easing driving to the side
@@ -474,13 +646,14 @@ end
 ---comment
 ---@param car ac.StateCar
 function CarManager.saveCarSpeed(car)
+  if not car or not validObservedIndex(car.index) or not CarManager.cars_speedBuffer[car.index] then return false end
   local carIndex = car.index
   local currentSpeedKmh = car.speedKmh
 
   -- don't record the speed if the car is barely moving or stopped
   local carStopped = currentSpeedKmh < 1
   if carStopped then
-    return
+    return false
   end
 
   local currentSpeedBufferIndex = CarManager.cars_speedBufferIndex[carIndex]
@@ -499,6 +672,7 @@ function CarManager.saveCarSpeed(car)
   CarManager.cars_speedBuffer[carIndex][currentSpeedBufferIndex] = currentSpeedKmh
   CarManager.cars_speedBufferIndex[carIndex] = (currentSpeedBufferIndex + 1) % CAR_SPEEDS_BUFFER_SIZE
   CarManager.cars_averageSpeedKmh[carIndex] = sampleCount > 0 and speedBufferTotal / sampleCount or 0
+  return true
 
   -- log the entire speed buffer
   -- Logger.log(string.format("Car %d speed buffer: %s, average: %.2f", carIndex, table.concat(CarManager.cars_speedBuffer[carIndex], ", "), CarManager.cars_averageSpeedKmh[carIndex] or 0))

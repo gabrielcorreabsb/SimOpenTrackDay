@@ -163,12 +163,24 @@ CarStateMachine.states_exitFunctions = {}
 local queuedCollidedWithTrackAccidents = QueueManager.createQueue()
 local queuedCollidedWithCarAccidents = QueueManager.createQueue()
 local queuedCarCollidedWithMeAccidents = QueueManager.createQueue()
+local queuedCulpritGenerations = QueueManager.createQueue()
+local queuedVictimGenerations = QueueManager.createQueue()
+local queuedCulpritVictimGenerations = QueueManager.createQueue()
+local queuedVictimCulpritGenerations = QueueManager.createQueue()
+local queuedCulpritSessions = QueueManager.createQueue()
+local queuedVictimSessions = QueueManager.createQueue()
+local queuedCulpritAccidentIndexes = QueueManager.createQueue()
+local queuedVictimAccidentIndexes = QueueManager.createQueue()
 
 -- Logger.log("[CarStateMachine] Initialized 3 queues: "..queuedCollidedWithTrackAccidents..", "..queuedCollidedWithCarAccidents..", "..queuedCarCollidedWithMeAccidents)
 
 -- a dictionary which holds, if available, the state to transition to next in the upcoming frame
 ---@type table<integer,CarStateMachine.CarStateType>
 local queuedStatesToTransitionInto = {}
+local queuedStateGenerations = {}
+local cars_defenseRemainingTime_s = {}
+local FLOOD_STATE_REQUIRED_APIS = { 'setCarFuel', 'engageGear', 'setEngineRPM', 'setAIStopCounter',
+  'setGentleStop', 'setAICaution', 'awakeCar', 'setAINoInput' }
 
 CarStateMachine.setReasonWhyCantYield = function(carIndex, reason)
   StringsManager.setString(carIndex, Strings.StringCategories.ReasonWhyCantYield, reason)
@@ -191,6 +203,10 @@ CarStateMachine.initializeCarInStateMachine = function(carIndex)
     -- clear the car's states history since this is could be a recycled car
     CarStateMachine.cars_previousState[carIndex] = nil
     cars_state[carIndex] = nil
+    CarManager.cars_timeInCurrentState[carIndex] = 0
+    queuedStatesToTransitionInto[carIndex] = nil
+    queuedStateGenerations[carIndex] = nil
+    if cars_defenseRemainingTime_s then cars_defenseRemainingTime_s[carIndex] = nil end
 
     -- queue up the DRIVING_NORMALLY state for the car so that it will take effect in the next frame
     CarStateMachine.queueStateTransition(carIndex, CarStateMachine.CarStateType.DRIVING_NORMALLY)
@@ -200,6 +216,53 @@ end
 
 CarStateMachine.queueStateTransition = function(carIndex, newState)
     queuedStatesToTransitionInto[carIndex] = newState
+    queuedStateGenerations[carIndex] = CarManager.getCarGeneration(carIndex)
+end
+
+function CarStateMachine.clearPendingLifecycle()
+  for index in pairs(queuedStatesToTransitionInto) do
+    queuedStatesToTransitionInto[index], queuedStateGenerations[index] = nil, nil
+  end
+  while QueueManager.queueLength(queuedCollidedWithTrackAccidents) > 0 do QueueManager.dequeue(queuedCollidedWithTrackAccidents) end
+  while QueueManager.queueLength(queuedCollidedWithCarAccidents) > 0 do QueueManager.dequeue(queuedCollidedWithCarAccidents) end
+  while QueueManager.queueLength(queuedCarCollidedWithMeAccidents) > 0 do QueueManager.dequeue(queuedCarCollidedWithMeAccidents) end
+  while QueueManager.queueLength(queuedCulpritGenerations) > 0 do QueueManager.dequeue(queuedCulpritGenerations) end
+  while QueueManager.queueLength(queuedVictimGenerations) > 0 do QueueManager.dequeue(queuedVictimGenerations) end
+  while QueueManager.queueLength(queuedCulpritVictimGenerations) > 0 do QueueManager.dequeue(queuedCulpritVictimGenerations) end
+  while QueueManager.queueLength(queuedVictimCulpritGenerations) > 0 do QueueManager.dequeue(queuedVictimCulpritGenerations) end
+  while QueueManager.queueLength(queuedCulpritSessions) > 0 do QueueManager.dequeue(queuedCulpritSessions) end
+  while QueueManager.queueLength(queuedVictimSessions) > 0 do QueueManager.dequeue(queuedVictimSessions) end
+  while QueueManager.queueLength(queuedCulpritAccidentIndexes) > 0 do QueueManager.dequeue(queuedCulpritAccidentIndexes) end
+  while QueueManager.queueLength(queuedVictimAccidentIndexes) > 0 do QueueManager.dequeue(queuedVictimAccidentIndexes) end
+end
+
+function CarStateMachine.invalidateReferencesToCar(targetCarIndex)
+  local invalidatedOwners = {}
+  local function invalidateOwner(ownerIndex)
+    if ownerIndex == targetCarIndex or invalidatedOwners[ownerIndex] then return end
+    invalidatedOwners[ownerIndex] = true
+    CarManager.cars_currentlyOvertakingCarIndex[ownerIndex] = nil
+    CarManager.cars_currentlyYieldingCarToIndex[ownerIndex] = nil
+    CarManager.cars_navigatingAroundCarIndex[ownerIndex] = nil
+    CarManager.cars_navigatingAroundAccidentIndex[ownerIndex] = nil
+    CarManager.bumpCarGeneration(ownerIndex)
+    CarStateMachine.initializeCarInStateMachine(ownerIndex)
+  end
+  for ownerIndex, targetIndex in pairs(CarManager.cars_currentlyOvertakingCarIndex) do
+    if ownerIndex ~= targetCarIndex and targetIndex == targetCarIndex then
+      invalidateOwner(ownerIndex)
+    end
+  end
+  for ownerIndex, targetIndex in pairs(CarManager.cars_currentlyYieldingCarToIndex) do
+    if ownerIndex ~= targetCarIndex and targetIndex == targetCarIndex then
+      invalidateOwner(ownerIndex)
+    end
+  end
+  for ownerIndex, targetIndex in pairs(CarManager.cars_navigatingAroundCarIndex) do
+    if ownerIndex ~= targetCarIndex and targetIndex == targetCarIndex then
+      invalidateOwner(ownerIndex)
+    end
+  end
 end
 
 CarStateMachine.handleQueuedAccidents = function()
@@ -212,18 +275,39 @@ CarStateMachine.handleQueuedAccidents = function()
 
     while QueueManager.queueLength(queuedCollidedWithCarAccidents) > 0 do
         local accidentCarIndex = QueueManager.dequeue(queuedCollidedWithCarAccidents)
-        
+        local generation = QueueManager.dequeue(queuedCulpritGenerations)
+        local victimGeneration = QueueManager.dequeue(queuedCulpritVictimGenerations)
+        local sessionGeneration = QueueManager.dequeue(queuedCulpritSessions)
+        local accidentIndex = QueueManager.dequeue(queuedCulpritAccidentIndexes)
+        if sessionGeneration == CarManager.sessionGeneration
+          and generation == CarManager.getCarGeneration(accidentCarIndex)
+          and victimGeneration == CarManager.getCarGeneration(AccidentManager.accidents_collidedWithCarIndex[accidentIndex])
+          and AccidentManager.accidents_resolved[accidentIndex] == false
+          and AccidentManager.accidents_carIndex[accidentIndex] == accidentCarIndex
+          and CarManager.isWritableAICar(accidentCarIndex) then
         Logger.log(string.format("CarStateMachine: #%d collided with another car, switching to COLLIDED_WITH_CAR state", accidentCarIndex))
         CarStateMachine.queueStateTransition(accidentCarIndex, CarStateMachine.CarStateType.COLLIDED_WITH_CAR)
+        end
     end
 
     while QueueManager.queueLength(queuedCarCollidedWithMeAccidents) > 0 do
         local accidentCarIndex = QueueManager.dequeue(queuedCarCollidedWithMeAccidents)
+        local generation = QueueManager.dequeue(queuedVictimGenerations)
+        local culpritGeneration = QueueManager.dequeue(queuedVictimCulpritGenerations)
+        local sessionGeneration = QueueManager.dequeue(queuedVictimSessions)
+        local accidentIndex = QueueManager.dequeue(queuedVictimAccidentIndexes)
+        if sessionGeneration == CarManager.sessionGeneration
+          and generation == CarManager.getCarGeneration(accidentCarIndex)
+          and culpritGeneration == CarManager.getCarGeneration(AccidentManager.accidents_carIndex[accidentIndex])
+          and AccidentManager.accidents_resolved[accidentIndex] == false
+          and AccidentManager.accidents_collidedWithCarIndex[accidentIndex] == accidentCarIndex
+          and CarManager.isWritableAICar(accidentCarIndex) then
 
         Logger.log(string.format("CarStateMachine: #%d was collided into by another car, switching to ANOTHER_CAR_COLLIDED_INTO_ME state", accidentCarIndex))
         -- Logger.log(string.format("%d %d ", carIndex, QueueManager.queueLength(queuedCarCollidedWithMeAccidents)))
         -- Logger.log(string.format("%d", carIndex))
         CarStateMachine.queueStateTransition(accidentCarIndex, CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+        end
     end
 end
 
@@ -234,12 +318,30 @@ end
 ---@param sortedCarListIndex integer #1-based index of the car in sortedCarList
 -- ---@param storage StorageTable
 CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListIndex)
+    if type(dt) ~= 'number' or dt ~= dt or dt <= 0 or dt == math.huge
+      or not CarManager.isWritableAICar(carIndex) then return false end
+    local carGeneration = CarManager.getCarGeneration(carIndex)
+    local pendingState = queuedStatesToTransitionInto[carIndex]
+    if pendingState and queuedStateGenerations[carIndex] ~= carGeneration then
+      queuedStatesToTransitionInto[carIndex], queuedStateGenerations[carIndex] = nil, nil
+      pendingState = nil
+    end
+    local currentState = CarStateMachine.getCurrentState(carIndex)
+    local stateToExecute = pendingState or currentState or CarStateMachine.CarStateType.DRIVING_NORMALLY
+    if stateToExecute == CarStateMachine.CarStateType.AFTER_CUSTOMAIFLOOD_TELEPORT then
+      for i = 1, #FLOOD_STATE_REQUIRED_APIS do
+        if not physics or type(physics[FLOOD_STATE_REQUIRED_APIS[i]]) ~= 'function' then return false end
+      end
+    end
     -- CarManager.cars_anchorPoints[carIndex] = nil -- clear the anchor points each frame, they will be recalculated if needed
     CarManager.cars_totalSideBlockRaysData[carIndex] = 0
     table_clear(CarManager.cars_sideBlockRaysData[carIndex])
 
     -- check if there's a new state we need to transition into
-    local newStateToTransitionIntoThisFrame = queuedStatesToTransitionInto[carIndex]
+    local newStateToTransitionIntoThisFrame = pendingState
+    if not newStateToTransitionIntoThisFrame and currentState == nil then
+      newStateToTransitionIntoThisFrame = CarStateMachine.CarStateType.DRIVING_NORMALLY
+    end
     -- local shouldTransitionIntoNewState = not (newStateToTransitionIntoThisFrame == nil)
     local shouldTransitionIntoNewState = newStateToTransitionIntoThisFrame --and newStateToTransitionIntoThisFrame > 0
     -- Logger.log(string.format("CarStateMachine: Car %d Checking queued: %d, shouldTransition: %s", carIndex, queuedStatesToTransitionInto[carIndex], tostring(shouldTransitionIntoNewState)))
@@ -249,6 +351,7 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
       -- Logger.log(string.format("CarStateMachine: Transitioning car %d into new state: %s", carIndex, CarStateMachine.CarStateTypeStrings[newStateToTransitionIntoThisFrame]))
       -- clear the queued transition since we're now taking care of it
       queuedStatesToTransitionInto[carIndex] = nil
+      queuedStateGenerations[carIndex] = nil
 
       -- change to the new state
       changeState(carIndex, newStateToTransitionIntoThisFrame)
@@ -317,7 +420,15 @@ CarStateMachine.informAboutAccident = function(accidentIndex)
         -- if the car collided with another car, we need to inform both cars
         -- Logger.log(string.format("Enqueueing accident: car %d collided with car %d", carIndex, collidedWithCarIndex))
         QueueManager.enqueue(queuedCollidedWithCarAccidents, carIndex)
+        QueueManager.enqueue(queuedCulpritGenerations, CarManager.getCarGeneration(carIndex))
+        QueueManager.enqueue(queuedCulpritVictimGenerations, CarManager.getCarGeneration(collidedWithCarIndex))
+        QueueManager.enqueue(queuedCulpritSessions, CarManager.sessionGeneration)
+        QueueManager.enqueue(queuedCulpritAccidentIndexes, accidentIndex)
         QueueManager.enqueue(queuedCarCollidedWithMeAccidents, collidedWithCarIndex)
+        QueueManager.enqueue(queuedVictimGenerations, CarManager.getCarGeneration(collidedWithCarIndex))
+        QueueManager.enqueue(queuedVictimCulpritGenerations, CarManager.getCarGeneration(carIndex))
+        QueueManager.enqueue(queuedVictimSessions, CarManager.sessionGeneration)
+        QueueManager.enqueue(queuedVictimAccidentIndexes, accidentIndex)
     end
 end
 
@@ -597,7 +708,6 @@ CarStateMachine.states_minimumTimeInState[DEFENDING_POSITION] = 0
 -- How long (in seconds) the car will defend a position, keeping its racing line while being pressured from behind before it starts yielding
 -- lazily initialized on first use inside the entry function
 ---@type table<integer,number>
-local cars_defenseRemainingTime_s
 
 -- Distance (meters) within which the car behind is still considered to be pressuring us
 local DEFENDING_POSITION_PRESSURE_DISTANCE_m = 30

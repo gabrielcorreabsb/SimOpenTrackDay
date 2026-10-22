@@ -57,4 +57,12 @@ CompletableIndexCollectionManager.incrementLastIndexCreated = function(indexInde
     return lastIndexCreated
 end
 
+---Resets counters for an existing collection without replacing its identity.
+CompletableIndexCollectionManager.reset = function(indexIndex)
+    if collections_lastIndexCreated[indexIndex] == nil then return false end
+    collections_lastIndexCreated[indexIndex] = 0
+    collections_firstNonResolvedIndex[indexIndex] = 1
+    return true
+end
+
 return CompletableIndexCollectionManager

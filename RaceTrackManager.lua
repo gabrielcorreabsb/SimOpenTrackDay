@@ -163,21 +163,15 @@ local calculateYellowFlagZoneStartEndPositions = function(accidentIndex, yellowZ
     local closestSplinePosition
     local furthestSplinePosition
 
-    -- start by using the culprit car's spline position
-    local culpritCarIndex = AccidentManager.accidents_carIndex[accidentIndex]
-    local culpritCar = ac.getCar(culpritCarIndex)
-    if culpritCar then
-        local culpritCarSplinePosition = culpritCar.splinePosition
-        closestSplinePosition = culpritCarSplinePosition
-        furthestSplinePosition = culpritCarSplinePosition
-    end
+    -- Use the event-time culprit observation first; it is immutable across dequeue.
+    closestSplinePosition = AccidentManager.accidents_splinePosition[accidentIndex]
+    furthestSplinePosition = closestSplinePosition
 
     -- if there's a collided-with car, check its spline position too and use the furthest one of the two
     local collidedWithCarIndex = AccidentManager.accidents_collidedWithCarIndex[accidentIndex]
     if collidedWithCarIndex then
-        local collidedWithCar = ac.getCar(collidedWithCarIndex)
-        if collidedWithCar then
-            local collidedWithCarSplinePosition = collidedWithCar.splinePosition
+        local collidedWithCarSplinePosition = AccidentManager.accidents_victimSplinePosition[accidentIndex]
+        if collidedWithCarSplinePosition ~= nil then
             if collidedWithCarSplinePosition > furthestSplinePosition then
                 furthestSplinePosition = collidedWithCarSplinePosition
             else 
@@ -338,6 +332,7 @@ end
 --- Removes a yellow flag zone
 ---@param yellowFlagZoneIndex number
 RaceTrackManager.removeYellowFlagZone = function(yellowFlagZoneIndex)
+    if yellowFlagZoneIndex == nil or yellowZones_startSplinePosition[yellowFlagZoneIndex] == nil then return false end
     removeYellowFlagZoneFromBuckets(yellowFlagZoneIndex, yellowZones_startSplinePosition[yellowFlagZoneIndex], yellowZones_endSplinePosition[yellowFlagZoneIndex])
 
     yellowZones_startSplinePosition[yellowFlagZoneIndex] = nil
@@ -346,6 +341,14 @@ RaceTrackManager.removeYellowFlagZone = function(yellowFlagZoneIndex)
 
     yellowZones_resolved[yellowFlagZoneIndex] = true
     CompletableIndexCollectionManager.updateFirstNonResolvedIndex(yellowZonesCompletableIndex, yellowZones_resolved)
+    return true
+end
+
+function RaceTrackManager.resetOwnedYellowFlagZones()
+    for zoneIndex = 1, CompletableIndexCollectionManager.getLastIndexCreated(yellowZonesCompletableIndex) do
+        if yellowZones_resolved[zoneIndex] == false then RaceTrackManager.removeYellowFlagZone(zoneIndex) end
+    end
+    CompletableIndexCollectionManager.reset(yellowZonesCompletableIndex)
 end
 
 ---Returns a boolean value indicating whether the given spline position is inside any active yellow flag zone.

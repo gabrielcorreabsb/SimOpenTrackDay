@@ -4,9 +4,10 @@
 
 **Consolidado em 2026-10-21**, a partir da conversa, da [auditoria M0](CSP_CAPABILITY_AUDIT.md) e do [roadmap original](SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md). Baseline de código auditada: `10ed904d2c2178e5d3c5ec3298d474c37e34ecbd`.
 
-- **Autorizado nesta entrega:** consolidar documentação e fazer seu commit/push. Não iniciar implementação, criar worktrees ou alterar ferramentas/configurações/instalação.
+- **Entrega documental original (`a45ab3b`):** consolidação publicada em `main`; sua autorização não incluía código nem worktrees.
 - **M0:** auditoria de fontes concluída; confirmação funcional no CSP pendente. A matriz distingue SDK, exemplos externos, código atual e runtime.
-- **M1a em diante:** propostas, ainda não autorizadas nem implementadas por este plano. Não há cronograma ou promessa de versão vinculante.
+- **M1a:** primeira entrega local revisada em 2026-10-21. Em 2026-10-22, o diagnóstico no CSP identificou bloqueio indevido da representação `cdata` de `physics.allowed`; correção delimitada implementada/revisada e revalidada localmente: 87 sintaxes PASS, testes headless 14 PASS / 1 FAIL preexistente. Nova sessão CSP confirmou permissão na amostra e o usuário relatou retorno dos estados das IAs; aceite integral do M1a ainda pendente. Posteriormente, o usuário autorizou commit, push da branch M1a e encerramento da worktree; integração em `main` e retirada do diagnóstico temporário não integram essa autorização.
+- **M1b em diante:** propostas, não autorizadas nem implementadas por este plano. Não há cronograma ou promessa de versão vinculante.
 - Em divergências sobre capacidades e baseline, usar as evidências da auditoria; o roadmap continua sendo backlog, não uma descrição confiável de tudo que já funciona.
 
 Objetivo de produto: track day offline com tráfego orgânico, cessão de passagem e cautela contextual, preservando decisões nativas da IA. Não prometer point-by obrigatório, veto universal a ultrapassagens, serviço de pit em qualquer pista ou falha mecânica física universal.
@@ -45,13 +46,70 @@ Cada milestone deve ganhar um ticket curto aprovado pelo usuário:
 5. Plano de validação proporcional e limites conhecidos, incluindo falhas preexistentes.
 6. Necessidade de worktree/branch, ponto-base e operações Git autorizadas. Commit/push de uma etapa não autoriza os seguintes.
 
-### Preparação de M1a, ainda sem autorização de código
+### Ticket M1a aprovado — isolamento e lifecycle
 
-Áreas candidatas a inspecionar antes de fechar os arquivos: `SimOpenTrackDay.lua`, `CarManager.lua`, `CarOperations.lua`, `OnCarEventManager.lua`, `HumanErrorManager.lua`, `AccidentManager.lua` e `SessionDetails.lua`. Não é ordem para editar todos esses módulos nem para criar uma arquitetura paralela.
+**Gate aprovado em 2026-10-21:** implementação delimitada, testes focados e atualização apenas deste documento. A inspeção confirmou `main`/`origin/main` em `a45ab3bfe2cf802d3dbcd99b91db3cbdad121458`, sem alterações tracked preexistentes. Untracked locais foram preservados. Entre a baseline auditada `10ed904` e esse commit só houve documentação: os achados M0 pertinentes continuavam no runtime, sem necessidade de refazer a auditoria.
 
-Fechar primeiro a menor fatia que proteja jogador e ciclo de vida em **todos** os caminhos de escrita, inclusive awake, callbacks e incidentes. Separar limpeza dos dados próprios da liberação de controles físicos. M1a não deve prometer restaurar knobs sem readback; M1b introduz ownership progressivamente. Correções de segurança podem alterar deliberadamente o comportamento inseguro anterior, mas não justificam tuning geral.
+**Objetivo e mudança deliberada:** impedir atuação por carro no jogador (inclusive autopilot), humanos e índices inválidos/inexistentes; impedir novas atuações em pausa, replay, disable ou permissão física ausente/desconhecida. Aplicar o gate comum aos writers e ao dispatch da FSM, inclusive awake, callbacks e vítimas de incidentes. APIs necessárias ausentes bloqueiam a atuação correspondente.
 
-Aceite local proposto: chamadas instrumentadas em mocks para jogador/IA/autopilot, índice inválido/reciclado, replay, pausa, disable e session start; eventos antigos descartados; cooldown não herdado. APIs ausentes não causam novas escritas indevidas. No jogo: observar os mesmos limites e resíduos por controle, sem inferir sucesso a partir do mock.
+Identidade usa gerações de sessão/carro nos dados existentes. Capturar snapshots escalares e gerações dos participantes de colisões; descartar eventos/transições obsoletos, inclusive após Jumped/reset/swap, desaparecimento/reaparecimento observável e troca IA/humano. Session start invalida mesmo disabled. Pausa congela tempo/estado e purga pendências nas bordas; disable/replay invalidam estado próprio. Limpar caches, cooldowns, referências e vínculos de acidentes/zonas sem recuperação física completa.
+
+Separar inicialização/limpeza de memória de escrita física. Observações de aggression/level devem preceder a primeira atuação e não atravessar identidades; não equivalem a baseline nativa confiável. Não escrever defaults para simular restauração nem reativar colisões indiscriminadamente. A única exceção global à suspensão é liberar a bandeira própria para `FlagType.None`, quando permitido/disponível, sem restaurar estado de outros mods.
+
+**Allowlist exata:**
+
+| Tipo | Arquivos autorizados |
+| --- | --- |
+| Runtime existente | `SimOpenTrackDay.lua`, `CarManager.lua`, `CarOperations.lua`, `HumanErrorManager.lua`, `OnCarEventManager.lua`, `CarStateMachine/CarStateMachine.lua`, `AccidentManager.lua`, `RaceTrackManager.lua`, `DataStructures/CompletableIndexCollectionManager.lua` |
+| Testes novos | `tools/test_player_guard.lua`, `tools/test_session_lifecycle.lua` |
+| Documentação existente | `docs/plans/DEVELOPMENT_PLAN.md` |
+| Preparação | `.gitignore` existente e `.ignore` novo no checkout principal e na lane; `.slim/worktrees.json` novo, local/ignorado, no principal |
+
+O helper de coleção deve apenas reiniciar contadores de uma coleção existente em-place, sem criar coleções por reset. Não ampliar a allowlist sem novo gate. Auditoria histórica, `TESTING.md`, states individuais, `SessionDetails.lua`, `GameTimeManager.lua`, `RaceFlagManager.lua`, payload e manifest não fazem parte da edição.
+
+**Exclusões:** M1b/ownership/arbitragem/solicitado versus aplicado, tuning, novos multiplicadores de grip, pit automático, recuperação completa de incidentes, UI, storage/settings, vendor, dependências, configuração do OpenCode e instalação do jogo. Preservar LuaJIT/Lua 5.1, bindings locais e estruturas DoD reutilizáveis.
+
+**Isolamento aprovado e criado:** branch `omos/m1a-player-lifecycle`, worktree `E:\Projetos\SimOpenTrackDay\.slim\worktrees\m1a-player-lifecycle`, base fixa `a45ab3bfe2cf802d3dbcd99b91db3cbdad121458`. Submódulo inicializado na lane em `7007085f48ad12a0bcf35eaed028691111a83697`, sem atualização. A exceção no checkout principal limita-se aos ignores e metadados citados; runtime/testes/docs ficam somente na lane. Nenhum commit, push, integração ou remoção foi autorizado.
+
+**Aceite e donos da evidência:** implementador cria e executa os dois testes focados, com recorder das chamadas dos módulos reais sob mocks; integrador reconcilia os artefatos e executa sintaxe e todos os testes Lua headless; revisor inspeciona o diff somente leitura. Cobrir IA elegível positiva e zero writes proibidos, awake/frame/Jumped/vítima jogador, índices inválidos, APIs/permissão ausentes, dt inválido, dez ciclos de suspensão, `Collision(A) → Jumped(A) → Collision(A)`, reset da vítima, sessão disabled e não herança de cooldowns/baselines/transições/referências/zonas. Limpeza de memória não deve emitir writes físicos.
+
+**Limites:** mock testa contrato lógico, não efeito CSP. Reciclagem silenciosa sem sinal observável não tem identidade certificável; resíduos físicos sem liberação segura ficam para M1b/validação no CSP. Permanecem pendentes ordem real de callbacks, Flood/recycle, jogador/autopilot, replay/pausa/reset, dez ciclos de ativação e resíduos por controle. A falha preexistente de `test_ui_smoke.lua` por fixture ausente deve aparecer no resultado integrado, sem substituição do fixture ou declaração de suíte verde.
+
+### Entrega local M1a e evidências — 2026-10-21
+
+Nos nove módulos autorizados, a implementação separa observação de atuação: jogador/humanos podem ter buffers de memória, mas o gate central rejeita seus controles. O gate usa os sinais documentados `isLive`, `isReplayActive`, `isSessionStarted`, carro AI/ativo/conectado e `physics.allowed() == true`; ausência de permissão/API bloqueia a atuação correspondente. Inicialização e invalidação não aplicam defaults físicos nem reativam colisões.
+
+Eventos capturam gerações dos dois participantes e snapshots escalares; reset/swap, sessão e mudanças observáveis invalidam trabalho antigo. A FSM valida pendências e reconstrói estado ausente pelo dispatch elegível, sem perder uma FSM saudável durante pausa. Referências recebidas de um carro invalidado cancelam a manobra dependente em memória; isso não restaura controles físicos anteriores. Acidentes, zonas, caches, cooldowns e observações têm limpeza delimitada, reutilizando as coleções existentes. A fila de callbacks reutiliza **256 registros**: colisões excedentes são descartadas; Jumped com fila cheia purga pendências antes de entrar. Não há garantia de registrar toda colisão em sobrecarga.
+
+Implementação e testes foram delegados na branch/worktree indicada; a revisão foi somente leitura e os achados reportados foram corrigidos antes da validação integrada. O integrador leu/reconciliou os artefatos e executou uma rodada integrada, com LuaJIT `2.1.1720049189`, a partir da lane:
+
+| Check realmente executado | Resultado e limite |
+| --- | --- |
+| `tools/check_lua_syntax.ps1 -Root <worktree> -LuaJitPath <luajit.exe>` | **PASS: 87 arquivos**, com exclusões de vendor/submódulo do próprio script |
+| Todos os 15 `tools/test_*.lua`, cada um em processo LuaJIT separado | **14 PASS / 1 FAIL**; inclui `test_module_path`, `test_no_diagnostics` e os dois testes novos. A execução agregada terminou com código 1 |
+| `test_ui_smoke.lua` sem substituição ou geração de fixture | **FAIL preexistente:** `tools.fixtures.settings_baseline` não encontrado; `tools/fixtures/settings_baseline.lua` continua ausente. Não há suíte integral verde |
+| `test_player_guard.lua` e `test_session_lifecycle.lua`, também executados isoladamente na implementação/revisão | **PASS sob mocks**: matriz de writers básicos, índices inválidos, jogador/autopilot/humanos, APIs/permissão ausentes; entry/callbacks reais com gerações, pausa, reset/swap, referências, zonas e dez ciclos de disable/replay com permissão física ativa |
+| Revisão do diff/allowlist, `git diff --check` e links locais deste documento | **PASS**; avisos LF/CRLF do Git não foram erros de whitespace |
+
+O harness usa managers reais, mas substitui UI/SDK, relógio/sessão e parte dos estados. As regressões finais exercitam a entry real de `DrivingNormally` e mantêm instalada a transição real vulnerável de `StayingOnOvertakingLane`; isso não equivale à execução integral de todos os estados. Nessa rodada de 2026-10-21 não houve teste CSP, renderização real, benchmark, empacotamento/instalador ou instalação no jogo. Manifest, payload, vendor, dependências e settings não foram alterados.
+
+**Aceite local limitado às evidências acima; runtime pendente.** Validar no CSP a ordem de callbacks, reset da vítima/jogador, swap/Flood/recycle e troca IA/humano; pausa e replay sem atuação; dez ciclos com resíduos por controle observados. Registrar build CSP, revisão instalada e cenário. Baseline observada não prova valor nativo nem liberação de overrides desconhecidos; não certificar reciclagem silenciosa. M1b e recuperação física completa continuam excluídos.
+
+### Diagnóstico CSP e correção de permissão — 2026-10-22
+
+O usuário instalou manualmente a cópia M1a e relatou ausência dos estados dos carros. A instrumentação temporária `[M1a-GATE]`, aprovada e limitada aos dois módulos de entrada/gate e aos dois testes M1a, não alterou a política de atuação nem a UI. Os hashes dos arquivos copiados foram confrontados com a lane; a automação não modificou instalação ou settings.
+
+No `custom_shaders_patch.log` de **CSP v0.3.0-preview675**, sessão de **02:05:06**, a amostra `car=1` mostrou sessão live/iniciada e IA ativa/conectada, mas `result=physics-allowed-not-function`, `physicsAllowedType=cdata`, `physicsAllowedValue=cdata<bool ()>: 0xff` e `physicsTopSpeedType=function`. O teste de tipo Lua `function` rejeitava a API antes de consultá-la, bloqueando o dispatch da FSM. O SDK de apps instalado documenta `physics.allowed()` com retorno booleano; a representação observada é chamável FFI. **Isso prova a incompatibilidade da checagem de tipo, não que a permissão retornará true nem que a FSM já atua corretamente.** O log também registrou bordas de disable e pausa, não a segurança de todos os seus efeitos.
+
+Uma reprodução LuaJIT isolada com callbacks `ffi.cast('bool (*)()', ...)` confirmou `pcall` bem-sucedido com retornos `true` e `false`. Trata-se de prova local da representação, não execução da API CSP real.
+
+**Correção aprovada e implementada nesta rodada:** somente `CarManager.lua`, `SimOpenTrackDay.lua`, `tools/test_player_guard.lua`, `tools/test_session_lifecycle.lua` e este plano. `CarManager.hasPhysicsPermission()` aceita função Lua ou `cdata` sob `pcall`, exigindo chamada bem-sucedida e retorno exatamente `true`; ausência, objeto não chamável, erro, false e resultado desconhecido continuam bloqueados. Os dois helpers de bandeira usam a mesma consulta, sem ampliar a exceção de suspensão além da liberação própria para `None`. Não se usa presença de setter como substituto de permissão nem booleano solto como autorização. Demais gates e exclusões permanecem; os motivos diagnósticos distinguem API ausente, não chamável, erro, false e resultado não verdadeiro.
+
+**Verificação da correção em 2026-10-22:** revisão somente leitura sem novo achado bloqueante; integrador leu/reconciliou os artefatos e executou uma nova rodada integrada com o mesmo LuaJIT, na lane. Sintaxe: **87 PASS**. Todos os 15 testes Lua foram executados em processos separados, incluindo `test_module_path` e `test_no_diagnostics`: **14 PASS / 1 FAIL**, código agregado 1. A única falha continua sendo `test_ui_smoke.lua:10`, por `tools.fixtures.settings_baseline` ausente, sem fixture substituto ou variável de ambiente de baseline. Não há suíte integral verde.
+
+Os testes focados agora usam callbacks FFI reais com retornos true/false, `cdata` não chamável, função Lua com erro e retornos não booleanos, APIs ausentes e tipos desconhecidos; verificam controle AI positivo e bloqueios, além da liberação de bandeira com permissão FFI e sua negação. Esses PASS estabelecem o contrato LuaJIT sob mocks, não o valor retornado pela API instalada nem a atuação da FSM no CSP. O diagnóstico temporário permanece; a automação não instalou a correção.
+
+**Reteste manual observado em 2026-10-22:** após nova cópia dos dois módulos pelo usuário, ele informou **“Estados voltaram”**. No mesmo log CSP v0.3.0-preview675, às **02:29:42**, a amostra `car=1` registrou `result=eligible`, `physicsCheck=true` e `physicsAllowedType=cdata`, com sessão live/iniciada e IA ativa/conectada. Os SHA-256 instalados coincidiram com a lane: `CarManager.lua` = `4AA4FD942C98706DF7BF8828FB17982227C5C76C9E2E8605E02D2CD2D52618B9`; `SimOpenTrackDay.lua` = `FC8ECEA23173C6E04825F2090C8FBCABD202513D66AAF1B701517A61C461AC37`. Isso confirma a consulta de permissão positiva na amostra e o retorno visual relatado dos estados nessa sessão, não o aceite de todos os controles/cenários M1a. O log também mostra entrada em pausa às 02:30:56 e replay às 02:31:53; essas bordas, isoladamente, não comprovam ausência de writes ou cleanup físico. Pista/layout/grade não foram registrados neste reteste.
 
 ## Princípios de implementação
 
@@ -72,7 +130,7 @@ Aceite local proposto: chamadas instrumentadas em mocks para jogador/IA/autopilo
 
 Worktrees e movimentação de sessões são documentados no V2. O [guia de configuração](https://opencode.ai/v2/docs/config/#worktrees) informa `worktree.directory`; sem personalização, o destino é o data directory do servidor, em `worktree/<seis primeiros caracteres do project ID>`. Isso descreve a documentação, **não identifica a configuração local instalada**.
 
-A skill `worktrees` deste ambiente adota `.slim/worktrees/<slug>/` e metadados locais `.slim/worktrees.json`. É uma convenção de skill/plugin, não padrão nativo. Não criar lanes antes de conciliar essa convenção com destino, ignores e aprovação. Qualquer edição de `.gitignore`, `.ignore`, metadados ou configuração deve integrar um escopo explícito; esta entrega não faz essas alterações.
+A skill `worktrees` deste ambiente adota `.slim/worktrees/<slug>/` e metadados locais `.slim/worktrees.json`. É uma convenção de skill/plugin, não padrão nativo. Não criar lanes antes de conciliar essa convenção com destino, ignores e aprovação. Qualquer edição de `.gitignore`, `.ignore`, metadados ou configuração deve integrar um escopo explícito; a consolidação original não fez essas alterações, e o ticket M1a autoriza somente a preparação indicada acima.
 
 Na TUI, `Ctrl+P` abre a paleta; a ação de mover sessão tem ID `session.move` e não tem atalho dedicado por padrão. O diálogo inclui criar/mover worktrees. Não pressupor um comando CLI `opencode worktree` inexistente na documentação consultada. A documentação V2 pode diferir da versão instalada: conferir disponibilidade antes de executar.
 
@@ -133,17 +191,8 @@ Um milestone só fica **concluído** quando seu escopo está entregue/revisado e
 
 ## Handoff para a próxima sessão
 
-```text
-Milestone / estado:
-Objetivo e exclusões:
-Arquivos autorizados:
-Branch / worktree / base:
-Decisões e evidências de fonte:
-Alterações entregues:
-Checks executados e resultados:
-Cenários CSP observados / pendentes:
-Falhas conhecidas e limitações:
-Próximo passo e autorização necessária:
-```
-
-**Próximo gate:** aprovar o ticket e os arquivos exatos de M1a. A aprovação desta consolidação documental e de seu commit/push não autoriza implementação, criação de worktree nem alterações de configuração.
+- **Estado:** entrega M1a na branch `omos/m1a-player-lifecycle`; correção da incompatibilidade de tipo na consulta de permissão implementada/revisada localmente em 2026-10-22, com permissão positiva amostrada no CSP e retorno dos estados relatado pelo usuário. Aceite integral M1a pendente. M1b/tuning/UI/pit/recuperação completa excluídos.
+- **Lane/base/arquivos:** `omos/m1a-player-lifecycle`, caminho/base fixa e allowlist do ticket acima. Checkout principal preservado, exceto preparação de ignores/metadados aprovada; submódulo permanece fixado.
+- **Evidência mais recente (2026-10-22):** 87 sintaxes PASS; 14/15 testes PASS, incluindo novos casos FFI; única falha integrada foi o fixture preexistente ausente de `test_ui_smoke`. Revisão somente leitura encerrada sem novo achado bloqueante na correção.
+- **Pendências:** validar os demais cenários CSP: callbacks/Flood/recycle, jogador/autopilot, pausa/replay sem atuação e dez ciclos/resíduos por controle. O retorno dos estados e a amostra de permissão não certificam esses contratos; mocks e fila limitada também não. Diagnóstico temporário ainda presente.
+- **Publicação e próximo gate:** em 2026-10-22 o usuário autorizou commit e push da branch M1a e encerramento da worktree, preservando a branch publicada; não integrar em `main`. O diagnóstico temporário permanece. A próxima sessão deve partir do commit publicado dessa branch (não presumir M1a em `main`), propor a menor fatia M1b e sua allowlist/testes/worktree antes de editar, e explicitar cenários CSP restantes e retirada futura do diagnóstico. Somente o usuário fez cópias para a instalação. Não há autorização de implementação M1b, correção do fixture ou configuração do OpenCode.

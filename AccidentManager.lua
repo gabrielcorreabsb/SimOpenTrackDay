@@ -3,15 +3,19 @@ local AccidentManager = {}
 -- local lastAccidentIndexCreated = 0
 -- local firstNonResolvedAccidentIndex = 1
 
--- local RESET_ACCIDENTS_ON_CAR_RESET = true
-local RESET_ACCIDENTS_ON_CAR_RESET = false -- Andreas: setting to false while working on frenet avoidance because of simualte_accident_manual which teleports the cars
-
 local accidentCompletableIndex = CompletableIndexCollectionManager.createNewIndex()
+local accidentCulpritGeneration = {}
+local accidentVictimGeneration = {}
+local function isFiniteNumber(value)
+    return type(value) == 'number' and value == value and value ~= math.huge and value ~= -math.huge
+end
 
 ---@type table<integer,integer>
 AccidentManager.accidents_carIndex = {}
 ---@type table<integer,vec3>
 AccidentManager.accidents_worldPosition = {}
+AccidentManager.accidents_victimWorldPosition = {}
+AccidentManager.accidents_victimSplinePosition = {}
 ---@type table<integer,number>
 AccidentManager.accidents_splinePosition = {}
 ---@type table<integer,boolean>
@@ -33,8 +37,11 @@ AccidentManager.cars_victimInAccidentIndex = {}
 ---@param accidentIndex integer
 local setAccidentAsResolved = function(accidentIndex)
         local culpritCarIndex = AccidentManager.accidents_carIndex[accidentIndex]
+        local victimCarIndex = AccidentManager.accidents_collidedWithCarIndex[accidentIndex]
         AccidentManager.accidents_carIndex[accidentIndex] = nil
         AccidentManager.accidents_worldPosition[accidentIndex] = nil
+        AccidentManager.accidents_victimWorldPosition[accidentIndex] = nil
+        AccidentManager.accidents_victimSplinePosition[accidentIndex] = nil
         AccidentManager.accidents_splinePosition[accidentIndex] = nil
         AccidentManager.accidents_collidedWithTrack[accidentIndex] = nil
         AccidentManager.accidents_collidedWithCarIndex[accidentIndex] = nil
@@ -44,8 +51,14 @@ local setAccidentAsResolved = function(accidentIndex)
         RaceTrackManager.removeYellowFlagZone(yellowFlagZoneIndex)
         AccidentManager.accidents_yellowFlagZoneIndex[accidentIndex] = nil
 
-        AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] = 0
-        AccidentManager.cars_victimInAccidentIndex[culpritCarIndex] = 0
+        if culpritCarIndex ~= nil and AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] == accidentIndex then
+            AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] = nil
+        end
+        if victimCarIndex ~= nil and AccidentManager.cars_victimInAccidentIndex[victimCarIndex] == accidentIndex then
+            AccidentManager.cars_victimInAccidentIndex[victimCarIndex] = nil
+        end
+        accidentCulpritGeneration[accidentIndex] = nil
+        accidentVictimGeneration[accidentIndex] = nil
 
         --[==[
         AccidentManager.accidents_resolved[accidentIndex] = true
@@ -74,11 +87,6 @@ end
 ---Resolve any accident the given car is a culprit in
 ---@param carIndex number
 AccidentManager.informAboutCarReset = function(carIndex)
-    if not RESET_ACCIDENTS_ON_CAR_RESET then
-        Logger.warn("[AccidentManager] informAboutCarReset called but RESET_ACCIDENTS_ON_CAR_RESET is false so not resetting any accidents")
-        return
-    end
-
     local accidentIndexAsCulprit = AccidentManager.cars_culpritInAccidentIndex[carIndex]
     -- Logger.log(string.format("[AccidentManager] informAboutCarReset called for car #%d. culpritInAccident #%d.  Total accidents: %d", carIndex, accidentIndexAsCulprit, #AccidentManager.accidents_carIndex))
     if accidentIndexAsCulprit and accidentIndexAsCulprit > 0 then
@@ -86,6 +94,10 @@ AccidentManager.informAboutCarReset = function(carIndex)
         Logger.log(string.format("[AccidentManager] Car #%d has reset, clearing accident #%d", carIndex, accidentIndexAsCulprit))
 
         setAccidentAsResolved(accidentIndexAsCulprit)
+    end
+    local victimAccident = AccidentManager.cars_victimInAccidentIndex[carIndex]
+    if victimAccident and victimAccident > 0 and victimAccident ~= accidentIndexAsCulprit then
+        setAccidentAsResolved(victimAccident)
     end
 end
 
@@ -95,7 +107,7 @@ end
 ---@param collidedWith integer @0 = track, 1+ = car collider index
 ---@return integer? accidentIndex
 -- AccidentManager.registerCollision = function(culpritCarIndex)
-AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosition, collidedWith)
+AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosition, collidedWith, eventStamp)
 
     -- TODO: need to handle what happens when a player car is the culprit car
     -- TODO: need to handle what happens when a player car is the culprit car
@@ -103,13 +115,14 @@ AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosi
     -- TODO: need to handle what happens when a player car is the culprit car
 
 
-    if culpritCarIndex == 0 then
+    if type(culpritCarIndex) ~= 'number' or culpritCarIndex ~= culpritCarIndex or culpritCarIndex < 1 or culpritCarIndex % 1 ~= 0 then
         -- Logger.log("AccidentManager.registerCollision called with culpritCarIndex 0 local player, ignoring")
         return
     end
 
     local culpritCar = ac.getCar(culpritCarIndex)
-    if not culpritCar then return end
+    if not culpritCar or culpritCar.index ~= culpritCarIndex or not CarManager.isWritableAICar(culpritCarIndex) then return end
+    if type(collidedWith) ~= 'number' or collidedWith ~= collidedWith or collidedWith < 0 or collidedWith % 1 ~= 0 then return end
 
     -- if the culprit car is already a culprit in another accident, ignore this collision
     local culpritCarAsCulpritInAnotherAccidentIndex = AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex]
@@ -143,6 +156,15 @@ AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosi
 
     -- we need to subtract 1 from the index to get the actual car index since colliderWidth 0 is track
     collidedWith = collidedWith - 1
+    local victimCar = not collidedWithTrack and ac.getCar(collidedWith) or nil
+    if not collidedWithTrack and (not victimCar or victimCar.index ~= collidedWith) then return end
+    if eventStamp then
+        if not isFiniteNumber(eventStamp.positionX) or not isFiniteNumber(eventStamp.positionY)
+          or not isFiniteNumber(eventStamp.positionZ) or not isFiniteNumber(eventStamp.splinePosition) then return end
+        if not collidedWithTrack and (not isFiniteNumber(eventStamp.victimPositionX)
+          or not isFiniteNumber(eventStamp.victimPositionY) or not isFiniteNumber(eventStamp.victimPositionZ)
+          or not isFiniteNumber(eventStamp.victimSplinePosition)) then return end
+    end
 
     -- ac.areCarsColliding
     -- physics.setCarBodyDamage(carIndex, bodyDamage)
@@ -167,10 +189,16 @@ AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosi
     -- register a new accident
     local accidentIndex = CompletableIndexCollectionManager.incrementLastIndexCreated(accidentCompletableIndex)
 
-    local carSplinePosition = culpritCar.splinePosition
+    local carSplinePosition = eventStamp and eventStamp.splinePosition or culpritCar.splinePosition
 
     AccidentManager.accidents_carIndex[accidentIndex] = culpritCarIndex
-    AccidentManager.accidents_worldPosition[accidentIndex] = culpritCar.position
+    AccidentManager.accidents_worldPosition[accidentIndex] = eventStamp and vec3(eventStamp.positionX, eventStamp.positionY, eventStamp.positionZ) or culpritCar.position
+    if eventStamp and eventStamp.victimPositionX ~= nil then
+        AccidentManager.accidents_victimWorldPosition[accidentIndex] = vec3(eventStamp.victimPositionX, eventStamp.victimPositionY, eventStamp.victimPositionZ)
+    elseif victimCar then
+        AccidentManager.accidents_victimWorldPosition[accidentIndex] = victimCar.position
+    end
+    AccidentManager.accidents_victimSplinePosition[accidentIndex] = eventStamp and eventStamp.victimSplinePosition or (victimCar and victimCar.splinePosition)
     AccidentManager.accidents_splinePosition[accidentIndex] = carSplinePosition
     AccidentManager.accidents_collidedWithTrack[accidentIndex] = collidedWithTrack
     AccidentManager.accidents_collidedWithCarIndex[accidentIndex] = collidedWith
@@ -178,10 +206,12 @@ AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosi
 
     -- mark the culprit car as being in an accident
     AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] = accidentIndex
+    accidentCulpritGeneration[accidentIndex] = eventStamp and eventStamp.culpritGeneration or CarManager.getCarGeneration(culpritCarIndex)
 
     -- mark the victim car as being in an accident if the culprit collided with another car
     if collidedWithAnotherCar then
         AccidentManager.cars_victimInAccidentIndex[collidedWith] = accidentIndex
+        accidentVictimGeneration[accidentIndex] = eventStamp and eventStamp.victimGeneration or CarManager.getCarGeneration(collidedWith)
     end
 
     -- create a yellow flag zone for this accident
@@ -198,9 +228,9 @@ AccidentManager.registerCollision = function(culpritCarIndex, collisionLocalPosi
 
     Logger.log(string.format("Car #%02d COLLISION at (%.1f, %.1f, %.1f) with %s.  Total accidents: %d", 
         culpritCarIndex, 
-        collisionLocalPosition.x, 
-        collisionLocalPosition.y, 
-        collisionLocalPosition.z,
+        collisionLocalPosition.x or 0,
+        collisionLocalPosition.y or 0,
+        collisionLocalPosition.z or 0,
         collidedWithTrack and "track" or ("car #" .. tostring(collidedWith)), 
         accidentIndex, 
         #AccidentManager.accidents_carIndex))
@@ -218,6 +248,25 @@ end
 AccidentManager.setCarNavigatingAroundAccident = function(carIndex, accidentIndex, carToNavigateAroundIndex)
     CarManager.cars_navigatingAroundAccidentIndex[carIndex] = accidentIndex
     CarManager.cars_navigatingAroundCarIndex[carIndex] = carToNavigateAroundIndex
+end
+
+function AccidentManager.resetSession()
+    for accidentIndex = 1, CompletableIndexCollectionManager.getLastIndexCreated(accidentCompletableIndex) do
+        if AccidentManager.accidents_resolved[accidentIndex] == false then setAccidentAsResolved(accidentIndex) end
+        AccidentManager.accidents_resolved[accidentIndex] = nil
+        AccidentManager.accidents_carIndex[accidentIndex] = nil
+        AccidentManager.accidents_worldPosition[accidentIndex] = nil
+        AccidentManager.accidents_victimWorldPosition[accidentIndex] = nil
+        AccidentManager.accidents_victimSplinePosition[accidentIndex] = nil
+        AccidentManager.accidents_splinePosition[accidentIndex] = nil
+        AccidentManager.accidents_collidedWithTrack[accidentIndex] = nil
+        AccidentManager.accidents_collidedWithCarIndex[accidentIndex] = nil
+        AccidentManager.accidents_yellowFlagZoneIndex[accidentIndex] = nil
+    end
+    for index in pairs(AccidentManager.cars_culpritInAccidentIndex) do AccidentManager.cars_culpritInAccidentIndex[index] = nil end
+    for index in pairs(AccidentManager.cars_victimInAccidentIndex) do AccidentManager.cars_victimInAccidentIndex[index] = nil end
+    CompletableIndexCollectionManager.reset(accidentCompletableIndex)
+    RaceTrackManager.resetOwnedYellowFlagZones()
 end
 
 ---Andreas: this function is O(n) where n is the total number of accidents
@@ -257,8 +306,13 @@ AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident
     for accidentIndex = firstNonResolvedAccidentIndex, lastAccidentIndexCreated do
         if not AccidentManager.accidents_resolved[accidentIndex] then
             local culpritCarIndex = AccidentManager.accidents_carIndex[accidentIndex]
-            local culpritCar = ac.getCar(culpritCarIndex)
             local victimCarIndex = AccidentManager.accidents_collidedWithCarIndex[accidentIndex]
+            local culpritGenerationIsCurrent = accidentCulpritGeneration[accidentIndex] == CarManager.getCarGeneration(culpritCarIndex)
+            local victimGenerationIsCurrent = victimCarIndex == nil or accidentVictimGeneration[accidentIndex] == CarManager.getCarGeneration(victimCarIndex)
+            if not culpritGenerationIsCurrent or not victimGenerationIsCurrent then
+                setAccidentAsResolved(accidentIndex)
+            else
+            local culpritCar = ac.getCar(culpritCarIndex)
             local victimCar = ac.getCar(victimCarIndex)
 
             local closestCarSplineDistance = math.huge
@@ -318,6 +372,7 @@ AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident
                         currentClosestAccidentClosestCarSplinePosition = closestCar.splinePosition
                     end
                 end
+            end
             end
         end
     end
