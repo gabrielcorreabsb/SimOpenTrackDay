@@ -21,8 +21,6 @@ local physics_setAICaution = physics.setAICaution
 local physics_setAILevel = physics.setAILevel
 local physics_setAISplineOffset = physics.setAISplineOffset
 local physics_setAIStopCounter = physics.setAIStopCounter
-local physics_setAIThrottleLimit = physics.setAIThrottleLimit
-local physics_setAITopSpeed = physics.setAITopSpeed
 local physics_setExtraAIGrip = physics.setExtraAIGrip
 local physics_setGentleStop = physics.setGentleStop
 local MathHelpers_approach = MathHelpers.approach
@@ -53,8 +51,198 @@ local render = render
 local render_createRay = render.createRay
 local VecPool_getTempVec3 = VecPool.getTempVec3
 local table_clear = table.clear
+local GameTimeManager = GameTimeManager
+local canWriteCar
 
-local function canWriteCar(carIndex)
+-- Ownership is intentionally limited to the AI top-speed and throttle-limit APIs.
+local CONTROL_LEASE_SECONDS = 1
+local OWNER_PRIORITY = { INCIDENT_STOP = 100, ACCIDENT_NAVIGATION = 90, YELLOW_FLAG = 80, TRAFFIC_YIELD = 50, COMPAT = 10 }
+local OWNER_ORDER = { 'INCIDENT_STOP', 'ACCIDENT_NAVIGATION', 'YELLOW_FLAG', 'TRAFFIC_YIELD', 'COMPAT' }
+CarOperations._topSpeedRequests = CarOperations._topSpeedRequests or {}
+CarOperations._throttleRequests = CarOperations._throttleRequests or {}
+CarOperations._topSpeedApplied = CarOperations._topSpeedApplied or {}
+CarOperations._throttleApplied = CarOperations._throttleApplied or {}
+CarOperations._topSpeedWinner = CarOperations._topSpeedWinner or {}
+CarOperations._throttleWinner = CarOperations._throttleWinner or {}
+CarOperations._topSpeedAttempted = CarOperations._topSpeedAttempted or {}
+CarOperations._throttleAttempted = CarOperations._throttleAttempted or {}
+CarOperations._resolutionId = 0
+
+local function getActiveGameTime()
+  if not GameTimeManager or type(GameTimeManager.getPlayingGameTime) ~= 'function' then return nil end
+  local ok, now = pcall(GameTimeManager.getPlayingGameTime)
+  if not ok or type(now) ~= 'number' or now ~= now or now < 0 or now == math_huge then return nil end
+  return now
+end
+
+local function getControlSlot(slots, carIndex)
+  local slot = slots[carIndex]
+  if slot then return slot end
+  slot = { activeCount = 0, byOwner = {} }
+  for i = 1, #OWNER_ORDER do
+    local owner = OWNER_ORDER[i]
+    slot.byOwner[owner] = { owner = owner, active = false }
+  end
+  slots[carIndex] = slot
+  return slot
+end
+
+local function requestControl(slots, carIndex, value, owner, priority, maximum)
+  local fixedPriority = type(owner) == 'string' and OWNER_PRIORITY[owner] or nil
+  local now = getActiveGameTime()
+  if not canWriteCar(carIndex) or not fixedPriority or (priority ~= nil and priority ~= fixedPriority)
+    or type(value) ~= 'number' or value ~= value or value == -math_huge
+    or value < 0 or value > maximum or now == nil then return false end
+  local slot = getControlSlot(slots, carIndex)
+  local item = slot.byOwner[owner]
+  if not item.active then slot.activeCount = slot.activeCount + 1 end
+  item.value, item.priority, item.expiresAt = value, fixedPriority, now + CONTROL_LEASE_SECONDS
+  item.carGeneration, item.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+  item.active = true
+  return true
+end
+
+function CarOperations.requestAITopSpeed(carIndex, value, owner, priority)
+  return requestControl(CarOperations._topSpeedRequests, carIndex, value, owner, priority, 1000)
+end
+function CarOperations.requestAIThrottleLimit(carIndex, value, owner, priority)
+  return requestControl(CarOperations._throttleRequests, carIndex, value, owner, priority, 1)
+end
+local function releaseControl(slots, carIndex, owner)
+  local slot = slots[carIndex]
+  local item = slot and slot.byOwner[owner]
+  if not item or not item.active then return false end
+  item.active = false
+  slot.activeCount = slot.activeCount - 1
+  local winners = slots == CarOperations._topSpeedRequests and CarOperations._topSpeedWinner or CarOperations._throttleWinner
+  local winner = winners[carIndex]
+  if winner and winner.active and winner.owner == owner then winner.active = false end
+  return true
+end
+function CarOperations.releaseAITopSpeed(carIndex, owner) return releaseControl(CarOperations._topSpeedRequests, carIndex, owner) end
+function CarOperations.releaseAIThrottleLimit(carIndex, owner) return releaseControl(CarOperations._throttleRequests, carIndex, owner) end
+
+local function clearCarRequests(slots, carIndex)
+  local slot = slots[carIndex]
+  if not slot then return end
+  for i = 1, #OWNER_ORDER do
+    local item = slot.byOwner[OWNER_ORDER[i]]
+    item.active = false
+  end
+  slot.activeCount = 0
+end
+
+function CarOperations.clearOwnedControlsForCar(carIndex)
+  clearCarRequests(CarOperations._topSpeedRequests, carIndex)
+  clearCarRequests(CarOperations._throttleRequests, carIndex)
+  local topWinner = CarOperations._topSpeedWinner[carIndex]
+  local throttleWinner = CarOperations._throttleWinner[carIndex]
+  local topApplied = CarOperations._topSpeedApplied[carIndex]
+  local throttleApplied = CarOperations._throttleApplied[carIndex]
+  if topWinner then topWinner.active = false end
+  if throttleWinner then throttleWinner.active = false end
+  if topApplied then topApplied.active = false end
+  if throttleApplied then throttleApplied.active = false end
+end
+
+function CarOperations.clearAllOwnedControls()
+  for carIndex in pairs(CarOperations._topSpeedRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._throttleRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._topSpeedApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._throttleApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
+end
+
+local function resolveControl(carIndex, slots, winners, applied, attempted, setterName, neutral, cap, now, resolutionId)
+  local requestSlot = slots[carIndex]
+  local winner, winnerName
+  if requestSlot then
+    for i = 1, #OWNER_ORDER do
+      local item = requestSlot.byOwner[OWNER_ORDER[i]]
+      if item.active and (item.carGeneration ~= CarManager.getCarGeneration(carIndex)
+        or item.sessionGeneration ~= CarManager.sessionGeneration or now >= item.expiresAt) then
+        item.active = false
+        requestSlot.activeCount = requestSlot.activeCount - 1
+      end
+      if item.active and (not winner or item.priority > winner.priority
+        or (item.priority == winner.priority and item.owner < winnerName)) then
+        winner, winnerName = item, item.owner
+      end
+    end
+  end
+  local winnerSlot = winners[carIndex]
+  if not winnerSlot then winnerSlot = {}; winners[carIndex] = winnerSlot end
+  winnerSlot.active = winner ~= nil
+  if winner then winnerSlot.value, winnerSlot.owner, winnerSlot.priority = winner.value, winnerName, winner.priority end
+  local previous = applied[carIndex]
+  if winner then
+    local value = winner.value
+    if cap ~= nil and cap > 0 then value = math.min(value, cap) end
+    if previous and previous.active and previous.carGeneration == CarManager.getCarGeneration(carIndex)
+      and previous.sessionGeneration == CarManager.sessionGeneration and previous.value == value then return end
+    local writable = CarManager.isWritableAICar(carIndex)
+    local api = physics and physics[setterName]
+    if writable and type(api) == 'function' then
+      if attempted[carIndex] == resolutionId then return end
+      attempted[carIndex] = resolutionId
+      local ok = pcall(api, carIndex, value)
+      if ok then
+        local appliedSlot = previous or {}
+        applied[carIndex] = appliedSlot
+        appliedSlot.active, appliedSlot.value, appliedSlot.owner, appliedSlot.priority = true, value, winnerName, winner.priority
+        appliedSlot.carGeneration, appliedSlot.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+      end
+    end
+  elseif previous and previous.active then
+    if previous.carGeneration ~= CarManager.getCarGeneration(carIndex) or previous.sessionGeneration ~= CarManager.sessionGeneration then
+      previous.active = false
+      return
+    end
+    if CarManager.isWritableAICar(carIndex) and physics and type(physics[setterName]) == 'function' then
+      if attempted[carIndex] == resolutionId then return end
+      attempted[carIndex] = resolutionId
+      local ok = pcall(physics[setterName], carIndex, neutral)
+      if ok then previous.active = false end
+    end
+  end
+end
+
+function CarOperations.getOwnedControlState(carIndex)
+  local topRequests, throttleRequests = CarOperations._topSpeedRequests[carIndex], CarOperations._throttleRequests[carIndex]
+  local topWinner, throttleWinner = CarOperations._topSpeedWinner[carIndex], CarOperations._throttleWinner[carIndex]
+  local topApplied, throttleApplied = CarOperations._topSpeedApplied[carIndex], CarOperations._throttleApplied[carIndex]
+  if topRequests and topRequests.activeCount == 0 then topRequests = nil end
+  if throttleRequests and throttleRequests.activeCount == 0 then throttleRequests = nil end
+  if topWinner and not topWinner.active then topWinner = nil end
+  if throttleWinner and not throttleWinner.active then throttleWinner = nil end
+  if topApplied and not topApplied.active then topApplied = nil end
+  if throttleApplied and not throttleApplied.active then throttleApplied = nil end
+  return topRequests, topWinner, topApplied, throttleRequests, throttleWinner, throttleApplied
+end
+
+function CarOperations.resolveOwnedAIControls(topSpeedCapKmh)
+  if type(topSpeedCapKmh) ~= 'number' or topSpeedCapKmh ~= topSpeedCapKmh or topSpeedCapKmh < 0 or topSpeedCapKmh > 1000 then return false end
+  local now = getActiveGameTime()
+  if now == nil then return false end
+  CarOperations._resolutionId = CarOperations._resolutionId + 1
+  local resolutionId = CarOperations._resolutionId
+  for carIndex, slot in pairs(CarOperations._topSpeedRequests) do
+    if slot.activeCount > 0 or (CarOperations._topSpeedApplied[carIndex] and CarOperations._topSpeedApplied[carIndex].active)
+      or (CarOperations._topSpeedWinner[carIndex] and CarOperations._topSpeedWinner[carIndex].active) then
+      resolveControl(carIndex, CarOperations._topSpeedRequests, CarOperations._topSpeedWinner, CarOperations._topSpeedApplied,
+        CarOperations._topSpeedAttempted, 'setAITopSpeed', math_huge, topSpeedCapKmh, now, resolutionId)
+    end
+  end
+  for carIndex, slot in pairs(CarOperations._throttleRequests) do
+    if slot.activeCount > 0 or (CarOperations._throttleApplied[carIndex] and CarOperations._throttleApplied[carIndex].active)
+      or (CarOperations._throttleWinner[carIndex] and CarOperations._throttleWinner[carIndex].active) then
+      resolveControl(carIndex, CarOperations._throttleRequests, CarOperations._throttleWinner, CarOperations._throttleApplied,
+        CarOperations._throttleAttempted, 'setAIThrottleLimit', 1, nil, now, resolutionId)
+    end
+  end
+  return true
+end
+
+canWriteCar = function(carIndex)
   return CarManager and CarManager.isWritableAICar and CarManager.isWritableAICar(carIndex) == true
 end
 
@@ -206,36 +394,26 @@ end
 ---Andreas: Or maybe it touches the pedal values?
 ---@param carIndex integer @0-based car index.
 ---@param limit number @0 for limit gas pedal to 0, 1 to remove limitation.
-CarOperations.setAIThrottleLimit = function(carIndex, limit)
-    if not canWriteCar(carIndex) or type(limit) ~= 'number' or limit ~= limit or type(physics_setAIThrottleLimit) ~= 'function' then return false end
-    physics_setAIThrottleLimit(carIndex, limit)
-    CarManager.cars_throttleLimit[carIndex] = limit
+CarOperations.setAIThrottleLimit = function(carIndex, limit, owner)
+    return CarOperations.requestAIThrottleLimit(carIndex, limit, owner or 'COMPAT')
 end
 
-CarOperations.resetAIThrottleLimit = function(carIndex)
-  CarOperations.setAIThrottleLimit(carIndex, 1)
+CarOperations.resetAIThrottleLimit = function(carIndex, owner)
+  return CarOperations.releaseAIThrottleLimit(carIndex, owner or 'COMPAT')
 end
 
 ---Limits AI top speed. Use `math.huge` (or just 1e9) to remove limitation.
 ---Andreas: I don't think physics.setAITopSpeed works as intended because it doesn't seem to have any effect on the car speed.
 ---@param carIndex integer @0-based car index.
 ---@param limit number @Speed in km/h.
-CarOperations.setAITopSpeed = function(carIndex, limit)
-    if not canWriteCar(carIndex) or type(limit) ~= 'number' or limit ~= limit or type(physics_setAITopSpeed) ~= 'function' then return false end
-    physics_setAITopSpeed(carIndex, limit)
-
-    --[===[
-    -- Andreas: since physics.setAITopSpeed doesn't seem to work on ai cars atm, I'm also calling the homebrew function here
-    CarOperations.limitTopSpeed(carIndex, limit)
-    --]===]
-
-    CarManager.cars_aiTopSpeed[carIndex] = limit
+CarOperations.setAITopSpeed = function(carIndex, limit, owner)
+    return CarOperations.requestAITopSpeed(carIndex, limit, owner or 'COMPAT')
 end
 
 ---Removes the AI top speed limit.
 ---@param carIndex integer
-CarOperations.removeAITopSpeed = function(carIndex)
-  CarOperations.setAITopSpeed(carIndex, math_huge)
+CarOperations.removeAITopSpeed = function(carIndex, owner)
+  return CarOperations.releaseAITopSpeed(carIndex, owner or 'COMPAT')
 end
 
 ---Anti-drag-race: enquanto um carro está em yielding, ele não pode acelerar deliberadamente
@@ -253,8 +431,7 @@ CarOperations.applyAntiDragRaceLimit = function(yieldingCarIndex, overtakingCarI
   local safeOvertakingSpeedKmh = overtakingCar.speedKmh * 0.95
   local currentTopSpeedLimit = CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex]
   if currentTopSpeedLimit ~= safeOvertakingSpeedKmh then
-    if type(physics_setAITopSpeed) ~= 'function' then return end
-    physics_setAITopSpeed(yieldingCarIndex, safeOvertakingSpeedKmh)
+    if not CarOperations.requestAITopSpeed(yieldingCarIndex, safeOvertakingSpeedKmh, 'TRAFFIC_YIELD') then return end
     CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] = safeOvertakingSpeedKmh
   end
 end
@@ -263,7 +440,7 @@ end
 ---@param yieldingCarIndex integer
 CarOperations.removeAntiDragRaceLimit = function(yieldingCarIndex)
   if CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] then
-    CarOperations.removeAITopSpeed(yieldingCarIndex)
+    CarOperations.releaseAITopSpeed(yieldingCarIndex, 'TRAFFIC_YIELD')
     CarOperations._currentAntiDragRaceTopSpeeds[yieldingCarIndex] = nil
   end
 end
@@ -446,8 +623,8 @@ end
 function CarOperations.stopCarAfterAccident(carIndex)
     if not canWriteCar(carIndex) then return false end
     -- stop the car
-    CarOperations.setAIThrottleLimit(carIndex, 0)
-    CarOperations.setAITopSpeed(carIndex, 0)
+    CarOperations.requestAIThrottleLimit(carIndex, 0, 'INCIDENT_STOP')
+    CarOperations.requestAITopSpeed(carIndex, 0, 'INCIDENT_STOP')
     CarOperations.setAIStopCounter(carIndex, 1)
     CarOperations.setGentleStop(carIndex, true)
     CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT) -- be very cautious

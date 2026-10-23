@@ -9,6 +9,7 @@ Constants.APP_DEVELOPER = "SnakeD"
 Constants.APP_ICON_SIZE = vec2(128, 128)
 Constants.IS_ONLINE = sim.isOnlineRace
 Constants.CAN_APP_RUN = (not Constants.IS_ONLINE)
+Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = false
 
 Constants.ENABLE_ACCIDENT_HANDLING_IN_APP = true -- disable accident handling for now since it's still WIP
 

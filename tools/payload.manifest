@@ -33,6 +33,7 @@ HumanErrorManager.lua
 SettingsWindow.lua
 SettingsModel.lua
 MainWindow.lua
+ControlDebugPanel.lua
 UIState.lua
 Localization.lua
 manifest.ini

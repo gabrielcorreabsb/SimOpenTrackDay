@@ -189,6 +189,7 @@ end
 function CarManager.bumpCarGeneration(carIndex)
   if validObservedIndex(carIndex) then
     CarManager.carGeneration[carIndex] = (CarManager.carGeneration[carIndex] or 0) + 1
+    if CarOperations and CarOperations.clearOwnedControlsForCar then CarOperations.clearOwnedControlsForCar(carIndex) end
   end
 end
 
@@ -204,6 +205,7 @@ end
 function CarManager.invalidateSession()
   CarManager.sessionGeneration = CarManager.sessionGeneration + 1
   for index in pairs(CarManager.carGeneration) do CarManager.bumpCarGeneration(index) end
+  if CarOperations and CarOperations.clearAllOwnedControls then CarOperations.clearAllOwnedControls() end
 end
 
 function CarManager.resetSession()
@@ -227,6 +229,7 @@ function CarManager.suspendLifecycle()
     CarManager.cars_ORIGINAL_AI_AGGRESSION[index] = nil
     CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[index] = nil
   end
+  if CarOperations and CarOperations.clearAllOwnedControls then CarOperations.clearAllOwnedControls() end
   table.clear(CarManager.cars_currentReusableList)
   CarManager.currentSortedCarsList = CarManager.cars_currentReusableList
   table.clear(CarManager.sortedCarList_carIndexToSortedIndex)
@@ -307,6 +310,7 @@ CarManager.GripValues = {
 ---@param carIndex number
 CarManager.clearCarMemory = function(carIndex)
   if not validObservedIndex(carIndex) then return end
+  if CarOperations and CarOperations.clearOwnedControlsForCar then CarOperations.clearOwnedControlsForCar(carIndex) end
   if AccidentManager and AccidentManager.informAboutCarReset then AccidentManager.informAboutCarReset(carIndex) end
   if HumanErrorManager and HumanErrorManager.resetCar then HumanErrorManager.resetCar(carIndex) end
   if CarStateMachine and CarStateMachine.invalidateReferencesToCar then

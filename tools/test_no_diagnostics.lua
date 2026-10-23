@@ -118,6 +118,20 @@ check(not carOperations:find('render.debug', 1, true) and
   'car-operation debug gizmos and ray drawing are removed')
 check(not accidentManager:find('AccidentManager.simulateAccident', 1, true) and
   not accidentManager:find('getStorage_Debugging', 1, true), 'unreferenced development accident simulations are removed')
+local controlDebugPanel = stripComments(read('ControlDebugPanel.lua'))
+check(not controlDebugPanel:find('[RTD-DIAG-', 1, true) and
+  not controlDebugPanel:find('getStorage_Debugging', 1, true) and
+  not controlDebugPanel:find('PATHFINDING_DEBUGGING', 1, true),
+  'optional readonly ownership panel does not restore diagnostic records or legacy debug settings')
+check(not controlDebugPanel:find('Logger.', 1, true) and not controlDebugPanel:find('ac.log', 1, true) and
+  not controlDebugPanel:find('physics.', 1, true) and not controlDebugPanel:find('render.', 1, true),
+  'optional ownership panel has no logging, physics, or rendering side-effect entry points')
+for _, forbidden in ipairs({ 'requestAITopSpeed(', 'releaseAITopSpeed(', 'requestAIThrottleLimit(',
+  'releaseAIThrottleLimit(', 'clearOwnedControlsForCar(', 'clearAllOwnedControls(',
+  'resolveOwnedAIControls(', 'ensureDefaults(', 'setFocusedCarIndex(', 'setCameraMode(', 'storage(' }) do
+  check(not controlDebugPanel:find(forbidden, 1, true),
+    'optional panel does not invoke mutating/action API: ' .. forbidden)
+end
 check(not carStateMachine:find('ac.log', 1, true) and not carStateMachine:find('debug_state', 1, true),
   'car-state debug startup log is removed')
 check(not carStateMachine:find('getStorage_Debugging', 1, true) and

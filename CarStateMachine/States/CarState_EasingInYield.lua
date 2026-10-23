@@ -84,7 +84,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
       local droveSafelyToSide = CarOperations_yieldSafelyToSide(carIndex, dt, car, storage, useIndicatorLights)
       if not droveSafelyToSide then
         -- reduce the car speed so that we can find a gap
-        CarOperations_setAIThrottleLimit(carIndex, 0.4)
+        CarOperations_setAIThrottleLimit(carIndex, 0.4, 'TRAFFIC_YIELD')
 
         -- set the brake pedal to something low to help slow down the car while waiting for a gap
         CarOperations_setPedalPosition(carIndex, CarOperations.CarPedals.Brake, 0.2)
@@ -92,7 +92,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
         return
       end
 
-      CarOperations_resetAIThrottleLimit(carIndex)
+      CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
       CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
 
       CarStateMachine_setStateExitReason(carIndex, Strings.StringNames[Strings.StringCategories.ReasonWhyCantYield].None)
@@ -155,6 +155,6 @@ end
 ---@param storage StorageTable
 CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
     CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
-    CarOperations_resetAIThrottleLimit(carIndex)
+    CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
     CarOperations_toggleTurningLights(carIndex, ac.TurningLights.None)
 end

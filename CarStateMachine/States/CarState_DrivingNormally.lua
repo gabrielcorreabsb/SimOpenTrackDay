@@ -66,7 +66,7 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
       CarOperations_setDefaultAIDifficultyLevel(carIndex)
 
       -- remove the yielding car throttle limit since we will now be driving normally
-      CarOperations_resetAIThrottleLimit(carIndex)
+      CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
       
       CarOperations_setDefaultAIGrip(carIndex)
 end

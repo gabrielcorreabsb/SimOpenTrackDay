@@ -1150,4 +1150,39 @@ check(#state.windowOpenCalls == fallbackWindowCallsBefore + 1 and
 ui.Font, ui.pushFont, ui.popFont = savedFont, savedPushFont, savedPopFont
 ui.iconButton, ui.Icons, ui.pushID, ui.popID = savedIconButton, savedIcons, savedPushID, savedPopID
 
+-- The optional readonly panel is absent by default and is scoped to Overview,
+-- outside the operational Settings-content disabled boundary.
+local previousDebugFlag, previousDebugPanel = Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL, ControlDebugPanel
+local debugDraws = 0
+local debugUIState = require('UIState')
+state.pendingButton = nil
+state.pendingCombo = {}
+ControlDebugPanel = { draw = function()
+  debugDraws = debugDraws + 1
+  event('control-debug')
+  check(state.disabledDepth == 0, 'debug panel is outside operational disabled scope')
+end }
+Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = false
+debugUIState.activeTab = 'Overview'
+draw(function() return true end, false, nil)
+check(debugDraws == 0, 'default-off debug panel does not draw even if a module is present')
+Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = true
+draw(function() return true end, false, nil)
+check(debugDraws == 1 and findEvent('content', 'Overview') < findEvent('control-debug') and
+  findEvent('control-debug') < findEvent('lanes'),
+  'enabled debug panel draws after Overview settings and before operational Overview extras')
+local debugDrawCount = debugDraws
+for _, tab in ipairs({ 'Behavior', 'Yielding', 'Overtaking', 'Advanced' }) do
+  state.pendingButton = nil
+  state.pendingCombo = {}
+  debugUIState.activeTab = tab
+  draw(function() return true end, false, nil)
+  check(debugDraws == debugDrawCount, 'debug panel is Overview-only, not drawn on ' .. tab)
+end
+debugUIState.activeTab = 'Overview'
+draw(function() return false end, false, nil)
+check(debugDraws == debugDrawCount + 1 and state.contentCalls[1] and not state.contentCalls[1].available,
+  'readonly debug panel remains visible when operational controls are unavailable')
+Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL, ControlDebugPanel = previousDebugFlag, previousDebugPanel
+
 print(string.format('MainWindow headless checks passed: %d checks.', checks))

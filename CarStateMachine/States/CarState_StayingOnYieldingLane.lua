@@ -127,14 +127,14 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
       if limitSpeedToLetOvertakingCarPass then
         -- limit the yielding car throttle while driving on the yielding lane
         local throttlePedalLimitWhenYieldingToOvertakingCar = storage_Yielding.throttlePedalLimitWhenYieldingToOvertakingCar
-        CarOperations_setAIThrottleLimit(carIndex, throttlePedalLimitWhenYieldingToOvertakingCar)
+        CarOperations_setAIThrottleLimit(carIndex, throttlePedalLimitWhenYieldingToOvertakingCar, 'TRAFFIC_YIELD')
 
         local speedLimitValueToOvertakingCar = storage_Yielding.speedLimitValueToOvertakingCar
         -- local topSpeed = math.min(car.speedKmh, carWeAreCurrentlyYieldingTo.speedKmh*0.7)
         local topSpeed = math_min(car.speedKmh, carWeAreCurrentlyYieldingTo.speedKmh*speedLimitValueToOvertakingCar)
         -- topSpeed = math.max(topSpeed, 60) -- don't let the top speed drop too much
         topSpeed = math_max(topSpeed, storage_Yielding.minimumSpeedLimitKmhToLimitToOvertakingCar) -- don't let the top speed drop too much
-        CarOperations_setAITopSpeed(carIndex, topSpeed) -- limit the yielding car top speed based on the overtaking car speed while driving on the yielding lane
+        CarOperations_setAITopSpeed(carIndex, topSpeed, 'TRAFFIC_YIELD') -- limit the yielding car top speed based on the overtaking car speed while driving on the yielding lane
         
         -- press some brake to help slow down the car a bit because the top speed limit is broken in csp atm in trackday ai flood mode
         -- Andreas: be careful about this because if the ai keeps on pressing the gas while we're pressing the brake here, the car can spin out...
@@ -142,8 +142,8 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
         -- CarOperations.setPedalPosition(carIndex, CarOperations.CarPedals.Gas, 0.8)
       else
         -- reset the yielding car throttle limit since we're no longer close to the overtaking car
-        CarOperations_resetAIThrottleLimit(carIndex)
-        CarOperations_removeAITopSpeed(carIndex)
+        CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+        CarOperations_removeAITopSpeed(carIndex, 'TRAFFIC_YIELD')
       end
 
       -- continue driving to the yielding side so that if we got pushed a bit off the side, we drive back to the correct side
@@ -259,9 +259,9 @@ CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCars
   CarOperations_removeAICaution(carIndex)
   CarOperations_setDefaultAIAggression(carIndex)
   CarOperations_setDefaultAIDifficultyLevel(carIndex)
-  CarOperations_removeAITopSpeed(carIndex)
+  CarOperations_removeAITopSpeed(carIndex, 'TRAFFIC_YIELD')
   CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
   CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Gas)
-  CarOperations_resetAIThrottleLimit(carIndex)
+  CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
   CarOperations_toggleTurningLights(carIndex, ac.TurningLights.None)
 end

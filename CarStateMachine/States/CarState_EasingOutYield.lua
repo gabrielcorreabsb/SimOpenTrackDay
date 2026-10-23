@@ -54,8 +54,8 @@ CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCar
   CarManager_setCalculatedTrackLateralOffset(carIndex, CarManager_getActualTrackLateralOffset(carIndex, car.position))
 
   -- remove the yielding car throttle limit since we will now start easing out the yield
-  CarOperations_resetAIThrottleLimit(carIndex)
-  CarOperations_removeAITopSpeed(carIndex)
+  CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+  CarOperations_removeAITopSpeed(carIndex, 'TRAFFIC_YIELD')
 
   -- reset the yielding car caution back to normal
   CarOperations_removeAICaution(carIndex)

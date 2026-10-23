@@ -14,6 +14,8 @@ local payloadSource = payload:read('*a'):gsub('\r\n', '\n')
 payload:close()
 check(payloadSource:find('\nlib/uilib/UIControls.lua\n', 1, true) ~= nil,
   'shared UIControls module is explicitly listed in the runtime payload manifest')
+check(payloadSource:find('\nControlDebugPanel.lua\n', 1, true) ~= nil,
+  'optional development debug panel module is explicitly listed in the runtime payload manifest')
 
 for _, available in ipairs({ 80, 480, 700, 900, 1200, 1760 }) do
   for _, measured in ipairs({ 24, 90, 280, 600, 1900 }) do

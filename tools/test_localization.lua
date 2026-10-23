@@ -75,6 +75,19 @@ local requiredMsgids = {
   'Use the enable control in the header.', 'Adjust driving lane offsets in Behavior.',
   'Behavior', 'Yielding', 'Overtaking', 'Advanced', 'Navigation',
   'Show Advanced Controls', 'Hide Advanced Controls',
+  'Control ownership debug', 'Car index', 'Runtime flags · enabled: %s · paused: %s · live: %s',
+  'Session generation: %s', 'Select a car index to inspect its gates and control state.',
+  'Writable AI car: %s · gate reason: %s', 'Physics permission: %s · reason: %s',
+  'Car generation: %s', 'Global top speed cap: %s km/h', 'Active simulation time: %.2fs',
+  'Top-speed requests', 'Throttle requests', 'No active requests.',
+  'Owner: %s · value: %s · priority: %s · TTL: %.2fs',
+  'Owner: %s · value: %s · priority: %s · TTL: unavailable',
+  'Winner: %s · value: %s', 'Winner: none', 'Last successful setter: %s · value: %s',
+  'No successful setter recorded.', 'Top-speed control', 'Throttle control',
+  'Pending neutral indication · inferred from applied state without active requests; physical state is unconfirmed.',
+  'A recorded applied value is the last successful setter call, not a physics readback.',
+  'No applied record does not prove that the car is physically released.',
+  'Pending neutral state, if inferred from applied state without an active request, is not confirmed physical state.',
   'Car #%02d', 'Speed: %d km/h', 'Lane offset: %.3f',
   'No cars available.', 'No initialized cars available.', 'No cars match this filter.',
   'yes #%d', '%s v%s | developed by %s | original author: %s', 'Center', 'Left', 'Right',
@@ -313,6 +326,12 @@ for line in settingsSource:gmatch('[^\r\n]+') do
 end
 check(sliderCallCount >= 50, 'inventory extracted from live SettingsWindow slider calls')
 check(sourceContains('MainWindow.lua', "Localization.text('AI car list')"), 'AI car list msgid is present at its live call site')
+check(sourceContains('ControlDebugPanel.lua', "Localization.label('Car index', 'control-debug.car')") and
+  sourceContains('ControlDebugPanel.lua', "text('Control ownership debug')") and
+  sourceContains('ControlDebugPanel.lua', 'text(\'Pending neutral indication · inferred from applied state without active requests; physical state is unconfirmed.\')'),
+  'optional control debug panel localizes source-English labels and retains its stable car selector ID/disclaimer')
+check(sourceContains('tools/payload.manifest', 'ControlDebugPanel.lua'),
+  'localized optional debug panel is included in runtime payload manifest')
 check(sourceContains('MainWindow.lua', "drawStatusIndicator('SimOpenTrackDay is not running.'") and
   sourceContains('MainWindow.lua', 'UIControls.drawStatus(source, color, Localization, ui, vec2)') and
   sourceContains('lib/uilib/UIControls.lua', 'Localization.text(source)'),

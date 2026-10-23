@@ -16,6 +16,7 @@ local cars = {
 }
 local sim = { isLive = true, isReplayActive = false, isSessionStarted = true }
 local allowed = true
+GameTimeManager = { getPlayingGameTime = function() return 0 end }
 local function record(name) return function(index) writes[#writes + 1] = { name, index } end end
 ac = { getCar = function(i)
     assert(type(i) == 'number' and i == i and i >= 0 and i < math.huge and i % 1 == 0,
@@ -98,6 +99,7 @@ assert(hasPermission == true and permissionReason == 'physics-allowed' and CarMa
   'callable cdata permission returning boolean true is accepted')
 local writesBeforeFFIControl = #writes
 CarOperations.setAITopSpeed(1, 90)
+CarOperations.resolveOwnedAIControls(0)
 assert(#writes == writesBeforeFFIControl + 1, 'cdata true permission allows the positive AI writer control')
 physics.allowed = ffiAllowFalse
 hasPermission, permissionReason = CarManager.hasPhysicsPermission()
@@ -105,6 +107,7 @@ assert(hasPermission == false and permissionReason == 'physics-denied')
 assertGateReason(1, 'physics-denied')
 local writesBeforeFFIDenial = #writes
 CarOperations.setAITopSpeed(1, 90)
+CarOperations.resolveOwnedAIControls(0)
 assert(#writes == writesBeforeFFIDenial, 'cdata false permission remains fail-closed')
 writes = {}
 physics.allowed = originalAllowed
@@ -117,15 +120,24 @@ cars[1].isConnected = false; assertGateReason(1, 'car-not-connected'); cars[1].i
 cars[1].isActive = false; assertGateReason(1, 'car-not-active'); cars[1].isActive = true
 assert(CarManager.isWritableAICar(1), 'gate setup restored after reason matrix')
 CarOperations.setAITopSpeed(1, 100)
+CarOperations.resolveOwnedAIControls(0)
 assert(#writes == 1 and writes[1][2] == 1)
+CarOperations.releaseAITopSpeed(1, 'COMPAT')
+CarOperations.resolveOwnedAIControls(0)
 writes = {}
 for _, index in ipairs({ 0, 2, 3, 4, 5, -1, 1.5, 999, 0/0, math.huge }) do
-  CarOperations.setAITopSpeed(index, 50)
+  assert(not CarOperations.setAITopSpeed(index, 50), 'invalid/player/human index must reject top-speed request')
+  assert(not CarOperations.setAIThrottleLimit(index, .5), 'invalid/player/human index must reject throttle request')
   CarOperations.setPedalPosition(index, CarOperations.CarPedals.Brake, 1)
   CarOperations.toggleTurningLights(index, ac.TurningLights.Left)
   CarOperations.toggleCarCollisions(index, false)
 end
+CarOperations.resolveOwnedAIControls(0)
 assertNoWrites('player/human/disconnected/invalid index')
+for _, index in ipairs({ 0, 2, 3, 4, 5, -1, 1.5, 999 }) do
+  local requests = CarOperations._topSpeedRequests[index]
+  assert(not requests or requests.activeCount == 0, 'rejected matrix does not enqueue requests')
+end
 assert(CarManager.ensureDefaults(0) and CarManager.ensureDefaults(2))
 assert(CarManager.saveCarSpeed(cars[0]) and CarManager.saveCarSpeed(cars[2]))
 assert(CarManager.cars_speedSampleCount[0] == 1 and CarManager.cars_speedSampleCount[2] == 1,
@@ -151,7 +163,10 @@ local basicWriters = {
 }
 for _, index in ipairs({ 0, 2, 3, 5, -1, 1.5, 999, 0/0, math.huge }) do
   for _, writer in ipairs(basicWriters) do writer(index) end
+  assert(not CarOperations.setAITopSpeed(index, 60) and not CarOperations.setAIThrottleLimit(index, .5),
+    'basic writer matrix rejects top-speed/throttle requests')
 end
+CarOperations.resolveOwnedAIControls(0)
 assert(not CarManager.isWritableAICar(nil))
 for _, writer in ipairs(basicWriters) do writer(nil) end
 assertNoWrites('basic writer matrix rejects player, human, disconnected, inactive and invalid indices')
@@ -168,6 +183,7 @@ writes = {}
 sim.isLive = false; CarOperations.setAIThrottleLimit(1, .5); assertNoWrites('paused/non-live')
 sim.isLive = true; sim.isReplayActive = true; CarOperations.setAIThrottleLimit(1, .5); assertNoWrites('replay')
 sim.isReplayActive = false; allowed = false; CarOperations.setAIThrottleLimit(1, .5); assertNoWrites('physics denied')
+CarOperations.resolveOwnedAIControls(0); assertNoWrites('suspended managed-control resolution')
 allowed = true
 
 -- awake/reset memory must not apply defaults or any physical value.
@@ -178,10 +194,14 @@ assertNoWrites('memory-only reset')
 physics.setAITopSpeed = nil
 local CarOperationsWithoutSpeed = dofile(root .. 'CarOperations.lua')
 CarOperationsWithoutSpeed.setAITopSpeed(1, 80)
+CarOperationsWithoutSpeed.resolveOwnedAIControls(0)
 assertNoWrites('missing setter')
 physics.allowed = nil
 assertGateReason(1, 'physics-allowed-missing')
 assertNoWrites('missing permission')
+physics.setAITopSpeed = record('speed')
+CarOperations.releaseAITopSpeed(1, 'COMPAT')
+CarManager.clearCarMemory(1)
 
 -- Ten repeated disable/replay/pause cycles remain write-free on every suspended edge.
 physics.allowed = function() return allowed end
@@ -189,11 +209,26 @@ for _ = 1, 10 do
   for _, suspended in ipairs({ 'disabled', 'replay', 'pause' }) do
     CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = true, false, true
     sim.isLive, sim.isReplayActive = true, false
+    allowed = true
+    assert(CarOperations.setAITopSpeed(1, 70))
+    CarOperations.resolveOwnedAIControls(0)
+    local beforeSuspendedResolve = #writes
+    CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = true, false, true
+    sim.isLive, sim.isReplayActive = true, false
     if suspended == 'disabled' then CarManager.runtimeEnabled = false
     elseif suspended == 'replay' then sim.isReplayActive = true
     else sim.isLive = false end
-    CarOperations.setAITopSpeed(1, 70)
-    assertNoWrites('suspended lifecycle cycle: ' .. suspended)
+    assert(not CarOperations.setAITopSpeed(1, 70), 'suspended request must reject rather than queue')
+    CarOperations.resolveOwnedAIControls(0)
+    assert(#writes == beforeSuspendedResolve, 'suspended resolver does not write: ' .. suspended)
+    CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = true, false, true
+    sim.isLive, sim.isReplayActive = true, false
+    local beforeResume = #writes
+    CarOperations.resolveOwnedAIControls(0)
+    assert(#writes == beforeResume, 'same identity does not reapply shadow on resume')
+    assert(CarOperations.releaseAITopSpeed(1, 'COMPAT'))
+    CarOperations.resolveOwnedAIControls(0)
+    assert(#writes == beforeResume + 1 and writes[#writes][1] == 'speed', 'clear neutralizes same identity on resume')
   end
 end
 print('test_player_guard: PASS')

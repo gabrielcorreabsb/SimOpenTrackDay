@@ -4,6 +4,10 @@ local ffi = require('ffi')
 local ffiAllowTrue = ffi.cast('bool (*)()', function() return true end)
 local ffiAllowFalse = ffi.cast('bool (*)()', function() return false end)
 table.clear = table.clear or function(value) for key in pairs(value) do value[key] = nil end end
+local lifecycleSim
+local clockUpdates = 0
+GameTimeManager = { update = function(dt) if not lifecycleSim.isPaused then clockUpdates = clockUpdates + dt end end,
+  getPlayingGameTime = function() return clockUpdates end }
 
 local executed = {}
 local lifecycleCars = {
@@ -16,8 +20,8 @@ local function assertValidSDKCarIndex(index)
     and index < math.huge and index % 1 == 0, 'SDK getCar received an invalid index: ' .. tostring(index))
   sdkCarReads = sdkCarReads + 1
 end
-local lifecycleSim = { isLive = true, isReplayActive = false, isSessionStarted = true,
-  trackLengthM = 5000, raceSessionType = 1 }
+lifecycleSim = { isLive = true, isReplayActive = false, isSessionStarted = true,
+  isPaused = false, trackLengthM = 5000, raceSessionType = 1 }
 ac = { getCar = function(index) assertValidSDKCarIndex(index); return lifecycleCars[index] end,
   getSim = function() return lifecycleSim end,
   getTrackName = function() return 'test-track' end, SessionType = { Undefined = 0, Practice = 1,
@@ -279,9 +283,9 @@ local compatibility = { addFunction = function(_, name) compatibilityRegistratio
   addSimStateFunction = function() end,
   checkForMissingElements = function() return true end, getLastGeneratedErrorMessage = function() return '' end,
   freeMemory = function() end }
-local constants = { CAN_APP_RUN = true, IS_ONLINE = false, APP_NAME = 'test', APP_VERSION = '1' }
-local clockUpdates = 0
-local gameTime = { update = function() clockUpdates = clockUpdates + 1 end, getPlayingGameTime = function() return clockUpdates end }
+local constants = { CAN_APP_RUN = true, IS_ONLINE = false, APP_NAME = 'test', APP_VERSION = '1',
+  ENABLE_DEVELOPMENT_DEBUG_PANEL = false }
+local gameTime = GameTimeManager
 CameraManager = { getFocusedCarIndex = function() return 0 end }
 local sessionUpdates = 0
 SessionDetails = { update = function() sessionUpdates = sessionUpdates + 1 end, informSessionInitiated = function() end }
@@ -322,8 +326,20 @@ end
 local oldDir = __dirname
 __dirname = root:gsub('[\\/]+$', '')
 if __dirname == '' then __dirname = '.' end
+assert(constants.ENABLE_DEVELOPMENT_DEBUG_PANEL == false, 'entry fixture matches the disabled-by-default panel contract')
+local actualRequire = require
+local debugRequireCount = 0
+require = function(name)
+  if name == 'ControlDebugPanel' then
+    debugRequireCount = debugRequireCount + 1
+    error('default-off entry unexpectedly required ControlDebugPanel')
+  end
+  return actualRequire(name)
+end
 assert(loadfile(root .. 'SimOpenTrackDay.lua'))()
+require = actualRequire
 __dirname = oldDir
+assert(debugRequireCount == 0, 'real entry does not require the optional debug panel when default-off')
 assert(compatibilityRegistrations['physics.allowed'] and compatibilityRegistrations['physics.setAILevel']
   and compatibilityRegistrations['ac.onCarSwap'], 'new critical APIs are registered with CSP compatibility checks')
 for _, state in pairs(CarStateMachine.CarStateType) do
@@ -337,6 +353,10 @@ for _, state in pairs(CarStateMachine.CarStateType) do
 end
 assert(CarManager.cars_ORIGINAL_AI_AGGRESSION[1] == .4, 'entry awake captures eligible AI baseline')
 local physicalWritesBeforeFirstEntryUpdate = #physicalWrites
+local clockBeforeInvalidDts = clockUpdates
+for _, invalidDt in ipairs({ 0, -1, math.huge, 0/0 }) do script.MANIFEST__UPDATE(invalidDt) end
+assert(clockUpdates == clockBeforeInvalidDts and #physicalWrites == physicalWritesBeforeFirstEntryUpdate,
+  'real entry ignores invalid dt without advancing lease clock or writing controls')
 script.MANIFEST__UPDATE(1)
 assert(CarManager.cars_speedSampleCount[0] == 1 and CarManager.cars_speedSampleCount[2] == 1,
   'real entry update initializes player/human buffers before speed sampling')
@@ -356,10 +376,19 @@ physics.allowed = ffiAllowTrue
 physicalAllowed = true
 assert(CarManager.hasPhysicsPermission() and CarManager.isWritableAICar(1),
   'real entry-loaded gate accepts callable cdata returning true')
-CarOperations.setAITopSpeed(1, 100)
+assert(CarOperations.requestAITopSpeed(1, 100, 'COMPAT'))
+script.MANIFEST__UPDATE(.016)
 assert(#physicalWrites == writesBeforeFFIControl + 1
   and physicalWrites[#physicalWrites][1] == 1,
-  'real entry harness permits the positive AI control with cdata permission')
+  'real MANIFEST update resolves a managed request through the cdata-true gate; before=' .. writesBeforeFFIControl
+    .. ' after=' .. #physicalWrites .. ' req=' .. tostring(CarOperations._topSpeedRequests[1]
+      and CarOperations._topSpeedRequests[1].byOwner.COMPAT.active)
+    .. ' applied=' .. tostring(CarOperations._topSpeedApplied[1] and CarOperations._topSpeedApplied[1].active))
+CarOperations.releaseAITopSpeed(1, 'COMPAT')
+local writesBeforeManifestNeutral = #physicalWrites
+script.MANIFEST__UPDATE(.016)
+assert(#physicalWrites == writesBeforeManifestNeutral + 1 and physicalWrites[#physicalWrites][2] == math.huge,
+  'real MANIFEST update resolves one neutral after owner clear')
 CarManager.cars_aiTopSpeed[1] = requestedTopSpeedBeforeFFIControl
 physics.allowed = allowedApiBeforeFFIControl
 physicalAllowed = false
@@ -593,23 +622,139 @@ CarStateMachine.states_entryFunctions[staying] = realStayingEntry
 CarStateMachine.states_updateFunctions[staying] = realStayingUpdate
 CarStateMachine.states_transitionFunctions[staying] = realStayingTransition
 
+-- Drive the six authorized, real state callbacks through the real entry update dispatcher.
+local controlYieldingStorage = { UseIndicatorLightsWhenEasingInYield = false,
+  UseIndicatorLightsWhenDrivingOnYieldingLane = false, UseIndicatorLightsWhenEasingOutYield = false,
+  handleSideCheckingWhenYielding = false, distanceToOvertakingCarToLimitSpeed = 10,
+  throttlePedalLimitWhenYieldingToOvertakingCar = .35, speedLimitValueToOvertakingCar = .5,
+  minimumSpeedLimitKmhToLimitToOvertakingCar = 20, rampRelease_mps = 1 }
+local controlBehaviorStorage = { AICaution_Yielding = 1, overrideOriginalAIAggression_yielding = false,
+  overrideOriginalAIDifficultyLevel_yielding = false }
+StorageManager.getStorage_Yielding = function() return controlYieldingStorage end
+StorageManager.getStorage_AICarValues = function() return controlBehaviorStorage end
+Logger.error = function() end
+CarOperations.yieldSafelyToSide = function() return false end
+CarOperations.driveSafelyToSide = function() return false end
+CarOperations.isSecondCarClearlyAhead = function() return false end
+CarOperations.isSecondCarClearlyBehindFirstCar = function() return false end
+CarOperations.isFirstCarFasterThanSecondCar = function() return false end
+MathHelpers.distanceBetweenVec3sSqr = function() return 0 end
+RaceTrackManager.getYieldingSide = function() return RaceTrackManager.TrackSide.LEFT end
+RaceTrackManager.getOvertakingSide = function() return RaceTrackManager.TrackSide.RIGHT end
+for _, stateFile in ipairs({
+  'CarState_DrivingNormally.lua', 'CarState_EasingInYield.lua', 'CarState_StayingOnYieldingLane.lua',
+  'CarState_EasingOutYield.lua', 'CarState_DrivingInYellowFlagZone.lua', 'CarState_NavigatingAroundAccident.lua',
+}) do dofile(root .. 'CarStateMachine/States/' .. stateFile) end
+local function dispatchRealState(state, label)
+  CarStateMachine.states_entryFunctions[state] = CarStateMachine.states_entryFunctions[state] or function() end
+  CarStateMachine.states_transitionFunctions[state] = function() end
+  CarStateMachine.queueStateTransition(1, state)
+  script.MANIFEST__UPDATE(.016)
+  assert(CarStateMachine.getCurrentState(1) == state, 'real state callback dispatched: ' .. label)
+end
+local drivingNormally = CarStateMachine.CarStateType.DRIVING_NORMALLY
+local easingInYield = CarStateMachine.CarStateType.EASING_IN_YIELD
+local stayingYield = CarStateMachine.CarStateType.STAYING_ON_YIELDING_LANE
+local easingOutYield = CarStateMachine.CarStateType.EASING_OUT_YIELD
+local yellowZone = CarStateMachine.CarStateType.DRIVING_IN_YELLOW_FLAG_ZONE
+local accidentNavigation = CarStateMachine.CarStateType.NAVIGATING_AROUND_ACCIDENT
+runtimeStorage.defaultLateralOffset, runtimeStorage.overrideAiAwareness = 0, false
+CarOperations.requestAIThrottleLimit(1, .8, 'TRAFFIC_YIELD')
+dispatchRealState(drivingNormally, 'DrivingNormally')
+assert(not CarOperations._throttleRequests[1].byOwner.TRAFFIC_YIELD.active,
+  'real normal state clears only the traffic throttle owner')
+CarManager.cars_currentlyYieldingCarToIndex[1] = 2
+dispatchRealState(easingInYield, 'EasingInYield')
+assert(CarOperations._throttleApplied[1].active and CarOperations._throttleApplied[1].value == .4,
+  'real easing-in state resolves its traffic throttle request')
+CarManager.cars_currentlyYieldingCarToIndex[1] = 2
+dispatchRealState(stayingYield, 'StayingOnYieldingLane')
+assert(CarOperations._topSpeedApplied[1].active and CarOperations._throttleApplied[1].value == .35,
+  'real staying-yield state resolves both traffic controls')
+CarOperations.requestAITopSpeed(1, 77, 'TRAFFIC_YIELD')
+dispatchRealState(easingOutYield, 'EasingOutYield')
+assert(not CarOperations._topSpeedRequests[1].byOwner.TRAFFIC_YIELD.active
+  and not CarOperations._throttleRequests[1].byOwner.TRAFFIC_YIELD.active,
+  'real easing-out state clears only traffic-owned requests')
+dispatchRealState(yellowZone, 'DrivingInYellowFlagZone')
+assert(CarOperations._topSpeedWinner[1].owner == 'YELLOW_FLAG', 'real yellow state wins through entry resolver')
+CarManager.cars_navigatingAroundAccidentIndex[1] = 1
+dispatchRealState(accidentNavigation, 'NavigatingAroundAccident')
+assert(CarOperations._topSpeedWinner[1].owner == 'ACCIDENT_NAVIGATION',
+  'real accident-navigation state wins through entry resolver')
+CarStateMachine.states_transitionFunctions[drivingNormally] = function() end
+CarStateMachine.states_transitionFunctions[easingInYield] = function() end
+CarStateMachine.states_transitionFunctions[stayingYield] = function() end
+CarStateMachine.states_transitionFunctions[easingOutYield] = function() end
+CarStateMachine.states_transitionFunctions[yellowZone] = function() end
+CarStateMachine.states_transitionFunctions[accidentNavigation] = function() end
+local writesBeforeOwnershipHarnessReset = #physicalWrites
+CarManager.clearCarMemory(1)
+assert(#physicalWrites == writesBeforeOwnershipHarnessReset and CarOperations.getOwnedControlState(1) == nil,
+  'post-state harness cleanup is memory-only before lifecycle cycle checks')
+OnCarEventManager.clear()
+CarStateMachine.clearPendingLifecycle()
+AccidentManager.resetSession()
+for _, state in ipairs({ drivingNormally, easingInYield, stayingYield, easingOutYield, yellowZone, accidentNavigation }) do
+  CarStateMachine.states_entryFunctions[state] = function() end
+  CarStateMachine.states_updateFunctions[state] = function() end
+  CarStateMachine.states_transitionFunctions[state] = function() end
+end
+for _, state in pairs(CarStateMachine.CarStateType) do
+  if type(state) == 'number' then
+    CarStateMachine.states_entryFunctions[state] = function() end
+    CarStateMachine.states_updateFunctions[state] = function() end
+    CarStateMachine.states_transitionFunctions[state] = function() end
+  end
+end
+
 -- Repeated integrated disable/replay edges purge callbacks and remain physically write-free.
 local lifecycleFlagCount = #flagWrites
+local function applyManagedSpeed(value)
+  CarManager.observeCarIdentity(entryCars[2], CarManager._currentFrameId + 1)
+  assert(CarManager.ensureDefaults(1))
+  assert(CarOperations.requestAITopSpeed(1, value, 'TRAFFIC_YIELD'))
+  local before = #physicalWrites
+  script.MANIFEST__UPDATE(.016)
+  assert(#physicalWrites == before + 1 and physicalWrites[#physicalWrites][2] == value,
+    'real entry resolves active managed speed request; before=' .. before .. ' after=' .. #physicalWrites
+      .. ' state=' .. tostring(CarStateMachine.getCurrentState(1))
+      .. ' owner=' .. tostring(CarOperations._topSpeedWinner[1] and CarOperations._topSpeedWinner[1].owner)
+      .. ' traffic=' .. tostring(CarOperations._topSpeedRequests[1].byOwner.TRAFFIC_YIELD.active)
+      .. ' yellow=' .. tostring(CarOperations._topSpeedRequests[1].byOwner.YELLOW_FLAG.active)
+      .. ' accident=' .. tostring(CarOperations._topSpeedRequests[1].byOwner.ACCIDENT_NAVIGATION.active)
+      .. ' expires=' .. tostring(CarOperations._topSpeedRequests[1].byOwner.TRAFFIC_YIELD.expiresAt)
+      .. ' clock=' .. tostring(GameTimeManager.getPlayingGameTime())
+      .. ' reqgen=' .. tostring(CarOperations._topSpeedRequests[1].byOwner.TRAFFIC_YIELD.carGeneration)
+      .. ' cgen=' .. tostring(CarManager.getCarGeneration(1))
+      .. ' value=' .. tostring(CarOperations._topSpeedApplied[1] and CarOperations._topSpeedApplied[1].value))
+end
 for _ = 1, 10 do
+  applyManagedSpeed(65)
   runtimeStorage.enabled = false
   physicalAllowed = true
   local writesBeforeDisabledEdge = #physicalWrites
   script.MANIFEST__UPDATE(1)
   local disabledAccidentCount = CompletableIndexCollectionManager.getLastIndexCreated(1)
+  assert(CarOperations.getOwnedControlState(1) == nil, 'disable invalidation immediately clears managed ownership')
   callbacks.collision(1)
   assert(#physicalWrites == writesBeforeDisabledEdge, 'disabled edge/callback performs no car writes')
   assert(HumanErrorManager.lastEventTimeByCar[1] == nil, 'disable clears cooldown state')
   runtimeStorage.enabled = true
   lifecycleSim.isLive, lifecycleSim.isReplayActive = true, false
+  entryCars[2].isActive = false
+  local writesBeforeDisabledResume = #physicalWrites
+  script.MANIFEST__UPDATE(1)
+  assert(#physicalWrites == writesBeforeDisabledResume, 'disabled identity request is not applied after resume; before='
+    .. writesBeforeDisabledResume .. ' after=' .. #physicalWrites .. ' last=' .. tostring(physicalWrites[#physicalWrites]
+      and physicalWrites[#physicalWrites][2]) .. ' owner=' .. tostring(CarOperations._topSpeedWinner[1]
+      and CarOperations._topSpeedWinner[1].owner))
+  entryCars[2].isActive = true
   script.MANIFEST__UPDATE(1)
   assert(CompletableIndexCollectionManager.getLastIndexCreated(1) == disabledAccidentCount,
     'disabled collision is not delivered after resume')
 
+  applyManagedSpeed(66)
   physicalAllowed = true
   lifecycleSim.isLive, lifecycleSim.isReplayActive = false, true
   HumanErrorManager.lastEventTimeByCar[1] = 777
@@ -621,10 +766,32 @@ for _ = 1, 10 do
   assert(HumanErrorManager.lastEventTimeByCar[1] == nil, 'replay clears cooldown state')
   lifecycleSim.isReplayActive, lifecycleSim.isLive = false, true
   physicalAllowed = true
+  entryCars[2].isActive = false
+  local writesBeforeReplayResume = #physicalWrites
+  script.MANIFEST__UPDATE(1)
+  assert(#physicalWrites == writesBeforeReplayResume, 'replay identity request is not applied after resume')
+  entryCars[2].isActive = true
   script.MANIFEST__UPDATE(1)
   assert(CompletableIndexCollectionManager.getLastIndexCreated(1) == replayAccidentCount
     and not RaceTrackManager.isSplinePositionInYellowZone(.15),
     'replay collision/zones are not inherited after resume')
+
+  applyManagedSpeed(67)
+  local writesBeforePause = #physicalWrites
+  local activeTimeBeforePause = clockUpdates
+  lifecycleSim.isLive, lifecycleSim.isPaused = false, true
+  script.MANIFEST__UPDATE(50)
+  assert(#physicalWrites == writesBeforePause and clockUpdates == activeTimeBeforePause,
+    'pause performs no control writes and freezes active lease clock')
+  lifecycleSim.isLive, lifecycleSim.isPaused = true, false
+  local writesAfterPauseResume = #physicalWrites
+  script.MANIFEST__UPDATE(.016)
+  assert(#physicalWrites == writesAfterPauseResume, 'same-identity applied control survives pause without a duplicate write')
+  assert(CarOperations.releaseAITopSpeed(1, 'TRAFFIC_YIELD'))
+  local beforePauseNeutral = #physicalWrites
+  script.MANIFEST__UPDATE(.016)
+  assert(#physicalWrites == beforePauseNeutral + 1 and physicalWrites[#physicalWrites][2] == math.huge,
+    'same-identity pending neutral applies exactly once after pause')
 end
 for i = lifecycleFlagCount + 1, #flagWrites do
   assert(flagWrites[i] == ac.FlagType.None and flagPermissionAtWrite[i] == true,
@@ -634,11 +801,15 @@ assert(countGateDiagnosticLogs('[M1a-GATE] mode=disabled') == 1
   and countGateDiagnosticLogs('[M1a-GATE] mode=replay') == 1,
   'disable and replay suspension reasons are logged once despite ten repeated cycles')
 
+applyManagedSpeed(68)
 runtimeStorage.enabled = false
 local sessionGenerationBefore = CarManager.sessionGeneration
+local writesBeforeSessionReset = #physicalWrites
 callbacks.session()
 assert(CarManager.sessionGeneration == sessionGenerationBefore + 1,
   'session start invalidates lifecycle even while disabled')
+assert(CarOperations.getOwnedControlState(1) == nil and #physicalWrites == writesBeforeSessionReset,
+  'session reset immediately discards ownership memory without a physical write')
 local eligibleLogsBeforeNewSession = countGateDiagnosticLogs('result=eligible')
 runtimeStorage.enabled = true
 physicalAllowed = true
@@ -651,5 +822,28 @@ script.MANIFEST__UPDATE(1)
 script.MANIFEST__UPDATE(1)
 assert(countGateDiagnosticLogs('no non-player AI sample available') == 1,
   'no-AI sample fact is logged once per session')
+
+-- Enabling the internal flag loads the module once during entry initialization;
+-- the normal update callback never performs a second require or panel draw.
+constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = true
+local requiredDebugPanel = 0
+local debugPanelDraws = 0
+require = function(name)
+  if name == 'ControlDebugPanel' then
+    requiredDebugPanel = requiredDebugPanel + 1
+    return { draw = function() debugPanelDraws = debugPanelDraws + 1 end }
+  end
+  return actualRequire(name)
+end
+local secondOldDir = __dirname
+__dirname = root:gsub('[\\/]+$', '')
+if __dirname == '' then __dirname = '.' end
+assert(loadfile(root .. 'SimOpenTrackDay.lua'))()
+__dirname = secondOldDir
+require = actualRequire
+assert(requiredDebugPanel == 1, 'explicitly enabled entry requires ControlDebugPanel exactly once')
+script.MANIFEST__UPDATE(1)
+assert(requiredDebugPanel == 1 and debugPanelDraws == 0,
+  'entry update does not require or collect/draw debug panel data')
 print('test_entry_lifecycle: PASS')
 print('test_session_lifecycle: PASS')

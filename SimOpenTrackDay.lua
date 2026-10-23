@@ -221,6 +221,9 @@ local ac_getSim = ac.getSim
 local ac_iterateCars = ac.iterateCars
 local ui = ui
 local MainWindow = require('MainWindow')
+if Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL == true then
+  ControlDebugPanel = require('ControlDebugPanel')
+end
 local math = math
 local math_min = math.min
 local Constants = Constants
@@ -245,7 +248,7 @@ local CarManager_isWritableAICar = CarManager.isWritableAICar
 local CarManager_hasPhysicsPermission = CarManager.hasPhysicsPermission
 local CarManager_observeCarIdentity = CarManager.observeCarIdentity
 local CarOperations = CarOperations
-local CarOperations_setAITopSpeed = CarOperations.setAITopSpeed
+local CarOperations_resolveOwnedAIControls = CarOperations.resolveOwnedAIControls
 local CarStateMachine = CarStateMachine
 local CarStateMachine_setReasonWhyCantOvertake = CarStateMachine.setReasonWhyCantOvertake
 local CarStateMachine_setReasonWhyCantYield = CarStateMachine.setReasonWhyCantYield
@@ -641,11 +644,6 @@ function script.MANIFEST__UPDATE(dt)
   local gameTime_s = GameTimeManager.getPlayingGameTime()
   HumanErrorManager.update(dt, sortedCars, storage_Behavior, gameTime_s)
 
-  local globalTopSpeedLimitKmh = storage.globalTopSpeedLimitKmh
-  if globalTopSpeedLimitKmh == 0 then
-    globalTopSpeedLimitKmh = math_huge
-  end
-
   local totalCars = #sortedCars
   for i = 1, totalCars do
     local car = sortedCars[i]
@@ -659,13 +657,13 @@ function script.MANIFEST__UPDATE(dt)
       -- local aiCarCurrentlyYielding = (carState == CarStateMachine.CarStateType.EASING_IN_YIELD) or (carState == CarStateMachine.CarStateType.STAYING_ON_YIELDING_LANE)
       -- CarManager.cars_currentlyYielding[carIndex] = aiCarCurrentlyYielding
 
-      -- Apply the global top speed limit to this car
-      local requestedCarTopSpeedLimitKmh = CarManager.cars_aiTopSpeed[carIndex]
-      if requestedCarTopSpeedLimitKmh ~= nil then
-        local appliedCarTopSpeedLimitKmh = math_min(requestedCarTopSpeedLimitKmh, globalTopSpeedLimitKmh)
-        CarOperations_setAITopSpeed(carIndex, appliedCarTopSpeedLimitKmh)
-      end
     end
+  end
+
+  local globalTopSpeedLimitKmh = storage.globalTopSpeedLimitKmh
+  if type(globalTopSpeedLimitKmh) == 'number' and globalTopSpeedLimitKmh == globalTopSpeedLimitKmh
+    and globalTopSpeedLimitKmh >= 0 and globalTopSpeedLimitKmh <= 1000 then
+    CarOperations_resolveOwnedAIControls(globalTopSpeedLimitKmh)
   end
 
   -- custom ai flood handling

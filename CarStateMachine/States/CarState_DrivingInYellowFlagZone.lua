@@ -25,7 +25,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
     --[===[
     CarOperations.setAICaution(carIndex, 3)
     --]===]
-    CarOperations.setAITopSpeed(carIndex, 50)
+    CarOperations.requestAITopSpeed(carIndex, 50, 'YELLOW_FLAG')
     --todo: this pressing of multiple isn't good.  i think you gonna need to write your own limit speed function which fiddles around with the pedals to limit the speed
     -- CarOperations.setPedalPosition(carIndex, CarOperations.CarPedals.Gas, 1)
     -- CarOperations.setPedalPosition(carIndex, CarOperations.CarPedals.Brake, 0.5)
@@ -69,6 +69,6 @@ end
 ---@param sortedCarsListIndex integer
 ---@param storage StorageTable
 CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
-    CarOperations.removeAITopSpeed(carIndex)
+    CarOperations.releaseAITopSpeed(carIndex, 'YELLOW_FLAG')
     CarOperations.toggleTurningLights(carIndex, ac.TurningLights.None)
 end

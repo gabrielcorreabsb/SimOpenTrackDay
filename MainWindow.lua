@@ -314,6 +314,10 @@ local function drawWindowBody()
   drawState.childOpen = true
   if contentVisible then
     SettingsWindow.drawContent(UIState.activeTab, drawState.operationalAvailable)
+    if UIState.activeTab == 'Overview' and Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL == true and ControlDebugPanel then
+      ui.newLine(1)
+      ControlDebugPanel.draw()
+    end
     if UIState.activeTab == 'Overview' and drawState.operationalAvailable then
       ui.newLine(1)
       Section.section('Driving lanes', drawDrivingLanesSection)
