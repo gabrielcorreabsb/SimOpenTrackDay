@@ -15,6 +15,7 @@ Browse by intent. Documents describe source; they do not prove installation or C
 ## Workflow and plans
 - [CSP capability audit (M0)](plans/CSP_CAPABILITY_AUDIT.md) — source evidence, risks, local checks and pending in-game verification.
 - [Incremental development plan](plans/DEVELOPMENT_PLAN.md) — revised milestones, acceptance gates and proposed OpenCode/worktree workflow; implementation requires separate approval.
+- [Incident & Safety handoff prompt](plans/INCIDENT_SAFETY_HANDOFF_PROMPT.md) — copy into a new context to resume S2–S9; preserves uncommitted S1/S2 and starts with inspection and an exact-scope approval gate, not blanket runtime permission.
 - [Original track-day roadmap](plans/SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md) — preserved hypotheses and backlog; consult the audit and revised plan before execution.
 - [Restructuring plan](RESTRUCTURING_PLAN.md) — current phased plan and acceptance gates.
 - [Project organization](plans/PROJECT_ORGANIZATION.md) — proposed documentation/context steps.

@@ -1,7 +1,7 @@
 local STATE = CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME
 
 CarStateMachine.CarStateTypeStrings[STATE] = "AnotherCarCollidedIntoMe"
-CarStateMachine.states_minimumTimeInState[STATE] = 10
+CarStateMachine.states_minimumTimeInState[STATE] = 0
 
 -- ENTRY FUNCTION
 CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCarList, sortedCarListIndex, storage)
@@ -21,14 +21,14 @@ end
 
 -- UPDATE FUNCTION
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarList, sortedCarListIndex, storage)
-    CarOperations.stopCarAfterAccident(carIndex)
-
     CarOperations.toggleCarCollisions(carIndex, false)
 end
 
 -- TRANSITION FUNCTION
 CarStateMachine.states_transitionFunctions[STATE] = function (carIndex, dt, sortedCarList, sortedCarListIndex, storage)
-
+    if not CarOperations.hasActiveIncidentStop(carIndex) and CarOperations.hasCompletedIncidentStop(carIndex) then
+      return CarStateMachine.CarStateType.DRIVING_NORMALLY
+    end
 end
 
 -- EXIT FUNCTION

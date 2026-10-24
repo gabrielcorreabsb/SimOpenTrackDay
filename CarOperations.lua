@@ -67,8 +67,122 @@ CarOperations._throttleWinner = CarOperations._throttleWinner or {}
 CarOperations._topSpeedAttempted = CarOperations._topSpeedAttempted or {}
 CarOperations._throttleAttempted = CarOperations._throttleAttempted or {}
 CarOperations._resolutionId = 0
+local INCIDENT_STOP_SECONDS = 10
+local INCIDENT_COUNTER_SECONDS = 1
+local incidentEpisodes = {}
+local incidentCompleted = {}
+local incidentStateCompletion = {}
+local getActiveGameTime
 
-local function getActiveGameTime()
+local function incidentParticipantRecord(carIndex, accidentIndex)
+  if type(accidentIndex) ~= 'number' or accidentIndex ~= accidentIndex or accidentIndex < 1
+    or accidentIndex % 1 ~= 0 or not AccidentManager or AccidentManager.accidents_resolved[accidentIndex] ~= false then return false end
+  return AccidentManager.accidents_carIndex[accidentIndex] == carIndex
+    or AccidentManager.accidents_collidedWithCarIndex[accidentIndex] == carIndex
+end
+
+function CarOperations.clearIncidentStopForCar(carIndex)
+  incidentEpisodes[carIndex], incidentCompleted[carIndex], incidentStateCompletion[carIndex] = nil, nil, nil
+end
+
+function CarOperations.hasActiveIncidentStop(carIndex)
+  local episode = incidentEpisodes[carIndex]
+  return episode ~= nil and episode.generation == CarManager.getCarGeneration(carIndex)
+    and episode.session == CarManager.sessionGeneration
+end
+
+function CarOperations.isIncidentStopCompleted(carIndex, accidentIndex)
+  local completions = incidentCompleted[carIndex]
+  local completion = completions and completions[accidentIndex]
+  return completion ~= nil and completion.generation == CarManager.getCarGeneration(carIndex)
+    and completion.session == CarManager.sessionGeneration
+end
+
+function CarOperations.hasCompletedIncidentStop(carIndex)
+  local completion = incidentStateCompletion[carIndex]
+  return completion ~= nil and completion.generation == CarManager.getCarGeneration(carIndex)
+    and completion.session == CarManager.sessionGeneration
+end
+
+-- Called only from FSM's validated accepted-accident queue, never inferred from reverse maps.
+function CarOperations.admitIncidentStop(carIndex, accidentIndex, generation, session)
+  if session ~= CarManager.sessionGeneration or generation ~= CarManager.getCarGeneration(carIndex)
+    or not canWriteCar(carIndex) or not incidentParticipantRecord(carIndex, accidentIndex)
+    or CarOperations.isIncidentStopCompleted(carIndex, accidentIndex) then return false end
+  local now = getActiveGameTime()
+  if now == nil or now > math.huge - INCIDENT_STOP_SECONDS then return false end
+  local episode = incidentEpisodes[carIndex]
+  if episode and (episode.generation ~= generation or episode.session ~= session) then
+    -- Identity loss discards the stale episode only; it never adopts or restores its old physical shadow.
+    incidentEpisodes[carIndex] = nil
+    episode = nil
+  end
+  if not episode then
+    episode = { generation = generation, session = session, deadline = now + INCIDENT_STOP_SECONDS,
+      counterUntil = nil, gentleOwned = false, cautionOwned = false, releasing = false,
+      incidents = {}, counterConfirmed = false, topConfirmed = false, throttleConfirmed = false,
+      gentleConfirmed = false, cautionConfirmed = false }
+    incidentEpisodes[carIndex] = episode
+  end
+  episode.incidents[accidentIndex] = true
+  return true
+end
+
+function CarOperations.updateIncidentStop(carIndex)
+  if not canWriteCar(carIndex) then return false end
+  local episode = incidentEpisodes[carIndex]
+  if not episode or episode.generation ~= CarManager.getCarGeneration(carIndex)
+    or episode.session ~= CarManager.sessionGeneration then return false end
+  local now = getActiveGameTime()
+  if now == nil then return false end
+
+  if now < episode.deadline then
+    local throttleRequested = CarOperations.requestAIThrottleLimit(carIndex, 0, 'INCIDENT_STOP')
+    local topRequested = CarOperations.requestAITopSpeed(carIndex, 0, 'INCIDENT_STOP')
+    if not throttleRequested or not topRequested then return false end
+    local counterOK = CarOperations.setAIStopCounter(carIndex, 1)
+    if counterOK then episode.counterUntil, episode.counterConfirmed = now + INCIDENT_COUNTER_SECONDS, true end
+    if CarOperations.setGentleStop(carIndex, true) then episode.gentleOwned, episode.gentleConfirmed = true, true end
+    if CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT) then episode.cautionOwned, episode.cautionConfirmed = true, true end
+    local retireOK = CarOperations.preventAIFromRetiring(carIndex)
+    if not retireOK then episode.retirementConfirmed = false else episode.retirementConfirmed = true end
+    return false
+  end
+
+  if not episode.releasing then
+    CarOperations.releaseAIThrottleLimit(carIndex, 'INCIDENT_STOP')
+    CarOperations.releaseAITopSpeed(carIndex, 'INCIDENT_STOP')
+    episode.releasing = true
+  end
+  if episode.gentleOwned and not episode.gentleRestored then
+    if CarOperations.setGentleStop(carIndex, false) then
+      episode.gentleOwned, episode.gentleRestored = false, true
+    end
+  end
+  if episode.cautionOwned and not episode.cautionRestored then
+    local ok, aiValues = pcall(StorageManager.getStorage_AICarValues)
+    local defaultCaution = ok and type(aiValues) == 'table' and aiValues.defaultAICaution or nil
+    if type(defaultCaution) == 'number' and defaultCaution == defaultCaution
+      and defaultCaution ~= math.huge and defaultCaution ~= -math.huge
+      and CarOperations.setAICaution(carIndex, defaultCaution) then
+      episode.cautionOwned, episode.cautionRestored = false, true
+    end
+  end
+  if not episode.gentleConfirmed or not episode.gentleRestored or not episode.cautionConfirmed
+    or not episode.cautionRestored or not episode.counterConfirmed or not episode.topConfirmed
+    or not episode.throttleConfirmed or not episode.topHandedBack or not episode.throttleHandedBack then return false end
+  if not episode.counterUntil or now < episode.counterUntil then return false end
+  local completed = incidentCompleted[carIndex] or {}
+  incidentCompleted[carIndex] = completed
+  for accidentIndex in pairs(episode.incidents) do
+    completed[accidentIndex] = { generation = episode.generation, session = episode.session }
+  end
+  incidentStateCompletion[carIndex] = { generation = episode.generation, session = episode.session }
+  incidentEpisodes[carIndex] = nil
+  return true
+end
+
+getActiveGameTime = function()
   if not GameTimeManager or type(GameTimeManager.getPlayingGameTime) ~= 'function' then return nil end
   local ok, now = pcall(GameTimeManager.getPlayingGameTime)
   if not ok or type(now) ~= 'number' or now ~= now or now < 0 or now == math_huge then return nil end
@@ -133,6 +247,7 @@ local function clearCarRequests(slots, carIndex)
 end
 
 function CarOperations.clearOwnedControlsForCar(carIndex)
+  CarOperations.clearIncidentStopForCar(carIndex)
   clearCarRequests(CarOperations._topSpeedRequests, carIndex)
   clearCarRequests(CarOperations._throttleRequests, carIndex)
   local topWinner = CarOperations._topSpeedWinner[carIndex]
@@ -146,6 +261,7 @@ function CarOperations.clearOwnedControlsForCar(carIndex)
 end
 
 function CarOperations.clearAllOwnedControls()
+  for carIndex in pairs(incidentEpisodes) do CarOperations.clearIncidentStopForCar(carIndex) end
   for carIndex in pairs(CarOperations._topSpeedRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._throttleRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._topSpeedApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
@@ -174,12 +290,27 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
   winnerSlot.active = winner ~= nil
   if winner then winnerSlot.value, winnerSlot.owner, winnerSlot.priority = winner.value, winnerName, winner.priority end
   local previous = applied[carIndex]
+  local episode = incidentEpisodes[carIndex]
+  if episode and (episode.generation ~= CarManager.getCarGeneration(carIndex)
+    or episode.session ~= CarManager.sessionGeneration) then episode = nil end
+  local isTopSpeed = setterName == 'setAITopSpeed'
+  local acquiredKey = isTopSpeed and 'topConfirmed' or 'throttleConfirmed'
+  local handedBackKey = isTopSpeed and 'topHandedBack' or 'throttleHandedBack'
   if winner then
+    local writable = CarManager.isWritableAICar(carIndex) == true
     local value = winner.value
     if cap ~= nil and cap > 0 then value = math.min(value, cap) end
-    if previous and previous.active and previous.carGeneration == CarManager.getCarGeneration(carIndex)
-      and previous.sessionGeneration == CarManager.sessionGeneration and previous.value == value then return end
-    local writable = CarManager.isWritableAICar(carIndex)
+    if writable and previous and previous.active and previous.carGeneration == CarManager.getCarGeneration(carIndex)
+      and previous.sessionGeneration == CarManager.sessionGeneration and previous.value == value then
+      -- A lower-priority owner can inherit an equal value without changing the last-setter audit shadow.
+      previous.handbackOwner, previous.handbackPriority = winnerName, winner.priority
+      if episode then
+        if winnerName == 'INCIDENT_STOP' then
+          episode[acquiredKey], episode[handedBackKey] = true, false
+        elseif episode.releasing and episode[acquiredKey] then episode[handedBackKey] = true end
+      end
+      return
+    end
     local api = physics and physics[setterName]
     if writable and type(api) == 'function' then
       if attempted[carIndex] == resolutionId then return end
@@ -189,7 +320,13 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
         local appliedSlot = previous or {}
         applied[carIndex] = appliedSlot
         appliedSlot.active, appliedSlot.value, appliedSlot.owner, appliedSlot.priority = true, value, winnerName, winner.priority
+        appliedSlot.handbackOwner, appliedSlot.handbackPriority = winnerName, winner.priority
         appliedSlot.carGeneration, appliedSlot.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+        if episode then
+          if winnerName == 'INCIDENT_STOP' then
+            episode[acquiredKey], episode[handedBackKey] = true, false
+          elseif episode.releasing and episode[acquiredKey] then episode[handedBackKey] = true end
+        end
       end
     end
   elseif previous and previous.active then
@@ -200,8 +337,11 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
     if CarManager.isWritableAICar(carIndex) and physics and type(physics[setterName]) == 'function' then
       if attempted[carIndex] == resolutionId then return end
       attempted[carIndex] = resolutionId
-      local ok = pcall(physics[setterName], carIndex, neutral)
-      if ok then previous.active = false end
+       local ok = pcall(physics[setterName], carIndex, neutral)
+       if ok then
+         previous.active, previous.handbackOwner, previous.handbackPriority = false, nil, nil
+         if episode and episode[acquiredKey] then episode[handedBackKey] = true end
+       end
     end
   end
 end
@@ -452,9 +592,12 @@ CarOperations._currentAntiDragRaceTopSpeeds = CarOperations._currentAntiDragRace
 ---@param carIndex integer @0-based car index.
 ---@param caution number @AI caution from 0 to 16.
 CarOperations.setAICaution = function(carIndex, caution)
-    if not canWriteCar(carIndex) or type(caution) ~= 'number' or caution ~= caution or type(physics_setAICaution) ~= 'function' then return false end
-    physics_setAICaution(carIndex, caution)
+    if not canWriteCar(carIndex) or type(caution) ~= 'number' or caution ~= caution or caution == math.huge
+      or caution == -math.huge or caution < 0 or caution > 16 or type(physics_setAICaution) ~= 'function' then return false end
+    local ok = pcall(physics_setAICaution, carIndex, caution)
+    if not ok then return false end
     CarManager.cars_aiCaution[carIndex] = caution
+    return true
 end
 
 ---Removes any AI caution and sets it back to the default value.
@@ -501,8 +644,10 @@ end
 ---@param time number @Time in seconds.
 CarOperations.setAIStopCounter = function(carIndex, time)
     if not canWriteCar(carIndex) or type(time) ~= 'number' or time ~= time or type(physics_setAIStopCounter) ~= 'function' then return false end
-    physics_setAIStopCounter(carIndex, time)
+    local ok = pcall(physics_setAIStopCounter, carIndex, time)
+    if not ok then return false end
     CarManager.cars_aiStopCounter[carIndex] = time
+    return true
 end
 
 ---
@@ -534,8 +679,10 @@ end
 ---@param stop boolean? @Default value: `true`.
 CarOperations.setGentleStop = function(carIndex, stop)
     if not canWriteCar(carIndex) or type(stop) ~= 'boolean' or type(physics_setGentleStop) ~= 'function' then return false end
-    physics_setGentleStop(carIndex, stop)
+    local ok = pcall(physics_setGentleStop, carIndex, stop)
+    if not ok then return false end
     CarManager.cars_gentleStop[carIndex] = stop
+    return true
 end
 
 ---Returns a boolean value indicating whether the first car is behind the second car.
@@ -630,6 +777,7 @@ function CarOperations.stopCarAfterAccident(carIndex)
     CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT) -- be very cautious
 
     CarOperations.preventAIFromRetiring(carIndex)
+    return true
 end
 
 ---Prevent an AI from retiring for some time. 
@@ -637,7 +785,8 @@ end
 ---@param carIndex integer @0-based car index.
 function CarOperations.preventAIFromRetiring(carIndex)
     if not canWriteCar(carIndex) or type(physics_preventAIFromRetiring) ~= 'function' then return false end
-    physics_preventAIFromRetiring(carIndex)
+    local ok = pcall(physics_preventAIFromRetiring, carIndex)
+    return ok
 end
 
 ---Teleports the car to the specified world position.

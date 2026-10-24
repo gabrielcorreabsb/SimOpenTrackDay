@@ -105,7 +105,8 @@ StorageManager.getStorage = function() return { distanceFromAccidentToSeeYellowF
 CarManager.cars_navigatingAroundAccidentIndex, CarManager.cars_navigatingAroundCarIndex = {}, {}
 StorageManager.getStorage = function() return { distanceFromAccidentToSeeYellowFlag_meters = 100 } end
 CarStateMachine = { CarStateType = { NAVIGATING_AROUND_ACCIDENT = 8192 },
-  getCurrentState = function() end, informAboutAccident = function() end }
+  getCurrentState = function() end, informAboutAccident = function() end,
+  initializeCarInStateMachine = function() end }
 Logger = { log = function() end, warn = function() end }
 vec3 = function(x, y, z) return { x = x, y = y, z = z } end
 AccidentManager = dofile(root .. 'AccidentManager.lua')
@@ -126,6 +127,20 @@ assert(AccidentManager.cars_victimInAccidentIndex[0] == nil)
 assert(AccidentManager.accidents_victimWorldPosition[accident] == nil
   and AccidentManager.accidents_victimSplinePosition[accident] == nil, 'resolve clears victim snapshots')
 assert(not RaceTrackManager.isSplinePositionInYellowZone(.15), 'resolve removes the registered zone')
+
+-- The actual CarManager reset hook routes identity cleanup through AccidentManager, even for player observations.
+local identityResetAccident = AccidentManager.registerCollision(1, { x = 1, y = 2, z = 3 }, 1, {
+  culpritGeneration = CarManager.getCarGeneration(1), victimGeneration = CarManager.getCarGeneration(0),
+  positionX = 4, positionY = 5, positionZ = 6, splinePosition = .2,
+  victimPositionX = 7, victimPositionY = 8, victimPositionZ = 9, victimSplinePosition = .1,
+})
+assert(identityResetAccident)
+local writesBeforeIdentityReset = #physicalWrites
+CarManager.clearCarMemory(0)
+assert(AccidentManager.accidents_resolved[identityResetAccident] == true
+  and not RaceTrackManager.isSplinePositionInYellowZone(.15),
+  'real CarManager identity reset hook resolves the incident and removes its zone')
+assert(#physicalWrites == writesBeforeIdentityReset, 'identity reset incident cleanup remains memory-only')
 
 -- The real FSM is the dispatch boundary: rejected player writes never reach a state updater.
 Strings = { StringNames = { [1] = { None = 0 }, [2] = { None = 0 }, [3] = { YieldingToCar = 0 } },

@@ -21,13 +21,14 @@ end
 
 -- UPDATE FUNCTION
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarList, sortedCarListIndex, storage)
-    CarOperations.stopCarAfterAccident(carIndex)
     CarOperations.toggleCarCollisions(carIndex, false)
 end
 
 -- TRANSITION FUNCTION
 CarStateMachine.states_transitionFunctions[STATE] = function (carIndex, dt, sortedCarList, sortedCarListIndex, storage)
-
+    if not CarOperations.hasActiveIncidentStop(carIndex) and CarOperations.hasCompletedIncidentStop(carIndex) then
+      return CarStateMachine.CarStateType.DRIVING_NORMALLY
+    end
 end
 
 -- EXIT FUNCTION

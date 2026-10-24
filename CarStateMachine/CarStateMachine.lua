@@ -284,7 +284,8 @@ CarStateMachine.handleQueuedAccidents = function()
           and victimGeneration == CarManager.getCarGeneration(AccidentManager.accidents_collidedWithCarIndex[accidentIndex])
           and AccidentManager.accidents_resolved[accidentIndex] == false
           and AccidentManager.accidents_carIndex[accidentIndex] == accidentCarIndex
-          and CarManager.isWritableAICar(accidentCarIndex) then
+          and CarManager.isWritableAICar(accidentCarIndex)
+          and CarOperations.admitIncidentStop(accidentCarIndex, accidentIndex, generation, sessionGeneration) then
         Logger.log(string.format("CarStateMachine: #%d collided with another car, switching to COLLIDED_WITH_CAR state", accidentCarIndex))
         CarStateMachine.queueStateTransition(accidentCarIndex, CarStateMachine.CarStateType.COLLIDED_WITH_CAR)
         end
@@ -301,7 +302,8 @@ CarStateMachine.handleQueuedAccidents = function()
           and culpritGeneration == CarManager.getCarGeneration(AccidentManager.accidents_carIndex[accidentIndex])
           and AccidentManager.accidents_resolved[accidentIndex] == false
           and AccidentManager.accidents_collidedWithCarIndex[accidentIndex] == accidentCarIndex
-          and CarManager.isWritableAICar(accidentCarIndex) then
+          and CarManager.isWritableAICar(accidentCarIndex)
+          and CarOperations.admitIncidentStop(accidentCarIndex, accidentIndex, generation, sessionGeneration) then
 
         Logger.log(string.format("CarStateMachine: #%d was collided into by another car, switching to ANOTHER_CAR_COLLIDED_INTO_ME state", accidentCarIndex))
         -- Logger.log(string.format("%d %d ", carIndex, QueueManager.queueLength(queuedCarCollidedWithMeAccidents)))
@@ -327,6 +329,16 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
       pendingState = nil
     end
     local currentState = CarStateMachine.getCurrentState(carIndex)
+    local hasIncidentEpisode = CarOperations.hasActiveIncidentStop(carIndex)
+    if hasIncidentEpisode then CarOperations.updateIncidentStop(carIndex) end
+    if hasIncidentEpisode and pendingState
+      and pendingState ~= CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+      and pendingState ~= CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME then
+      pendingState = nil
+    end
+    local isIncidentState = currentState == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+      or currentState == CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME
+    if hasIncidentEpisode and not isIncidentState and pendingState == nil then return false end
     local stateToExecute = pendingState or currentState or CarStateMachine.CarStateType.DRIVING_NORMALLY
     if stateToExecute == CarStateMachine.CarStateType.AFTER_CUSTOMAIFLOOD_TELEPORT then
       for i = 1, #FLOOD_STATE_REQUIRED_APIS do

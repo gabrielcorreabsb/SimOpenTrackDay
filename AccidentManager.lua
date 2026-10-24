@@ -84,20 +84,19 @@ AccidentManager.isAccidentResolved = function(carIndex)
     return AccidentManager.accidents_resolved[carIndex]
 end
 
----Resolve any accident the given car is a culprit in
+---Resolve every active accident involving the given car as culprit or victim
 ---@param carIndex number
 AccidentManager.informAboutCarReset = function(carIndex)
-    local accidentIndexAsCulprit = AccidentManager.cars_culpritInAccidentIndex[carIndex]
-    -- Logger.log(string.format("[AccidentManager] informAboutCarReset called for car #%d. culpritInAccident #%d.  Total accidents: %d", carIndex, accidentIndexAsCulprit, #AccidentManager.accidents_carIndex))
-    if accidentIndexAsCulprit and accidentIndexAsCulprit > 0 then
-        -- Logger.log(string.format("AccidentManager: Car #%d has reset, clearing it from accident #%d", carIndex, accidentIndexAsCulprit))
-        Logger.log(string.format("[AccidentManager] Car #%d has reset, clearing accident #%d", carIndex, accidentIndexAsCulprit))
+    if not isFiniteNumber(carIndex) or carIndex < 0 or carIndex % 1 ~= 0 then return end
 
-        setAccidentAsResolved(accidentIndexAsCulprit)
-    end
-    local victimAccident = AccidentManager.cars_victimInAccidentIndex[carIndex]
-    if victimAccident and victimAccident > 0 and victimAccident ~= accidentIndexAsCulprit then
-        setAccidentAsResolved(victimAccident)
+    local lastAccidentIndex = CompletableIndexCollectionManager.getLastIndexCreated(accidentCompletableIndex)
+    for accidentIndex = 1, lastAccidentIndex do
+        if AccidentManager.accidents_resolved[accidentIndex] == false
+          and (AccidentManager.accidents_carIndex[accidentIndex] == carIndex
+            or AccidentManager.accidents_collidedWithCarIndex[accidentIndex] == carIndex) then
+            Logger.log(string.format("[AccidentManager] Car #%d has reset, clearing accident #%d", carIndex, accidentIndex))
+            setAccidentAsResolved(accidentIndex)
+        end
     end
 end
 
@@ -307,18 +306,19 @@ AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident
         if not AccidentManager.accidents_resolved[accidentIndex] then
             local culpritCarIndex = AccidentManager.accidents_carIndex[accidentIndex]
             local victimCarIndex = AccidentManager.accidents_collidedWithCarIndex[accidentIndex]
+            local queriedCarIndex = car.index
             local culpritGenerationIsCurrent = accidentCulpritGeneration[accidentIndex] == CarManager.getCarGeneration(culpritCarIndex)
             local victimGenerationIsCurrent = victimCarIndex == nil or accidentVictimGeneration[accidentIndex] == CarManager.getCarGeneration(victimCarIndex)
             if not culpritGenerationIsCurrent or not victimGenerationIsCurrent then
                 setAccidentAsResolved(accidentIndex)
-            else
+            elseif culpritCarIndex ~= queriedCarIndex and victimCarIndex ~= queriedCarIndex then
             local culpritCar = ac.getCar(culpritCarIndex)
             local victimCar = ac.getCar(victimCarIndex)
 
             local closestCarSplineDistance = math.huge
             local closestCar = nil
 
-            if culpritCar then
+            if culpritCar and culpritCarIndex ~= queriedCarIndex then
                 -- make sure the culprit car is ahead of us
                 local culpritCarSplinePosition = culpritCar.splinePosition
                 local culpritCarAheadOfUs = culpritCarSplinePosition > carSplinePosition
@@ -336,7 +336,7 @@ AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident
                 end
             end
 
-            if victimCar then
+            if victimCar and victimCarIndex ~= queriedCarIndex then
                 -- make sure the victim car is ahead of us
                 local victimCarSplinePosition = victimCar.splinePosition
                 local victimCarAheadOfUs = victimCarSplinePosition > carSplinePosition
