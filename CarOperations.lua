@@ -9,6 +9,8 @@ local ac_setTargetCar = ac.setTargetCar
 local ac_setTurningLights = ac.setTurningLights
 local string = string
 local string_format = string.format
+local string_sub = string.sub
+local pcall = pcall
 local math = math
 local math_huge = math.huge
 local math_abs = math.abs
@@ -35,6 +37,8 @@ local CarManager_isCarMidCorner = CarManager.isCarMidCorner
 local CarManager_isCarOffTrack = CarManager.isCarOffTrack
 local CarManager_setCalculatedTrackLateralOffset = CarManager.setCalculatedTrackLateralOffset
 local Logger = Logger
+local Logger_observe = Logger.observe
+local rawget = rawget
 local Logger_error = Logger.error
 local Logger_log = Logger.log
 local Logger_warn = Logger.warn
@@ -53,6 +57,54 @@ local VecPool_getTempVec3 = VecPool.getTempVec3
 local table_clear = table.clear
 local GameTimeManager = GameTimeManager
 local canWriteCar
+local trafficPedalOwnership, trafficLateralOwnership = {}, {}
+local CONTROL_TRACE_KIND = {
+  ['control-setter-attempt'] = 1, ['control-setter-returned'] = 2, ['control-setter-threw-uncertain'] = 3,
+  ['control-handback-attempt'] = 4, ['control-handback-returned'] = 5, ['control-handback-threw-uncertain'] = 6
+}
+local CONTROL_TRACE_CARS, CONTROL_TRACE_RESOURCES, CONTROL_TRACE_KINDS = 256, 2, 6
+local CONTROL_TRACE_OWNER, CONTROL_TRACE_VALUE = {}, {}
+for i = 1, CONTROL_TRACE_CARS * CONTROL_TRACE_RESOURCES * CONTROL_TRACE_KINDS do
+  CONTROL_TRACE_OWNER[i], CONTROL_TRACE_VALUE[i] = false, false
+end
+local function controlTraceOffset(carIndex, resource)
+  if type(carIndex) ~= 'number' or carIndex < 0 or carIndex >= CONTROL_TRACE_CARS or carIndex % 1 ~= 0 then return nil end
+  local resourceIndex = resource == 'setAITopSpeed' and 1 or resource == 'setAIThrottleLimit' and 2 or nil
+  if not resourceIndex then return nil end
+  return (carIndex * CONTROL_TRACE_RESOURCES + resourceIndex - 1) * CONTROL_TRACE_KINDS
+end
+local function resetControlTrace(carIndex, resource)
+  if rawget(Logger, 'OBS1_ENABLED') ~= true then return end
+  local offset = controlTraceOffset(carIndex, resource)
+  if not offset then return end
+  for i = 1, CONTROL_TRACE_KINDS do
+    CONTROL_TRACE_OWNER[offset + i], CONTROL_TRACE_VALUE[offset + i] = false, false
+  end
+end
+
+local function observeControlImpl(kind, carIndex, owner, value, resource)
+  if rawget(Logger, 'OBS1_ENABLED') ~= true or type(Logger_observe) ~= 'function' then return end
+  local kindSlot = CONTROL_TRACE_KIND[kind]
+  local offset = kindSlot and controlTraceOffset(carIndex, resource) or nil
+  if offset then
+    local slot = offset + kindSlot
+    if CONTROL_TRACE_OWNER[slot] == owner and CONTROL_TRACE_VALUE[slot] == value then return end
+    CONTROL_TRACE_OWNER[slot], CONTROL_TRACE_VALUE[slot] = owner, value
+  end
+  local generation, session
+  local manager = CarManager
+  local generationGetter = rawget(manager, 'getCarGeneration')
+  if type(generationGetter) == 'function' then
+    local ok, result = pcall(generationGetter, carIndex)
+    if ok then generation = result end
+  end
+  session = rawget(manager, 'sessionGeneration')
+  Logger_observe(kind, carIndex, generation, nil, nil, value, owner, session, nil, resource)
+end
+local function observeControl(kind, carIndex, owner, value, resource)
+  if rawget(Logger, 'OBS1_ENABLED') ~= true then return end
+  pcall(observeControlImpl, kind, carIndex, owner, value, resource)
+end
 
 -- Ownership is intentionally limited to the AI top-speed and throttle-limit APIs.
 local CONTROL_LEASE_SECONDS = 1
@@ -73,6 +125,86 @@ local incidentEpisodes = {}
 local incidentCompleted = {}
 local incidentStateCompletion = {}
 local getActiveGameTime
+
+-- Temporary, non-persistent S2 trace. Keep disabled in shipped copies.
+CarOperations.S2_DIAGNOSTICS_ENABLED = false
+local s2DiagnosticSession, s2DiagnosticIncident
+local s2DiagnosticOutcomes = {}
+local s2DiagnosticEvents = {}
+local s2DiagnosticCars = {}
+local s2DiagnosticContext = {}
+local function resetS2DiagnosticSession(session)
+  s2DiagnosticSession, s2DiagnosticIncident = session, nil
+  s2DiagnosticOutcomes, s2DiagnosticEvents, s2DiagnosticCars, s2DiagnosticContext = {}, {}, {}, {}
+end
+local function s2DiagnosticImpl(event, carIndex, episode, dedupeKey, field1, value1, field2, value2)
+  if episode and (episode.session ~= CarManager.sessionGeneration
+    or episode.generation ~= CarManager.getCarGeneration(carIndex)) then return end
+  local session = episode and episode.session or CarManager.sessionGeneration
+  if s2DiagnosticSession ~= session then
+    resetS2DiagnosticSession(session)
+  end
+  if event == 'admitted' and not s2DiagnosticIncident then s2DiagnosticIncident = value1 end
+  if not s2DiagnosticIncident then return end
+  if event == 'admitted' and value1 ~= s2DiagnosticIncident then return end
+  if episode and (episode.session ~= session or episode.generation ~= CarManager.getCarGeneration(carIndex)
+    or not episode.incidents[s2DiagnosticIncident]) then return end
+  local context = s2DiagnosticContext[carIndex]
+  if context and (context.session ~= session or context.generation ~= CarManager.getCarGeneration(carIndex)) then return end
+  if event == 'admitted' and not context then
+    local participantCount = 0
+    for _ in pairs(s2DiagnosticCars) do participantCount = participantCount + 1 end
+    if participantCount < 2 then
+      s2DiagnosticCars[carIndex] = true
+      context = { generation = episode.generation, session = session, deadline = episode.deadline, incident = s2DiagnosticIncident }
+      s2DiagnosticContext[carIndex] = context
+    end
+  end
+  if not s2DiagnosticCars[carIndex] or not context then return end
+  local perCarEvents = s2DiagnosticEvents[carIndex]
+  if not perCarEvents then perCarEvents = { next = 1, count = 0 }; s2DiagnosticEvents[carIndex] = perCarEvents end
+  local boundedKey = type(dedupeKey) == 'string' and string_sub(dedupeKey, 1, 48) or '-'
+  local boundedEvent = type(event) == 'string' and string_sub(event, 1, 48) or 'unknown-event'
+  for i = 1, perCarEvents.count do
+    local entry = perCarEvents[i]
+    if entry.key == boundedKey and entry.event == boundedEvent then return end
+  end
+  local eventSlot = perCarEvents.next
+  local entry = perCarEvents[eventSlot]
+  if not entry then entry = {}; perCarEvents[eventSlot] = entry; perCarEvents.count = math.min(perCarEvents.count + 1, 32) end
+  entry.key, entry.event = boundedKey, boundedEvent
+  perCarEvents.next = eventSlot % 32 + 1
+  local detail = field1 ~= nil and value1 or field2 ~= nil and value2 or event
+  Logger.observe('control-s2', carIndex, context.generation, context.incident, nil, detail, event, session, context.deadline)
+end
+local function s2Diagnostic(event, carIndex, episode, dedupeKey, field1, value1, field2, value2)
+  if rawget(Logger, 'OBS1_ENABLED') ~= true then return end
+  pcall(s2DiagnosticImpl, event, carIndex, episode, dedupeKey, field1, value1, field2, value2)
+end
+CarOperations._traceIncidentStop = s2Diagnostic
+local function traceOutcomeImpl(episode, carIndex, operation, result)
+  if not episode or not s2DiagnosticIncident or episode.session ~= CarManager.sessionGeneration
+    or episode.session ~= s2DiagnosticSession or episode.generation ~= CarManager.getCarGeneration(carIndex)
+    or not episode.incidents[s2DiagnosticIncident] or not s2DiagnosticCars[carIndex] then return end
+  local context = s2DiagnosticContext[carIndex]
+  if not context or context.session ~= episode.session or context.generation ~= episode.generation
+    or context.incident ~= s2DiagnosticIncident then return end
+  local outcomes = s2DiagnosticOutcomes[carIndex]
+  if outcomes and outcomes[operation] == result then return end
+  if not outcomes then outcomes = {}; s2DiagnosticOutcomes[carIndex] = outcomes end
+  outcomes[operation] = result
+  s2Diagnostic(result and 'setter-pcall-returned' or 'setter-failed-or-uncertain', carIndex, episode,
+    operation, 'operation', operation)
+end
+local function traceOutcome(episode, carIndex, operation, result)
+  if rawget(Logger, 'OBS1_ENABLED') == true then pcall(traceOutcomeImpl, episode, carIndex, operation, result) end
+end
+local function traceMissingAPIImpl(episode, carIndex, operation, api, key)
+  if type(api) ~= 'function' then s2Diagnostic('api-unavailable', carIndex, episode, key, 'operation', operation) end
+end
+local function traceMissingAPI(episode, carIndex, operation, api, key)
+  if rawget(Logger, 'OBS1_ENABLED') == true then pcall(traceMissingAPIImpl, episode, carIndex, operation, api, key) end
+end
 
 local function incidentParticipantRecord(carIndex, accidentIndex)
   if type(accidentIndex) ~= 'number' or accidentIndex ~= accidentIndex or accidentIndex < 1
@@ -104,11 +236,16 @@ function CarOperations.hasCompletedIncidentStop(carIndex)
     and completion.session == CarManager.sessionGeneration
 end
 
--- Called only from FSM's validated accepted-accident queue, never inferred from reverse maps.
+-- Retained for episodes admitted before a contact queue is consumed; queue contacts no longer admit S2 episodes.
 function CarOperations.admitIncidentStop(carIndex, accidentIndex, generation, session)
   if session ~= CarManager.sessionGeneration or generation ~= CarManager.getCarGeneration(carIndex)
     or not canWriteCar(carIndex) or not incidentParticipantRecord(carIndex, accidentIndex)
     or CarOperations.isIncidentStopCompleted(carIndex, accidentIndex) then return false end
+  local admissionCheck = AccidentManager and AccidentManager.shouldAdmitIncidentStop
+  if type(admissionCheck) == 'function' then
+    local checkOK, shouldAdmit = pcall(admissionCheck, accidentIndex)
+    if checkOK and shouldAdmit == false then return false end
+  end
   local now = getActiveGameTime()
   if now == nil or now > math.huge - INCIDENT_STOP_SECONDS then return false end
   local episode = incidentEpisodes[carIndex]
@@ -125,47 +262,74 @@ function CarOperations.admitIncidentStop(carIndex, accidentIndex, generation, se
     incidentEpisodes[carIndex] = episode
   end
   episode.incidents[accidentIndex] = true
+  s2Diagnostic('admitted', carIndex, episode, 'admitted', 'incidentID', accidentIndex,
+    'control', 'requested; physical evidence unavailable')
   return true
 end
 
 function CarOperations.updateIncidentStop(carIndex)
-  if not canWriteCar(carIndex) then return false end
   local episode = incidentEpisodes[carIndex]
+  if not canWriteCar(carIndex) then
+    if episode then s2Diagnostic('episode-update-gated', carIndex, episode, 'update-gate', 'gate', 'denied; no extra permission probe') end
+    return false
+  end
   if not episode or episode.generation ~= CarManager.getCarGeneration(carIndex)
     or episode.session ~= CarManager.sessionGeneration then return false end
   local now = getActiveGameTime()
-  if now == nil then return false end
+  if now == nil then
+    s2Diagnostic('active-clock-unavailable', carIndex, episode, 'clock-unavailable', 'episode', 'retained; no physical write')
+    return false
+  end
 
   if now < episode.deadline then
     local throttleRequested = CarOperations.requestAIThrottleLimit(carIndex, 0, 'INCIDENT_STOP')
     local topRequested = CarOperations.requestAITopSpeed(carIndex, 0, 'INCIDENT_STOP')
+    if rawget(Logger, 'OBS1_ENABLED') == true then
+    s2Diagnostic('control-request', carIndex, episode, 'control-request', 'throttleRequested', throttleRequested,
+        'topSpeedRequested', topRequested)
+    end
     if not throttleRequested or not topRequested then return false end
+    traceMissingAPI(episode, carIndex, 'setAIStopCounter', physics_setAIStopCounter, 'api-stop-counter')
     local counterOK = CarOperations.setAIStopCounter(carIndex, 1)
+    traceOutcome(episode, carIndex, 'stopCounter', counterOK)
     if counterOK then episode.counterUntil, episode.counterConfirmed = now + INCIDENT_COUNTER_SECONDS, true end
-    if CarOperations.setGentleStop(carIndex, true) then episode.gentleOwned, episode.gentleConfirmed = true, true end
-    if CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT) then episode.cautionOwned, episode.cautionConfirmed = true, true end
+    traceMissingAPI(episode, carIndex, 'setGentleStop', physics_setGentleStop, 'api-gentle-stop')
+    local gentleOK = CarOperations.setGentleStop(carIndex, true)
+    traceOutcome(episode, carIndex, 'gentleStop=true', gentleOK)
+    if gentleOK then episode.gentleOwned, episode.gentleConfirmed = true, true end
+    traceMissingAPI(episode, carIndex, 'setAICaution', physics_setAICaution, 'api-caution')
+    local cautionOK = CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT)
+    traceOutcome(episode, carIndex, 'caution=after-accident', cautionOK)
+    if cautionOK then episode.cautionOwned, episode.cautionConfirmed = true, true end
+    traceMissingAPI(episode, carIndex, 'preventAIFromRetiring', physics_preventAIFromRetiring, 'api-prevent-retiring')
     local retireOK = CarOperations.preventAIFromRetiring(carIndex)
+    traceOutcome(episode, carIndex, 'preventRetiring', retireOK)
     if not retireOK then episode.retirementConfirmed = false else episode.retirementConfirmed = true end
     return false
   end
 
   if not episode.releasing then
+    s2Diagnostic('deadline-release-start', carIndex, episode, 'deadline-release', 'physicalEvidence', 'unavailable')
     CarOperations.releaseAIThrottleLimit(carIndex, 'INCIDENT_STOP')
     CarOperations.releaseAITopSpeed(carIndex, 'INCIDENT_STOP')
     episode.releasing = true
   end
   if episode.gentleOwned and not episode.gentleRestored then
     if CarOperations.setGentleStop(carIndex, false) then
+      traceOutcome(episode, carIndex, 'gentleStop=false', true)
       episode.gentleOwned, episode.gentleRestored = false, true
-    end
+    else traceOutcome(episode, carIndex, 'gentleStop=false', false) end
   end
   if episode.cautionOwned and not episode.cautionRestored then
     local ok, aiValues = pcall(StorageManager.getStorage_AICarValues)
     local defaultCaution = ok and type(aiValues) == 'table' and aiValues.defaultAICaution or nil
     if type(defaultCaution) == 'number' and defaultCaution == defaultCaution
       and defaultCaution ~= math.huge and defaultCaution ~= -math.huge
-      and CarOperations.setAICaution(carIndex, defaultCaution) then
+       and CarOperations.setAICaution(carIndex, defaultCaution) then
+      traceOutcome(episode, carIndex, 'caution=restore', true)
       episode.cautionOwned, episode.cautionRestored = false, true
+    elseif episode.cautionOwned and not episode.cautionRestored then
+      traceOutcome(episode, carIndex, 'caution=restore', false)
     end
   end
   if not episode.gentleConfirmed or not episode.gentleRestored or not episode.cautionConfirmed
@@ -178,6 +342,7 @@ function CarOperations.updateIncidentStop(carIndex)
     completed[accidentIndex] = { generation = episode.generation, session = episode.session }
   end
   incidentStateCompletion[carIndex] = { generation = episode.generation, session = episode.session }
+  s2Diagnostic('completed', carIndex, episode, 'completed', 'completion', 'logical; physical readback unavailable')
   incidentEpisodes[carIndex] = nil
   return true
 end
@@ -209,10 +374,16 @@ local function requestControl(slots, carIndex, value, owner, priority, maximum)
     or value < 0 or value > maximum or now == nil then return false end
   local slot = getControlSlot(slots, carIndex)
   local item = slot.byOwner[owner]
+  local resource = slots == CarOperations._topSpeedRequests and 'setAITopSpeed' or 'setAIThrottleLimit'
+  local changed = not item.active or item.value ~= value or item.sessionGeneration ~= CarManager.sessionGeneration
   if not item.active then slot.activeCount = slot.activeCount + 1 end
   item.value, item.priority, item.expiresAt = value, fixedPriority, now + CONTROL_LEASE_SECONDS
   item.carGeneration, item.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
   item.active = true
+  if changed then
+    resetControlTrace(carIndex, resource)
+    observeControl('control-request', carIndex, owner, value, resource)
+  end
   return true
 end
 
@@ -228,6 +399,9 @@ local function releaseControl(slots, carIndex, owner)
   if not item or not item.active then return false end
   item.active = false
   slot.activeCount = slot.activeCount - 1
+  local resource = slots == CarOperations._topSpeedRequests and 'setAITopSpeed' or 'setAIThrottleLimit'
+  resetControlTrace(carIndex, resource)
+  observeControl('control-request-released', carIndex, owner, item.value, resource)
   local winners = slots == CarOperations._topSpeedRequests and CarOperations._topSpeedWinner or CarOperations._throttleWinner
   local winner = winners[carIndex]
   if winner and winner.active and winner.owner == owner then winner.active = false end
@@ -236,11 +410,12 @@ end
 function CarOperations.releaseAITopSpeed(carIndex, owner) return releaseControl(CarOperations._topSpeedRequests, carIndex, owner) end
 function CarOperations.releaseAIThrottleLimit(carIndex, owner) return releaseControl(CarOperations._throttleRequests, carIndex, owner) end
 
-local function clearCarRequests(slots, carIndex)
+local function clearCarRequests(slots, carIndex, resource)
   local slot = slots[carIndex]
   if not slot then return end
   for i = 1, #OWNER_ORDER do
     local item = slot.byOwner[OWNER_ORDER[i]]
+    if item.active then observeControl('control-request-cleared', carIndex, item.owner, item.value, resource) end
     item.active = false
   end
   slot.activeCount = 0
@@ -248,8 +423,9 @@ end
 
 function CarOperations.clearOwnedControlsForCar(carIndex)
   CarOperations.clearIncidentStopForCar(carIndex)
-  clearCarRequests(CarOperations._topSpeedRequests, carIndex)
-  clearCarRequests(CarOperations._throttleRequests, carIndex)
+  trafficPedalOwnership[carIndex], trafficLateralOwnership[carIndex] = nil, nil
+  clearCarRequests(CarOperations._topSpeedRequests, carIndex, 'setAITopSpeed')
+  clearCarRequests(CarOperations._throttleRequests, carIndex, 'setAIThrottleLimit')
   local topWinner = CarOperations._topSpeedWinner[carIndex]
   local throttleWinner = CarOperations._throttleWinner[carIndex]
   local topApplied = CarOperations._topSpeedApplied[carIndex]
@@ -262,6 +438,8 @@ end
 
 function CarOperations.clearAllOwnedControls()
   for carIndex in pairs(incidentEpisodes) do CarOperations.clearIncidentStopForCar(carIndex) end
+  for carIndex in pairs(trafficPedalOwnership) do trafficPedalOwnership[carIndex] = nil end
+  for carIndex in pairs(trafficLateralOwnership) do trafficLateralOwnership[carIndex] = nil end
   for carIndex in pairs(CarOperations._topSpeedRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._throttleRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._topSpeedApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
@@ -276,6 +454,7 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       local item = requestSlot.byOwner[OWNER_ORDER[i]]
       if item.active and (item.carGeneration ~= CarManager.getCarGeneration(carIndex)
         or item.sessionGeneration ~= CarManager.sessionGeneration or now >= item.expiresAt) then
+        observeControl('control-request-expired', carIndex, item.owner, item.value, setterName)
         item.active = false
         requestSlot.activeCount = requestSlot.activeCount - 1
       end
@@ -287,8 +466,14 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
   end
   local winnerSlot = winners[carIndex]
   if not winnerSlot then winnerSlot = {}; winners[carIndex] = winnerSlot end
+  local winnerChanged = winnerSlot.active ~= (winner ~= nil)
+    or (winner and (winnerSlot.owner ~= winnerName or winnerSlot.value ~= winner.value))
   winnerSlot.active = winner ~= nil
   if winner then winnerSlot.value, winnerSlot.owner, winnerSlot.priority = winner.value, winnerName, winner.priority end
+  if winnerChanged then
+    resetControlTrace(carIndex, setterName)
+    observeControl('control-winner', carIndex, winnerName or 'none', winner and winner.value or 'none', setterName)
+  end
   local previous = applied[carIndex]
   local episode = incidentEpisodes[carIndex]
   if episode and (episode.generation ~= CarManager.getCarGeneration(carIndex)
@@ -304,6 +489,10 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       and previous.sessionGeneration == CarManager.sessionGeneration and previous.value == value then
       -- A lower-priority owner can inherit an equal value without changing the last-setter audit shadow.
       previous.handbackOwner, previous.handbackPriority = winnerName, winner.priority
+      if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
+        local controlKey = setterName == 'setAITopSpeed' and 'equal-transfer-top' or 'equal-transfer-throttle'
+        s2Diagnostic('logical-equal-transfer', carIndex, episode, controlKey, 'setter', setterName, 'owner', winnerName)
+      end
       if episode then
         if winnerName == 'INCIDENT_STOP' then
           episode[acquiredKey], episode[handedBackKey] = true, false
@@ -312,10 +501,25 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       return
     end
     local api = physics and physics[setterName]
+    if episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) and type(api) ~= 'function' then
+      local apiKey = setterName == 'setAITopSpeed' and 'api-top-speed' or 'api-throttle'
+      s2Diagnostic('api-unavailable', carIndex, episode, apiKey, 'operation', setterName)
+    end
     if writable and type(api) == 'function' then
       if attempted[carIndex] == resolutionId then return end
       attempted[carIndex] = resolutionId
+      observeControl('control-setter-attempt', carIndex, winnerName, value, setterName)
+      if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
+        local attemptKey = setterName == 'setAITopSpeed' and 'attempt-top-speed' or 'attempt-throttle'
+        s2Diagnostic('setter-attempt', carIndex, episode, attemptKey, 'operation', setterName, 'value', value)
+      end
       local ok = pcall(api, carIndex, value)
+      observeControl(ok and 'control-setter-returned' or 'control-setter-threw-uncertain', carIndex, winnerName, value, setterName)
+      if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
+        local resultKey = setterName == 'setAITopSpeed' and 'result-top-speed' or 'result-throttle'
+        s2Diagnostic(ok and 'setter-returned' or 'setter-threw-uncertain', carIndex, episode,
+          resultKey, 'operation', setterName, 'value', value)
+      end
       if ok then
         local appliedSlot = previous or {}
         applied[carIndex] = appliedSlot
@@ -336,8 +540,19 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
     end
     if CarManager.isWritableAICar(carIndex) and physics and type(physics[setterName]) == 'function' then
       if attempted[carIndex] == resolutionId then return end
-      attempted[carIndex] = resolutionId
-       local ok = pcall(physics[setterName], carIndex, neutral)
+        attempted[carIndex] = resolutionId
+        observeControl('control-handback-attempt', carIndex, previous.owner or 'UNKNOWN', neutral, setterName)
+       if rawget(Logger, 'OBS1_ENABLED') == true and episode and episode.releasing then
+         local handbackKey = setterName == 'setAITopSpeed' and 'handback-attempt-top' or 'handback-attempt-throttle'
+         s2Diagnostic('handback-attempt', carIndex, episode, handbackKey, 'operation', setterName, 'neutral', neutral)
+       end
+        local ok = pcall(physics[setterName], carIndex, neutral)
+        observeControl(ok and 'control-handback-returned' or 'control-handback-threw-uncertain', carIndex, previous.owner or 'UNKNOWN', neutral, setterName)
+         if rawget(Logger, 'OBS1_ENABLED') == true and episode and episode.releasing then
+          local handbackResultKey = setterName == 'setAITopSpeed' and 'handback-result-top' or 'handback-result-throttle'
+          s2Diagnostic(ok and 'handback-returned' or 'handback-threw-uncertain', carIndex,
+            episode, handbackResultKey, 'operation', setterName, 'neutral', neutral)
+        end
        if ok then
          previous.active, previous.handbackOwner, previous.handbackPriority = false, nil, nil
          if episode and episode[acquiredKey] then episode[handedBackKey] = true end
@@ -474,41 +689,105 @@ CarOperations.CarPedals = {
   Clutch = 3,
 }
 
+local function writePedalInput(carInput, field, value)
+  carInput[field] = value
+end
+
+local function controlIdentityMatches(record, carIndex)
+  return record and record.generation == CarManager.getCarGeneration(carIndex)
+    and record.session == CarManager.sessionGeneration
+end
+local function isTrafficControlOwner(owner)
+  return owner == 'TRAFFIC_YIELD' or owner == 'TRAFFIC_OVERTAKE'
+end
+local function isAppLateralOwner(owner)
+  return owner == 'NORMAL_TRAFFIC' or isTrafficControlOwner(owner)
+end
+local function controlsMayBeReleased(carIndex)
+  if not canWriteCar(carIndex) then return false end
+  local simOK, sim = pcall(ac.getSim)
+  return simOK and sim ~= nil and sim.isPaused ~= true and sim.isReplayActive ~= true
+end
+
 ---Value from 0 to 1. Final value will be the maximum of original and this.
 ---(For clutch: 1 is for clutch pedal fully depressed, 0 for pressed).
 ---@param carIndex integer
 ---@param carPedal CarOperations.CarPedals
 ---@param pedalPosition number
-CarOperations.setPedalPosition = function(carIndex, carPedal, pedalPosition)
+CarOperations.setPedalPosition = function(carIndex, carPedal, pedalPosition, owner)
   if not canWriteCar(carIndex) or type(pedalPosition) ~= 'number' or pedalPosition ~= pedalPosition
     or type(ac_overrideCarControls) ~= 'function' then return false end
-  local carInput = ac_overrideCarControls(carIndex)
-  if not carInput then return end
-
-  if carPedal == CarOperations.CarPedals.Gas then
-    carInput.gas = pedalPosition
-  elseif carPedal == CarOperations.CarPedals.Brake then
-    carInput.brake = pedalPosition
-  elseif carPedal == CarOperations.CarPedals.Clutch then
-    carInput.clutch = pedalPosition
-  end
+  if carPedal ~= CarOperations.CarPedals.Gas and carPedal ~= CarOperations.CarPedals.Brake
+    and carPedal ~= CarOperations.CarPedals.Clutch then return false end
+  local ok, carInput = pcall(ac_overrideCarControls, carIndex)
+  if not ok or not carInput then return false end
+  local field = carPedal == CarOperations.CarPedals.Gas and 'gas'
+    or carPedal == CarOperations.CarPedals.Brake and 'brake' or 'clutch'
+  local record = trafficPedalOwnership[carIndex]
+  if not record then record = {}; trafficPedalOwnership[carIndex] = record end
+  local previous = record[carPedal]
+  if not controlIdentityMatches(previous, carIndex) then previous = nil end
+  if owner == 'TRAFFIC_YIELD' and previous and previous.owner ~= 'TRAFFIC_YIELD' then return false end
+  local ownership = previous
+  if not ownership then ownership = {}; record[carPedal] = ownership end
+  ownership.owner, ownership.generation, ownership.session = owner or 'COMPAT',
+    CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+  ownership.confirmed, ownership.uncertain = false, false
+  record[carPedal] = ownership
+  local setOK = pcall(writePedalInput, carInput, field, pedalPosition)
+  if setOK then ownership.confirmed = true else ownership.uncertain = true end
+  return setOK
 end
 
 ---Resets the specified pedal to the original value
 ---@param carIndex integer
 ---@param carPedal CarOperations.CarPedals
-CarOperations.resetPedalPosition = function(carIndex, carPedal)
+CarOperations.resetPedalPosition = function(carIndex, carPedal, owner)
   if not canWriteCar(carIndex) or type(ac_overrideCarControls) ~= 'function' then return false end
-  local carInput = ac_overrideCarControls(carIndex)
-  if not carInput then return end
+  local record = trafficPedalOwnership[carIndex]
+  local ownership = record and record[carPedal]
+  if owner == 'TRAFFIC_YIELD' and (not controlIdentityMatches(ownership, carIndex)
+    or ownership.owner ~= 'TRAFFIC_YIELD') then return false end
+  local ok, carInput = pcall(ac_overrideCarControls, carIndex)
+  if not ok or not carInput then return false end
+  local field = carPedal == CarOperations.CarPedals.Gas and 'gas'
+    or carPedal == CarOperations.CarPedals.Brake and 'brake' or 'clutch'
+  local value = carPedal == CarOperations.CarPedals.Clutch and 1 or 0
+  local setOK = pcall(writePedalInput, carInput, field, value)
+  if setOK and record then record[carPedal] = nil end
+  if not setOK and ownership then ownership.uncertain = true end
+  return setOK
+end
 
-  if carPedal == CarOperations.CarPedals.Gas then
-    carInput.gas = 0
-  elseif carPedal == CarOperations.CarPedals.Brake then
-    carInput.brake = 0
-  elseif carPedal == CarOperations.CarPedals.Clutch then
-    carInput.clutch = 1 -- For clutch: 1 is for clutch pedal fully depressed, 0 for pressed
+function CarOperations.releaseTrafficYieldControls(carIndex)
+  if not controlsMayBeReleased(carIndex) then return false end
+  local generation, session = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+  local success = true
+  local pedals = trafficPedalOwnership[carIndex]
+  if pedals then
+    for pedal, ownership in pairs(pedals) do
+      if ownership.generation == generation and ownership.session == session and ownership.owner == 'TRAFFIC_YIELD' then
+        local ok = CarOperations.resetPedalPosition(carIndex, pedal, 'TRAFFIC_YIELD')
+        if not ok then success = false end
+      end
+    end
   end
+  local lateral = trafficLateralOwnership[carIndex]
+  if lateral and lateral.generation == generation and lateral.session == session and isAppLateralOwner(lateral.owner) then
+    if type(physics_setAISplineOffset) == 'function' then
+      local ok = pcall(physics_setAISplineOffset, carIndex, 0, false)
+      if ok then
+        trafficLateralOwnership[carIndex] = nil
+        CarManager_setCalculatedTrackLateralOffset(carIndex, 0)
+      else
+        lateral.uncertain = true
+        success = false
+      end
+    else
+      success = false
+    end
+  end
+  return success
 end
 
 -- local ARRIVED_AT_TARGET_SPLINE_OFFSET_EPSILON = 0.02 -- in lateral spline offset units
@@ -873,8 +1152,12 @@ end
 ---@param useIndicatorLights boolean @Whether to use indicator lights while driving to the side.
 ---@return boolean
 -- function CarOperations.driveSafelyToSide(carIndex, dt, car, side, driveToSideMaxOffset, rampSpeed_mps, overrideAiAwareness, sideCheck)
-function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset, rampSpeed_mps, overrideAiAwareness, sideCheck, useIndicatorLights)
+function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset, rampSpeed_mps, overrideAiAwareness, sideCheck, useIndicatorLights, controlOwner)
     if not canWriteCar(carIndex) or type(dt) ~= 'number' or dt ~= dt or dt <= 0 or dt == math.huge then return false end
+    if isAppLateralOwner(controlOwner) and car and (car.isInPitlane == true or car.isInPit == true) then
+      CarOperations.releaseTrafficYieldControls(carIndex)
+      return false
+    end
     -- calculate the side we're driving to based on the car's current lateral offset and the target lateral offset
     local carPosition = car.position
     local currentActualTrackLateralOffset = CarManager_getActualTrackLateralOffset(carIndex, carPosition)
@@ -941,7 +1224,13 @@ function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset,
       -- set the spline offset on the ai car
       -- local overrideAiAwareness = storage.overrideAiAwareness -- TODO: check what this does
       if type(physics_setAISplineOffset) ~= 'function' then return false end
-      physics_setAISplineOffset(carIndex, currentSplineOffset, overrideAiAwareness)
+      local setOK = pcall(physics_setAISplineOffset, carIndex, currentSplineOffset, overrideAiAwareness)
+      local ownership = trafficLateralOwnership[carIndex]
+      if not ownership then ownership = {}; trafficLateralOwnership[carIndex] = ownership end
+      ownership.owner, ownership.generation, ownership.session = controlOwner or 'COMPAT',
+        CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+      ownership.confirmed, ownership.uncertain = setOK, not setOK
+      if not setOK then return false end
 
       -- keep the turning lights on while driving to the side
       if useIndicatorLights then
@@ -973,7 +1262,7 @@ function CarOperations.overtakeSafelyToSide(carIndex, dt, car, storage, useIndic
 
     -- return CarOperations.driveSafelyToSide(carIndex, dt, car, driveToSide, targetOffset, rampSpeed_mps, overrideAiAwareness, true)
     local handleSideCheckingWhenOvertaking = storage_Overtaking.handleSideCheckingWhenOvertaking
-    return CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, overrideAiAwareness, handleSideCheckingWhenOvertaking, useIndicatorLights)
+    return CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, overrideAiAwareness, handleSideCheckingWhenOvertaking, useIndicatorLights, 'TRAFFIC_OVERTAKE')
 end
 
 --- Drives the car to the yielding lane while making sure there are no cars blocking the side.
@@ -993,7 +1282,7 @@ function CarOperations.yieldSafelyToSide(carIndex, dt, car, storage, useIndicato
 
       -- return CarOperations.driveSafelyToSide(carIndex, dt, car, driveToSide, targetOffset, rampSpeed_mps, overrideAiAwareness, true)
       local handleSideCheckingWhenYielding = storage_Yielding.handleSideCheckingWhenYielding
-      return CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, overrideAiAwareness, handleSideCheckingWhenYielding, useIndicatorLights)
+      return CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, overrideAiAwareness, handleSideCheckingWhenYielding, useIndicatorLights, 'TRAFFIC_YIELD')
 end
 
 ---Calculated the overtaking car's ai caution value while overtaking another car.

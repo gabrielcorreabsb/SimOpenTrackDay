@@ -7,6 +7,44 @@ local CarStateMachine = {}
 -- local ac = ac
 local table = table
 local table_clear = table.clear
+local pcall = pcall
+local rawget, type = rawget, type
+local function observe(...)
+  local lookupOK, logger = pcall(rawget, _G, 'Logger')
+  if not lookupOK then return end
+  local observeOK, fn = pcall(rawget, logger, 'observe')
+  if not observeOK then return end
+  if type(fn) == 'function' then pcall(fn, ...) end
+end
+local function isOBS1EnabledProtected()
+  local logger = rawget(_G, 'Logger')
+  return type(logger) == 'table' and rawget(logger, 'OBS1_ENABLED') == true
+end
+local function isOBS1Enabled()
+  local ok, enabled = pcall(isOBS1EnabledProtected)
+  return ok and enabled == true
+end
+local function observeStateProtected(kind, carIndex, state, generation, previousState)
+  local stateTypes = CarStateMachine.CarStateType
+  local essential = state == stateTypes.COLLIDED_WITH_CAR
+    or state == stateTypes.ANOTHER_CAR_COLLIDED_INTO_ME
+    or state == stateTypes.DRIVING_IN_YELLOW_FLAG_ZONE
+    or state == stateTypes.NAVIGATING_AROUND_ACCIDENT
+    or previousState == stateTypes.COLLIDED_WITH_CAR
+    or previousState == stateTypes.ANOTHER_CAR_COLLIDED_INTO_ME
+    or previousState == stateTypes.DRIVING_IN_YELLOW_FLAG_ZONE
+    or previousState == stateTypes.NAVIGATING_AROUND_ACCIDENT
+  observe(essential and (kind .. '-essential') or kind, carIndex, generation, nil, nil, state, previousState)
+end
+local function observeState(kind, carIndex, state, generation, previousState)
+  pcall(observeStateProtected, kind, carIndex, state, generation, previousState)
+end
+local function observeQueuedIncidentProtected(kind, carIndex, incidentIndex, detail)
+  observe(kind, carIndex, nil, incidentIndex, nil, detail, nil, CarManager.sessionGeneration)
+end
+local function observeQueuedIncident(kind, carIndex, incidentIndex, detail)
+  pcall(observeQueuedIncidentProtected, kind, carIndex, incidentIndex, detail)
+end
 
 -- local LOG_CAR_STATEMACHINE_IN_CSP_LOG = true
 local LOG_CAR_STATEMACHINE_IN_CSP_LOG = false
@@ -59,6 +97,14 @@ CarStateMachine.CarStateType = const({
 })
 
 --]====]
+
+local function isTrafficManeuverState(state)
+  local stateTypes = CarStateMachine.CarStateType
+  return state == stateTypes.EASING_IN_YIELD or state == stateTypes.STAYING_ON_YIELDING_LANE
+    or state == stateTypes.EASING_OUT_YIELD
+    or state == stateTypes.EASING_IN_OVERTAKE or state == stateTypes.STAYING_ON_OVERTAKING_LANE
+    or state == stateTypes.EASING_OUT_OVERTAKE
+end
 
 local StateExitReason = Strings.StringNames[Strings.StringCategories.StateExitReason]
 
@@ -178,6 +224,29 @@ local queuedVictimAccidentIndexes = QueueManager.createQueue()
 ---@type table<integer,CarStateMachine.CarStateType>
 local queuedStatesToTransitionInto = {}
 local queuedStateGenerations = {}
+local function getPendingReadOnlyProtected(carIndex)
+  if type(carIndex) ~= 'number' or carIndex ~= carIndex or carIndex < 0
+    or carIndex == math.huge or carIndex % 1 ~= 0 then return nil end
+  local pending = queuedStatesToTransitionInto[carIndex]
+  local pendingGeneration = queuedStateGenerations[carIndex]
+  local currentGeneration = CarManager.getCarGeneration(carIndex)
+  return { car = carIndex, session = CarManager.sessionGeneration, generation = pendingGeneration,
+    pendingGeneration = pendingGeneration, pending = pending, currentGeneration = currentGeneration,
+    valid = pending ~= nil and pendingGeneration ~= nil and currentGeneration ~= nil
+      and pendingGeneration == currentGeneration }
+end
+
+function CarStateMachine.getPendingReadOnly(carIndex)
+  local ok, result = pcall(getPendingReadOnlyProtected, carIndex)
+  if ok then return result end
+  return nil
+end
+local function observePendingStaleProtected(carIndex, pendingState)
+  observe('pending-stale', carIndex, queuedStateGenerations[carIndex], nil, nil, pendingState)
+end
+local function observePendingStale(carIndex, pendingState)
+  pcall(observePendingStaleProtected, carIndex, pendingState)
+end
 local cars_defenseRemainingTime_s = {}
 local FLOOD_STATE_REQUIRED_APIS = { 'setCarFuel', 'engageGear', 'setEngineRPM', 'setAIStopCounter',
   'setGentleStop', 'setAICaution', 'awakeCar', 'setAINoInput' }
@@ -216,10 +285,13 @@ end
 
 CarStateMachine.queueStateTransition = function(carIndex, newState)
     queuedStatesToTransitionInto[carIndex] = newState
-    queuedStateGenerations[carIndex] = CarManager.getCarGeneration(carIndex)
+    local generation = CarManager.getCarGeneration(carIndex)
+    queuedStateGenerations[carIndex] = generation
+    observeState('fsm-requested', carIndex, newState, generation)
 end
 
 function CarStateMachine.clearPendingLifecycle()
+  observe('pending-clear', nil, nil, nil, nil, 'state-and-incident-queues')
   for index in pairs(queuedStatesToTransitionInto) do
     queuedStatesToTransitionInto[index], queuedStateGenerations[index] = nil, nil
   end
@@ -284,10 +356,10 @@ CarStateMachine.handleQueuedAccidents = function()
           and victimGeneration == CarManager.getCarGeneration(AccidentManager.accidents_collidedWithCarIndex[accidentIndex])
           and AccidentManager.accidents_resolved[accidentIndex] == false
           and AccidentManager.accidents_carIndex[accidentIndex] == accidentCarIndex
-          and CarManager.isWritableAICar(accidentCarIndex)
-          and CarOperations.admitIncidentStop(accidentCarIndex, accidentIndex, generation, sessionGeneration) then
-        Logger.log(string.format("CarStateMachine: #%d collided with another car, switching to COLLIDED_WITH_CAR state", accidentCarIndex))
-        CarStateMachine.queueStateTransition(accidentCarIndex, CarStateMachine.CarStateType.COLLIDED_WITH_CAR)
+          and CarManager.isWritableAICar(accidentCarIndex) then
+          observe('queue-consumed', accidentCarIndex, generation, accidentIndex, nil, 'registered-contact-no-s2-admission', nil, sessionGeneration)
+        else
+          observe('queue-stale', accidentCarIndex, generation, accidentIndex, nil, 'culprit-identity-or-record-stale', nil, sessionGeneration)
         end
     end
 
@@ -302,13 +374,10 @@ CarStateMachine.handleQueuedAccidents = function()
           and culpritGeneration == CarManager.getCarGeneration(AccidentManager.accidents_carIndex[accidentIndex])
           and AccidentManager.accidents_resolved[accidentIndex] == false
           and AccidentManager.accidents_collidedWithCarIndex[accidentIndex] == accidentCarIndex
-          and CarManager.isWritableAICar(accidentCarIndex)
-          and CarOperations.admitIncidentStop(accidentCarIndex, accidentIndex, generation, sessionGeneration) then
-
-        Logger.log(string.format("CarStateMachine: #%d was collided into by another car, switching to ANOTHER_CAR_COLLIDED_INTO_ME state", accidentCarIndex))
-        -- Logger.log(string.format("%d %d ", carIndex, QueueManager.queueLength(queuedCarCollidedWithMeAccidents)))
-        -- Logger.log(string.format("%d", carIndex))
-        CarStateMachine.queueStateTransition(accidentCarIndex, CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+          and CarManager.isWritableAICar(accidentCarIndex) then
+          observe('queue-consumed', accidentCarIndex, generation, accidentIndex, nil, 'registered-contact-no-s2-admission', nil, sessionGeneration)
+        else
+          observe('queue-stale', accidentCarIndex, generation, accidentIndex, nil, 'victim-identity-or-record-stale', nil, sessionGeneration)
         end
     end
 end
@@ -325,6 +394,7 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
     local carGeneration = CarManager.getCarGeneration(carIndex)
     local pendingState = queuedStatesToTransitionInto[carIndex]
     if pendingState and queuedStateGenerations[carIndex] ~= carGeneration then
+      observePendingStale(carIndex, pendingState)
       queuedStatesToTransitionInto[carIndex], queuedStateGenerations[carIndex] = nil, nil
       pendingState = nil
     end
@@ -339,6 +409,41 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
     local isIncidentState = currentState == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
       or currentState == CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME
     if hasIncidentEpisode and not isIncidentState and pendingState == nil then return false end
+    local stateTypes = CarStateMachine.CarStateType
+    local knownPit = false
+    if not hasIncidentEpisode and not isIncidentState then
+      local pitCar = sortedCarList and sortedCarList[sortedCarListIndex]
+      if pitCar then
+        knownPit = pitCar.isInPitlane == true or pitCar.isInPit == true
+      else
+        local acTable = rawget(_G, 'ac')
+        if type(acTable) == 'table' then
+          local ok, car = pcall(acTable.getCar, carIndex)
+          if ok and car then knownPit = car.isInPitlane == true or car.isInPit == true end
+        end
+      end
+    end
+    local currentTraffic = isTrafficManeuverState(currentState)
+    local pendingTraffic = isTrafficManeuverState(pendingState)
+    local currentOtherOwner = currentState ~= nil and currentState ~= stateTypes.DRIVING_NORMALLY and not currentTraffic
+    local pendingOtherOwner = pendingState ~= nil and pendingState ~= stateTypes.DRIVING_NORMALLY and not pendingTraffic
+    if knownPit and currentOtherOwner and pendingTraffic then
+      queuedStatesToTransitionInto[carIndex], queuedStateGenerations[carIndex] = nil, nil
+      pendingState, pendingTraffic = nil, false
+    end
+    local pitAbortTraffic = knownPit and not pendingOtherOwner and not currentOtherOwner
+      and (currentTraffic or pendingTraffic)
+    local releasePitOwnedControls = knownPit
+    if releasePitOwnedControls then
+      CarOperations.releaseTrafficYieldControls(carIndex)
+    end
+    if knownPit and (currentTraffic or pendingTraffic) then
+      CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+      CarOperations.removeAITopSpeed(carIndex, 'TRAFFIC_YIELD')
+    end
+    if pitAbortTraffic then
+      pendingState = stateTypes.DRIVING_NORMALLY
+    end
     local stateToExecute = pendingState or currentState or CarStateMachine.CarStateType.DRIVING_NORMALLY
     if stateToExecute == CarStateMachine.CarStateType.AFTER_CUSTOMAIFLOOD_TELEPORT then
       for i = 1, #FLOOD_STATE_REQUIRED_APIS do
@@ -367,18 +472,43 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
 
       -- change to the new state
       changeState(carIndex, newStateToTransitionIntoThisFrame)
+      observeState('fsm-changed', carIndex, newStateToTransitionIntoThisFrame, carGeneration, currentState)
+
+      if (currentState == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+        or currentState == CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+        and newStateToTransitionIntoThisFrame == CarStateMachine.CarStateType.DRIVING_NORMALLY
+        and isOBS1Enabled()
+        and CarOperations._traceIncidentStop then
+        pcall(CarOperations._traceIncidentStop, 'state-exit-dispatch', carIndex, nil,
+          'dispatch-exit', 'from', currentState, 'to', newStateToTransitionIntoThisFrame)
+      end
 
       -- execute the state's entry function
+      if (newStateToTransitionIntoThisFrame == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+        or newStateToTransitionIntoThisFrame == CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+        and isOBS1Enabled()
+        and CarOperations._traceIncidentStop then
+        pcall(CarOperations._traceIncidentStop, 'state-entry-dispatch', carIndex, nil,
+          'dispatch-entry', 'state', newStateToTransitionIntoThisFrame, 'meaning', 'entry invocation follows')
+      end
+      observeState('fsm-dispatched', carIndex, newStateToTransitionIntoThisFrame, carGeneration, currentState)
       --[====[
       if not CarStateMachine.states_entryFunctions[newStateToTransitionIntoThisFrame] then
         Logger.error(string.format("CarStateMachine: #%d state %d has no entry function!", carIndex, newStateToTransitionIntoThisFrame))
         return
       end
       --]====]
-      CarStateMachine.states_entryFunctions[newStateToTransitionIntoThisFrame](carIndex, dt, sortedCarList, sortedCarListIndex, storage)
+      if not (knownPit and newStateToTransitionIntoThisFrame == stateTypes.DRIVING_NORMALLY) then
+        CarStateMachine.states_entryFunctions[newStateToTransitionIntoThisFrame](carIndex, dt, sortedCarList, sortedCarListIndex, storage)
+      else
+        return false
+      end
+      observeState('fsm-entry-returned', carIndex, newStateToTransitionIntoThisFrame, carGeneration, currentState)
     end
 
     local state = CarStateMachine.getCurrentState(carIndex)
+
+    if knownPit and state == stateTypes.DRIVING_NORMALLY then return false end
 
     if state == nil then
       Logger.error(string.format("CarStateMachine: #%d stat is nil!", carIndex))
@@ -441,6 +571,8 @@ CarStateMachine.informAboutAccident = function(accidentIndex)
         QueueManager.enqueue(queuedVictimCulpritGenerations, CarManager.getCarGeneration(carIndex))
         QueueManager.enqueue(queuedVictimSessions, CarManager.sessionGeneration)
         QueueManager.enqueue(queuedVictimAccidentIndexes, accidentIndex)
+        observeQueuedIncident('queue-received', carIndex, accidentIndex, 'incident-culprit-pending')
+        observeQueuedIncident('queue-received', collidedWithCarIndex, accidentIndex, 'incident-victim-pending')
     end
 end
 
@@ -453,9 +585,12 @@ CarStateMachine.handleYellowFlagZone = function(carIndex, car)
     end
 
     local carSplinePosition = car.splinePosition
-    local isInYellowFlagZone = RaceTrackManager.isSplinePositionInYellowZone(carSplinePosition)
+    local isInYellowFlagZone = RaceTrackManager.isSplinePositionInYellowZone(carSplinePosition, carIndex)
     if isInYellowFlagZone then
-      return CarStateMachine.CarStateType.DRIVING_IN_YELLOW_FLAG_ZONE
+      local state = CarStateMachine.CarStateType.DRIVING_IN_YELLOW_FLAG_ZONE
+      local consumptionOK, mark = pcall(rawget, RaceTrackManager, 'markYellowZoneConsumption')
+      if consumptionOK and type(mark) == 'function' then pcall(mark, carIndex, state) end
+      return state
     end
 
     --[====[

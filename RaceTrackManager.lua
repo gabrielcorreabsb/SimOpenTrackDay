@@ -1,4 +1,12 @@
 local RaceTrackManager = {}
+local rawget, type, pcall = rawget, type, pcall
+local function observe(...)
+    local lookupOK, logger = pcall(rawget, _G, 'Logger')
+    if not lookupOK then return end
+    local observeOK, fn = pcall(rawget, logger, 'observe')
+    if not observeOK then return end
+    if type(fn) == 'function' then pcall(fn, ...) end
+end
 
 ---The names of the different session types
 --- @type table<ac.SessionType, string>
@@ -24,6 +32,171 @@ local yellowZones_startSplinePosition = {}
 local yellowZones_endSplinePosition = {}
 local yellowZones_accidentIndex = {}
 local yellowZones_resolved = {}
+local getYellowZoneBucketIndex
+local yellowZoneEpoch, yellowZoneRevision = 1, 0
+local yellowDecisionBuffer = { candidates = {} }
+-- Numeric sequence is correlation-only (integer precision ends at 2^53); freshness uses validity, identity and zone revision/epoch.
+local zoneDecisionSequence = 0
+for i = 1, 32 do
+    yellowDecisionBuffer.candidates[i] = {}
+end
+local function bumpZoneRevision() yellowZoneRevision = yellowZoneRevision + 1 end
+local function recordYellowDecisionProtected(carIndex, splinePosition, examined, candidateCount, chosen)
+    local session = CarManager and CarManager.sessionGeneration
+    local generation = CarManager and CarManager.getCarGeneration(carIndex)
+    zoneDecisionSequence = zoneDecisionSequence + 1
+    yellowDecisionBuffer.car = carIndex
+    yellowDecisionBuffer.session = session
+    yellowDecisionBuffer.generation = generation
+    yellowDecisionBuffer.spline = splinePosition
+    yellowDecisionBuffer.examined = examined
+    yellowDecisionBuffer.limited = examined > 32
+    yellowDecisionBuffer.chosenZone = chosen
+    yellowDecisionBuffer.matched = chosen ~= nil
+    yellowDecisionBuffer.sequence = zoneDecisionSequence
+    yellowDecisionBuffer.consumer, yellowDecisionBuffer.stateReturned = nil, nil
+    yellowDecisionBuffer.candidateCount = math.min(candidateCount, 32)
+    yellowDecisionBuffer.epoch, yellowDecisionBuffer.revision = yellowZoneEpoch, yellowZoneRevision
+    yellowDecisionBuffer.queryValid = true
+    yellowDecisionBuffer.snapshotValid = true
+end
+local function readZoneAccidentIndexProtected(zoneIndex)
+    return yellowZones_accidentIndex[zoneIndex]
+end
+local function getYellowZoneReadOnlyProtected(zoneID)
+    if type(zoneID) ~= 'number' or zoneID ~= zoneID or zoneID <= 0
+      or zoneID >= math.huge or zoneID % 1 ~= 0 then return nil end
+    local startSplinePosition = yellowZones_startSplinePosition[zoneID]
+    local resolved = yellowZones_resolved[zoneID]
+    if startSplinePosition == nil and resolved ~= true then return nil end
+    return { zone = zoneID, incident = yellowZones_accidentIndex[zoneID],
+      startSplinePosition = startSplinePosition, endSplinePosition = yellowZones_endSplinePosition[zoneID],
+      resolved = resolved }
+end
+
+function RaceTrackManager.getYellowZoneReadOnly(zoneID)
+    local ok, result = pcall(getYellowZoneReadOnlyProtected, zoneID)
+    if ok then return result end
+    return nil
+end
+
+local function validCarIndex(carIndex)
+    return type(carIndex) == 'number' and carIndex == carIndex and carIndex >= 0
+      and carIndex < math.huge and carIndex % 1 == 0
+end
+
+function RaceTrackManager.getYellowZoneInventoryReadOnly(cursor, epoch, revision)
+    local ok, result = pcall(function()
+        local last = CompletableIndexCollectionManager.getLastIndexCreated(yellowZonesCompletableIndex)
+        local restarted = false
+        if cursor == nil then cursor = 1 end
+        if type(cursor) ~= 'number' or cursor ~= cursor or cursor < 1 or cursor % 1 ~= 0 then cursor = 1; restarted = true end
+        if (epoch ~= nil and epoch ~= yellowZoneEpoch) or (revision ~= nil and revision ~= yellowZoneRevision) then
+            cursor, restarted = 1, true
+        end
+        local zones, count, scanned = {}, 0, 0
+        local id = cursor
+        while id <= last and scanned < 32 do
+            scanned = scanned + 1
+            local start = yellowZones_startSplinePosition[id]
+            if start ~= nil or yellowZones_resolved[id] == true then
+                count = count + 1
+                zones[count] = { zone = id, incident = yellowZones_accidentIndex[id],
+                    startSplinePosition = start, endSplinePosition = yellowZones_endSplinePosition[id],
+                    resolved = yellowZones_resolved[id] }
+            end
+            id = id + 1
+        end
+        return { zones = zones, cursor = cursor, nextCursor = id <= last and id or nil,
+            scanned = scanned, complete = id > last, epoch = yellowZoneEpoch,
+            revision = yellowZoneRevision, session = CarManager and CarManager.sessionGeneration,
+            restarted = restarted }
+    end)
+    if ok then return result end
+    return nil
+end
+
+function RaceTrackManager.getYellowZoneCoverageReadOnly(splinePosition)
+    local ok, result = pcall(function()
+        if type(splinePosition) ~= 'number' or splinePosition ~= splinePosition
+          or splinePosition == math.huge or splinePosition == -math.huge then return nil end
+        local bucket = RaceTrackManager.yellowFlagsZones_bucket[getYellowZoneBucketIndex(splinePosition)]
+        local zones, candidates, count, candidateCount, scanned = {}, {}, 0, 0, 0
+        local total = bucket and #bucket or 0
+        local limit = math.min(total, 32)
+        for i = 1, limit do
+            scanned = scanned + 1
+            local id = bucket[i]
+            local start, finish = yellowZones_startSplinePosition[id], yellowZones_endSplinePosition[id]
+            local resolved = yellowZones_resolved[id]
+            local match = false
+            if resolved == false and start ~= nil and finish ~= nil then
+                if start < finish then match = splinePosition >= start and splinePosition <= finish
+                else match = (splinePosition >= start and splinePosition <= 1.0) or (splinePosition >= 0.0 and splinePosition <= finish) end
+            end
+            if start ~= nil or resolved == true then
+                count = count + 1
+                zones[count] = { zone = id, incident = yellowZones_accidentIndex[id], startSplinePosition = start,
+                    endSplinePosition = finish, resolved = resolved }
+            end
+            if match then
+                candidateCount = candidateCount + 1
+                candidates[candidateCount] = { zone = id, incident = yellowZones_accidentIndex[id],
+                    startSplinePosition = start, endSplinePosition = finish, resolved = false }
+            end
+        end
+        local limited = total > limit
+        local covered
+        if candidateCount > 0 then covered = true elseif not limited then covered = false end
+        return { zones = zones, candidates = candidates, scanned = scanned, total = total,
+            limited = limited, covered = covered, epoch = yellowZoneEpoch, revision = yellowZoneRevision,
+            session = CarManager and CarManager.sessionGeneration }
+    end)
+    if ok then return result end
+    return nil
+end
+
+function RaceTrackManager.getYellowZoneDecisionReadOnly(carIndex)
+    local ok, result = pcall(function()
+        if not validCarIndex(carIndex) then return nil end
+        local b = yellowDecisionBuffer
+        if not b.snapshotValid or b.car == nil or b.car ~= carIndex then return nil end
+        local snapshot = { car = b.car, session = b.session, generation = b.generation, spline = b.spline,
+            candidates = {}, examined = b.examined, limited = b.limited, chosenZone = b.chosenZone,
+            matched = b.matched, sequence = b.sequence, consumer = b.consumer, stateReturned = b.stateReturned,
+            epoch = b.epoch, revision = b.revision }
+        for i = 1, math.min(b.candidateCount or 0, 32) do
+            local source = b.candidates[i]
+            snapshot.candidates[i] = { zone = source.zone, incident = source.incident }
+        end
+        return snapshot
+    end)
+    if ok then return result end
+    return nil
+end
+
+local function isYellowCaptureFocusedProtected(carIndex)
+    local logger = rawget(_G, 'Logger')
+    return type(logger) == 'table' and rawget(logger, 'OBS1_ENABLED') == true
+        and rawget(logger, 'OBS1_FOCUS_CAR') == carIndex
+end
+
+local function markYellowZoneConsumptionProtected(carIndex, state)
+    local b = yellowDecisionBuffer
+    if not b.queryValid then return end
+    b.queryValid = false
+    if b.car ~= carIndex or not b.matched
+      or b.epoch ~= yellowZoneEpoch or b.revision ~= yellowZoneRevision
+      or not isYellowCaptureFocusedProtected(carIndex) then return end
+    local session = CarManager and CarManager.sessionGeneration
+    local generation = CarManager and CarManager.getCarGeneration(carIndex)
+    if session == nil or generation == nil or session ~= b.session or generation ~= b.generation then return end
+    b.consumer, b.stateReturned = 'fsm-handle-yellow', state
+end
+
+function RaceTrackManager.markYellowZoneConsumption(carIndex, state)
+    pcall(markYellowZoneConsumptionProtected, carIndex, state)
+end
 
 ---Bucket index -> list of active yellow flag zone indices covering that bucket's spline span.
 ---Used to look up active yellow flag zones in O(1) + O(zones per bucket) instead of O(active zones).
@@ -193,7 +366,7 @@ end
 ---Returns the bucket index for the given (cyclic 0.0..1.0) spline position
 ---@param splinePosition number
 ---@return integer
-local getYellowZoneBucketIndex = function(splinePosition)
+getYellowZoneBucketIndex = function(splinePosition)
     local bucketIndex = math.floor(splinePosition / YELLOW_ZONE_BUCKET_SIZE)
     if bucketIndex < 0 then
         bucketIndex = 0
@@ -279,8 +452,10 @@ RaceTrackManager.declareYellowFlagZone = function(accidentIndex)
     yellowZones_endSplinePosition[yellowFlagZoneIndex] = yellowZoneEndSplinePosition
     yellowZones_accidentIndex[yellowFlagZoneIndex] = accidentIndex
     yellowZones_resolved[yellowFlagZoneIndex] = false
+    bumpZoneRevision()
 
     addYellowFlagZoneToBuckets(yellowFlagZoneIndex, yellowZoneStartSplinePosition, yellowZoneEndSplinePosition)
+    observe('zone-created', nil, nil, accidentIndex, yellowFlagZoneIndex, 'registered')
 
     Logger.log(string.format("[RaceTrackManager] Declared yellow flag zone #%d: start %.3f end %.3f", yellowFlagZoneIndex, yellowZoneStartSplinePosition, yellowZoneEndSplinePosition))
 
@@ -326,6 +501,8 @@ RaceTrackManager.updateYellowFlagZones = function()
 
             yellowZones_startSplinePosition[yellowZoneIndex] = yellowZoneStartSplinePosition
             yellowZones_endSplinePosition[yellowZoneIndex] = yellowZoneEndSplinePosition
+            if previousStartSplinePosition ~= yellowZoneStartSplinePosition
+              or previousEndSplinePosition ~= yellowZoneEndSplinePosition then bumpZoneRevision() end
         end
     end
 end
@@ -333,6 +510,8 @@ end
 ---@param yellowFlagZoneIndex number
 RaceTrackManager.removeYellowFlagZone = function(yellowFlagZoneIndex)
     if yellowFlagZoneIndex == nil or yellowZones_startSplinePosition[yellowFlagZoneIndex] == nil then return false end
+    local contextOK, accidentIndex = pcall(readZoneAccidentIndexProtected, yellowFlagZoneIndex)
+    if not contextOK then accidentIndex = nil end
     removeYellowFlagZoneFromBuckets(yellowFlagZoneIndex, yellowZones_startSplinePosition[yellowFlagZoneIndex], yellowZones_endSplinePosition[yellowFlagZoneIndex])
 
     yellowZones_startSplinePosition[yellowFlagZoneIndex] = nil
@@ -340,30 +519,49 @@ RaceTrackManager.removeYellowFlagZone = function(yellowFlagZoneIndex)
     yellowZones_accidentIndex[yellowFlagZoneIndex] = nil
 
     yellowZones_resolved[yellowFlagZoneIndex] = true
+    bumpZoneRevision()
     CompletableIndexCollectionManager.updateFirstNonResolvedIndex(yellowZonesCompletableIndex, yellowZones_resolved)
+    observe('zone-removed', nil, nil, accidentIndex, yellowFlagZoneIndex, 'removed')
     return true
 end
 
 function RaceTrackManager.resetOwnedYellowFlagZones()
+    observe('zone-reset', nil, nil, nil, nil, 'owned-zones-reset-requested')
     for zoneIndex = 1, CompletableIndexCollectionManager.getLastIndexCreated(yellowZonesCompletableIndex) do
         if yellowZones_resolved[zoneIndex] == false then RaceTrackManager.removeYellowFlagZone(zoneIndex) end
     end
     CompletableIndexCollectionManager.reset(yellowZonesCompletableIndex)
+    yellowZoneEpoch = yellowZoneEpoch + 1
+    bumpZoneRevision()
 end
 
 ---Returns a boolean value indicating whether the given spline position is inside any active yellow flag zone.
 ---O(1) bucket lookup plus a check against the few zones registered in that bucket
 ---@param splinePosition number
 ---@return boolean
-RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition)
+RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition, optionalCarIndex)
+    yellowDecisionBuffer.queryValid = false
     local bucket = RaceTrackManager.yellowFlagsZones_bucket[getYellowZoneBucketIndex(splinePosition)]
-    if bucket == nil then
-        return false
+    local capture = false
+    local lookupOK, logger = pcall(rawget, _G, 'Logger')
+    if lookupOK and type(logger) == 'table' then
+        local enabledOK, enabled = pcall(rawget, logger, 'OBS1_ENABLED')
+        local focusOK, focus = pcall(rawget, logger, 'OBS1_FOCUS_CAR')
+        capture = enabledOK and focusOK and enabled == true and optionalCarIndex ~= nil and focus == optionalCarIndex
     end
-
-    for i = 1, #bucket do
+    if capture then yellowDecisionBuffer.snapshotValid = false end
+    local capturedCount, examined, chosen = 0, 0, nil
+    local limit = bucket and #bucket or 0
+    for i = 1, limit do
+        examined = examined + 1
         local yellowFlagZoneIndex = bucket[i]
         local yellowZoneResolved = yellowZones_resolved[yellowFlagZoneIndex]
+        if capture and capturedCount < 32 then
+            capturedCount = capturedCount + 1
+            local candidate = yellowDecisionBuffer.candidates[capturedCount]
+            candidate.zone = yellowFlagZoneIndex
+            candidate.incident = yellowZones_accidentIndex[yellowFlagZoneIndex]
+        end
         if yellowZoneResolved == false then
             local yellowZoneStartSplinePosition = yellowZones_startSplinePosition[yellowFlagZoneIndex]
             local yellowZoneEndSplinePosition = yellowZones_endSplinePosition[yellowFlagZoneIndex]
@@ -371,18 +569,24 @@ RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition)
             if yellowZoneStartSplinePosition < yellowZoneEndSplinePosition then
                 -- normal case, zone does not wrap around the 0.0/1.0 point
                 if splinePosition >= yellowZoneStartSplinePosition and splinePosition <= yellowZoneEndSplinePosition then
+                    chosen = yellowFlagZoneIndex
+                    if capture then break end
                     return true
                 end
             else
                 -- zone wraps around the 0.0/1.0 point
                 if (splinePosition >= yellowZoneStartSplinePosition and splinePosition <= 1.0) or (splinePosition >= 0.0 and splinePosition <= yellowZoneEndSplinePosition) then
+                    chosen = yellowFlagZoneIndex
+                    if capture then break end
                     return true
                 end
             end
         end
     end
-
-    return false
+    if capture then
+        pcall(recordYellowDecisionProtected, optionalCarIndex, splinePosition, examined, capturedCount, chosen)
+    end
+    return chosen ~= nil
 end
 
 return RaceTrackManager

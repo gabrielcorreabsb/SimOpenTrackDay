@@ -140,9 +140,11 @@ check(not carStateMachine:find('getStorage_Debugging', 1, true) and
 check(carStateMachine:find('changeState(carIndex, newStateToTransitionIntoThisFrame)', 1, true) and
   carStateMachine:find('states_entryFunctions[newStateToTransitionIntoThisFrame](carIndex, dt, sortedCarList', 1, true),
   'state transitions and state entry actions remain')
-check(carStateMachine:find('CarStateMachine: #%d collided with another car', 1, true) and
-  carStateMachine:find('CarStateMachine: #%d was collided into by another car', 1, true),
-  'operational collision transition logs remain')
+check(not carStateMachine:find('CarStateMachine: #%d collided with another car', 1, true) and
+  not carStateMachine:find('CarStateMachine: #%d was collided into by another car', 1, true) and
+  not carStateMachine:find('CarOperations.admitIncidentStop(', 1, true) and
+  carStateMachine:find("observe('queue-consumed'", 1, true),
+  'collision queues retain observations without automatic S2 admission or misleading transition logs')
 check(carStateMachine:find('Logger.error(string.format("CarStateMachine: #%d stat is nil!"', 1, true),
   'state-machine missing-state error remains')
 

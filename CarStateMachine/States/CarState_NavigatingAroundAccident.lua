@@ -148,8 +148,6 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
     -- Prevent the car from retiring while navigating around an accident because otherwise when the ai cars are moving very slow, the game tends to teleports them back to the pits
     CarOperations.preventAIFromRetiring(carIndex)
 
-    CarOperations.toggleCarCollisions(carIndex, false)
-
     --------------------------------------
     -- CollisionAvoidanceManager.debugDraw(carIndex)
     --------------------------------------

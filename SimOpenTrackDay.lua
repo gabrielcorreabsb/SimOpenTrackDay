@@ -237,6 +237,7 @@ local RaceTrackManager_updateYellowFlagZones = RaceTrackManager.updateYellowFlag
 local AccidentManager = AccidentManager
 local AccidentManager_registerCollision = AccidentManager.registerCollision
 local AccidentManager_informAboutCarReset = AccidentManager.informAboutCarReset
+local AccidentManager_updateRecovery = AccidentManager.updateRecovery
 local AppIconRenderer = AppIconRenderer
 local CameraManager = CameraManager
 local CameraManager_getFocusedCarIndex = CameraManager.getFocusedCarIndex
@@ -259,6 +260,22 @@ local UIManager = UIManager
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
 local RaceFlagManager_removeRaceFlag = RaceFlagManager.removeRaceFlag
+local rawget, pcall, type = rawget, pcall, type
+local function observeOBS1(...)
+  local lookupOK, logger = pcall(rawget, _G, 'Logger')
+  if not lookupOK then return end
+  local observeOK, fn = pcall(rawget, logger, 'observe')
+  if not observeOK then return end
+  if type(fn) == 'function' then pcall(fn, ...) end
+end
+local function observeOBS1QueuedEventProtected(kind, carIndex, event, detail)
+  local generation = type(event) == 'table' and event.culpritGeneration or nil
+  local referenceSession = type(event) == 'table' and event.session or nil
+  observeOBS1(kind, carIndex, generation, nil, nil, detail, nil, referenceSession)
+end
+local function observeOBS1QueuedEvent(kind, carIndex, event, detail)
+  pcall(observeOBS1QueuedEventProtected, kind, carIndex, event, detail)
+end
 
 -- local ENABLE_CUSTOM_AI_FLOOD_MANAGER = false
 
@@ -408,6 +425,7 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collisio
       -- Register an accident for the car collision
       local car = ac_getCar(carIndex)
       if not car then
+          observeOBS1QueuedEvent('queue-rejected', carIndex, event, 'callback-car-unavailable')
           Logger_error(string_format('OnCarEventManager: OnCarEventType.Collision called for invalid car index %d', carIndex))
           return
       end
@@ -421,6 +439,8 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collisio
       CarStateMachine.informAboutAccident(accidentIndex)
       --]====]
       AccidentManager_registerCollision(carIndex, event.collisionPosition, event.collidedWith, event)
+  else
+      observeOBS1QueuedEvent('incident-rejected', carIndex, event, 'accident-handler-disabled')
   end
 end
 
@@ -450,23 +470,35 @@ end
 
 ac.onCarCollision(-1, function (carIndex)
     if not shouldAppRun() or not isFiniteIntegerCarIndex(carIndex)
-      or not CarManager_isWritableAICar(carIndex) then return end
+      or not CarManager_isWritableAICar(carIndex) then
+      observeOBS1('collision-callback-filtered', carIndex, nil, nil, nil, 'runtime-or-identity-gate')
+      return
+    end
     local car = ac_getCar(carIndex)
-    if not car or car.index ~= carIndex then return end
+    if not car or car.index ~= carIndex then
+      observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-car-mismatch'); return
+    end
     local collidedWith = car.collidedWith
-    if not isFiniteIntegerCarIndex(collidedWith) then return end
+    if not isFiniteIntegerCarIndex(collidedWith) then
+      observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-collider-invalid'); return
+    end
     local victim
     if collidedWith > 0 then
       local victimIndex = collidedWith - 1
-      if not isFiniteIntegerCarIndex(victimIndex) then return end
+      if not isFiniteIntegerCarIndex(victimIndex) then
+        observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-victim-index-invalid'); return
+      end
       victim = ac_getCar(victimIndex)
-      if not victim or victim.index ~= victimIndex then return end
+      if not victim or victim.index ~= victimIndex then
+        observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-victim-mismatch'); return
+      end
     end
     OnCarEventManager.enqueueOnCarEvent(OnCarEventManager.OnCarEventType.Collision, carIndex, car.collisionPosition, collidedWith, car, victim)
 end)
 
 -- Monitor flood ai cars cycle event so that we also reset our state
 ac.onCarJumped(-1, function(carIndex)
+    pcall(Logger.invalidateOBS3, 'car-jump')
     local sim = ac_getSim()
     if not shouldAppRun() or not sim or sim.isLive ~= true or sim.isReplayActive ~= false or sim.isSessionStarted ~= true then
       if CarManager.invalidateCarLifecycle(carIndex) then
@@ -480,6 +512,8 @@ end)
 
 if type(ac.onCarSwap) == 'function' then
   ac.onCarSwap(-1, function(carIndex)
+    pcall(Logger.invalidateOBS3, 'car-swap')
+    observeOBS1('lifecycle-swap', carIndex, nil, nil, nil, 'callback-received')
     if CarManager.invalidateCarLifecycle(carIndex) then
       OnCarEventManager.clear()
       CarStateMachine_clearPendingLifecycle()
@@ -489,6 +523,7 @@ end
 
 ac.onSessionStart(function()
   CarManager.resetSession()
+  observeOBS1('session-start', nil, nil, nil, nil, 'generation-advanced')
   syncGateDiagnosticSession()
   OnCarEventManager.clear()
   CarStateMachine_clearPendingLifecycle()
@@ -542,8 +577,10 @@ function script.MANIFEST__UPDATE(dt)
   local live = suspensionReason == nil
   CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = running, paused, live
   CarManager.runtimeSuspensionReason = suspensionReason
+  pcall(Logger.tickOBS3, dt)
   logSuspensionDiagnostic(suspensionReason, sim)
   if previousSuspensionReason ~= suspensionReason then
+    observeOBS1('lifecycle-context', nil, nil, nil, nil, suspensionReason or 'live')
     OnCarEventManager.clear()
     CarStateMachine_clearPendingLifecycle()
     local pauseOnlyBoundary = (previousSuspensionReason == nil or previousSuspensionReason == 'pause')
@@ -638,6 +675,7 @@ function script.MANIFEST__UPDATE(dt)
   -- handle any queued accidents before updating the car state machines
   OnCarEventManager.processQueuedEvents()
   CarStateMachine_handleQueuedAccidents() -- todo: check if this can be integrated with the processQueuedEvents() above
+  AccidentManager_updateRecovery(dt)
 
   -- Human errors: simulate realistic mistakes (brake/traction) with cooldown
   local storage_Behavior = StorageManager.getStorage_Behavior()

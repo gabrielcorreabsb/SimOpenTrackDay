@@ -40,6 +40,11 @@ local ReasonWhyCantYield = Strings.StringNames[Strings.StringCategories.ReasonWh
 ---@param storage StorageTable
 CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
       local car = sortedCarsList[sortedCarsListIndex]
+      if car and (car.isInPitlane == true or car.isInPit == true) then
+        CarOperations.releaseTrafficYieldControls(carIndex)
+        CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+        return
+      end
       local carPosition = car.position
 
       -- set the current spline offset to our actual lateral offset so we start easing in from the correct position
@@ -78,13 +83,19 @@ end
 ---@param sortedCarsListIndex integer
 ---@param storage StorageTable
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
+      local car = sortedCarsList[sortedCarsListIndex]
+      if car and (car.isInPitlane == true or car.isInPit == true) then
+        CarOperations.releaseTrafficYieldControls(carIndex)
+        CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+        return
+      end
       -- Keep setting this per tick because the default ai aggression can be changed from the settings
       CarOperations_setDefaultAIAggression(carIndex)
 
       local rampSpeed_mps = 1000 -- high value so they keep on the lane as much as possible?
       local targetOffset = storage.defaultLateralOffset
 
-      local car = sortedCarsList[sortedCarsListIndex]
+      car = sortedCarsList[sortedCarsListIndex]
 
       -- local driveToDefaultLateralOffset = true
       -- if carIndex == 0 and Constants.FRENET_DEBUGGING then
@@ -93,7 +104,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
 
       -- if driveToDefaultLateralOffset then
         -- Keep driving towards the default lateral offset to try and keep the lane as much as possible
-        CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, true, false)
+        CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, true, false, 'NORMAL_TRAFFIC')
       -- end
 end
 

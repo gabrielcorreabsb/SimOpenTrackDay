@@ -83,7 +83,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
       -- CarOperations.driveSafelyToSide(carIndex, dt, car, easeOutYieldSide, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, true)
       local handleSideCheckingWhenYielding = storage_Yielding.handleSideCheckingWhenYielding
       local useIndicatorLights = storage_Yielding.UseIndicatorLightsWhenEasingOutYield
-      CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, handleSideCheckingWhenYielding, useIndicatorLights)
+      CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, handleSideCheckingWhenYielding, useIndicatorLights, 'TRAFFIC_YIELD')
 end
 
 -- TRANSITION FUNCTION
