@@ -2,13 +2,15 @@
 
 SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders Patch (CSP). It helps AI-controlled cars yield and overtake during track-day sessions instead of staying on the racing line at all times.
 
+The goal is a more realistic offline track day built on the CSP API: organic AI traffic, yielding, overtaking, context-aware caution and safe incident handling. See the [roadmap](docs/ROADMAP.md) for what is done and what is planned for v0.2.
+
 This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. A limited manual UI-loading recovery was reported on 2026-10-18; broader runtime behavior and visual validation in CSP remain pending. See [troubleshooting](docs/guides/TESTING.md#6-operational-troubleshooting).
 
 - [Manual installation](#manual-installation)
 - [Package and installer guide](docs/guides/INSTALL.md)
 - [Basic usage](#basic-usage)
 - [Local checks](#local-checks)
-- [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/reference/ARCHITECTURE.md) · [Detailed testing](docs/guides/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/archive/PROJECT_ORGANIZATION.md)
+- [Documentation index](docs/README.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 - [Report an issue](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
 
 ## What the app provides
@@ -83,8 +85,12 @@ lib/ac_apps/               distributed CSP SDK
 lib/AssettoCorsaCSPLuaCompatibilityManager/
                             compatibility submodule
 Strings/ DataStructures/  text support and data structures
-tools/ docs/               checks and documentation
+tools/                     installer, payload list, syntax checker, headless tests
+docs/                      guides/, reference/, ROADMAP.md, BACKLOG.md, archive/
+AGENTS.md, CLAUDE.md       shared agent rules (OpenCode / Claude Code)
 ```
+
+Runtime modules intentionally stay at the repository root: CSP loads `SimOpenTrackDay.lua` next to `manifest.ini`, and the installer copies the explicit list in `tools/payload.manifest`.
 
 See [Architecture](docs/reference/ARCHITECTURE.md) for module flow and [State machine](docs/reference/STATE_MACHINE.md) for documented states.
 

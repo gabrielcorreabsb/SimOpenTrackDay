@@ -2,8 +2,10 @@
 
 ## Reading and scope
 
-- This file contains concise auto-loaded rules. Use the [documentation index](docs/README.md) and read only references relevant to the task. `docs/AGENT.md` is a detailed human guide, not mandatory before every file.
-- `docs/WORKFLOW_OPENCODE.md` describes proportional task routing and handoff. Links do not auto-load referenced docs.
+- This file is the single auto-loaded rule set for both OpenCode and Claude Code (`CLAUDE.md` imports it). Use the [documentation index](docs/README.md) and read only references relevant to the task.
+- [`docs/guides/WORKFLOW.md`](docs/guides/WORKFLOW.md) describes proportional task routing, branches/worktrees and handoff. Links do not auto-load referenced docs.
+- Current status and next steps are in [`docs/ROADMAP.md`](docs/ROADMAP.md). Update it when a milestone or slice changes state.
+- Live docs are written in English. `docs/archive/` is read-only history: do not edit it except to fix links, and do not treat it as current state or authorization.
 - Treat plans and historical inventories as documentation; check the implementation before claiming current behavior.
 - Keep edits focused on the explicitly authorized scope. Do not broaden a documentation task into runtime changes.
 
@@ -21,7 +23,7 @@
 
 - Use `StorageManager` getters and schemas for persistence. Declare new keys in the schema pipeline; `behavior.profile` is not a declared field.
 - Do not describe partial profile inference as reliable for every settings combination.
-- UI text localization uses the source English msgid and stable internal IDs; see [`docs/LOCALIZATION.md`](docs/guides/LOCALIZATION.md).
+- UI text localization uses the source English msgid and stable internal IDs; see [`docs/guides/LOCALIZATION.md`](docs/guides/LOCALIZATION.md).
 - Keep simulation enums, keys, track/car data, logs, and reason strings distinct from translated presentation text.
 - Plans must not imply that UI, AI, or profile changes have already been implemented.
 
@@ -29,9 +31,9 @@
 
 - Preserve the nine `[RTD-DIAG-*]` records and `CSPCompatibilityManager.ShowErrorModalDialog = false` unless a separately authorized and validated change requires otherwise.
 - Preserve manifest, callback IDs, and credits/licenses; do not change these contracts as incidental cleanup.
-- Validation commands and limits are in [`docs/TESTING.md`](docs/guides/TESTING.md). Documentation-only changes require link/diff review, not Lua tests.
+- Validation commands and limits are in [`docs/guides/TESTING.md`](docs/guides/TESTING.md). Documentation-only changes require link/diff review, not Lua tests.
 - Report only checks actually run; mocks/headless checks do not establish CSP runtime or rendering.
-- Use syntax/UI/logo/localization checks as described in `docs/TESTING.md` when relevant; do not treat them as in-game evidence.
+- Use syntax/UI/logo/localization checks as described in `docs/guides/TESTING.md` when relevant; do not treat them as in-game evidence.
 - Runtime installation and rollback are manual; preserve existing installations and user settings.
 
 ## Changes to tooling or configuration

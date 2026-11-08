@@ -16,6 +16,8 @@ The app payload is at the checkout root. `apps/lua/SimOpenTrackDay/` is the inst
 
 - Keep changes focused; preserve storage contracts, compatibility behavior, and operational error reporting. Startup diagnostics were removed by explicit project authorization (18 Oct 2026); do not restore them or mask operational errors.
 - Keep the `lib/AssettoCorsaCSPLuaCompatibilityManager/` submodule and SDK in `lib/ac_apps/` consistent with their origins and licenses. The SDK is vendor code; do not edit it as app code.
+- Follow the [development workflow](docs/guides/WORKFLOW.md): one milestone slice per branch, approved scope before editing, and [roadmap](docs/ROADMAP.md) / [in-game checklist](docs/guides/IN_GAME_VALIDATION.md) updates when status changes.
+- Documentation is in English. Put how-to docs in `docs/guides/`, how-it-works docs in `docs/reference/`, and finished or superseded plans in `docs/archive/`. Link new docs from [docs/README.md](docs/README.md).
 - Report project bugs in the [SimOpenTrackDay issue tracker](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues). The [upstream repository](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday) is an origin/credit reference; do not present upstream releases as this project's releases or submit upstream changes without separate authorization.
 
 ## Local checks
