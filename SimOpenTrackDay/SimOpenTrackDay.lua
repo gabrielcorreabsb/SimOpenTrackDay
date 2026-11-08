@@ -417,6 +417,22 @@ local function logFlagEventThrottled(reason, message)
   end
 end
 
+-- S7-1G: closed-loop check after releasing our own Caution override. The in-game HUD and track flag
+-- were reported staying yellow after the zone was removed, although the release call succeeded.
+-- sim.raceFlagType is what other apps (and the HUD) read, so we verify it and re-issue None a few
+-- times, logging what the engine reports. Fixed-size state only: no per-frame allocation.
+local FLAG_RESIDUE_RETRY_INTERVAL_S = 0.5
+local FLAG_RESIDUE_MAX_RETRIES = 3
+local flagResidueActive = false
+local flagResidueElapsed = 0
+local flagResidueRetries = 0
+local engineCautionUnownedLogged = false
+-- S7-1G diagnostic A/B switch: false = the app never writes the global flag, so any yellow seen
+-- on the HUD cannot come from physics.overrideRacingFlag. Default false: in-game test 2026-11-08 showed
+-- overrideRacingFlag(Caution) leaves sim.raceFlagType stuck on Caution even after None; with false it stays None.
+local ENABLE_GLOBAL_CAUTION_FLAG = false
+local lastLoggedEngineFlag = nil
+
 local function releaseOwnedGlobalFlag(reason)
   if ownedGlobalFlag == nil then return false end
   -- Release is best-effort and deliberately does NOT consult hasPhysicsPermission:
@@ -424,6 +440,7 @@ local function releaseOwnedGlobalFlag(reason)
   local released = pcall(RaceFlagManager_removeRaceFlag)
   if released then
     ownedGlobalFlag = nil
+    flagResidueActive, flagResidueElapsed, flagResidueRetries = true, 0, 0
     Logger.log(string_format('[S7-1F] global flag released reason=%s', reason))
     return true
   end
@@ -645,13 +662,14 @@ function script.MANIFEST__UPDATE(dt)
   if focusedCarValid then
     focusedCarInZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCar.splinePosition) == true
   end
-  local wantCaution = focusedCarValid and focusedCarInZone
+  local wantCaution = ENABLE_GLOBAL_CAUTION_FLAG and focusedCarValid and focusedCarInZone
   if wantCaution then
     if canWriteGlobalFlag() then
       if ownedGlobalFlag ~= ac.FlagType.Caution then
         local wrote = pcall(RaceFlagManager_setRaceFlag, ac.FlagType.Caution)
         if wrote then
           ownedGlobalFlag = ac.FlagType.Caution
+          flagResidueActive = false
           Logger.log('[S7-1F] global flag set reason=zone-entered')
         else
           logFlagEventThrottled('zone-entered', '[S7-1F] global flag set failed')
@@ -667,6 +685,45 @@ function script.MANIFEST__UPDATE(dt)
     local releaseReason = focusedCarValid and 'zone-cleared' or 'focused-car-invalid'
     if ownedGlobalFlag ~= nil then releaseOwnedGlobalFlag(releaseReason) end
   end
+
+  -- S7-1G: verify the engine really dropped our Caution override after the release.
+  local engineFlag = sim.raceFlagType
+  if engineFlag ~= lastLoggedEngineFlag then
+    Logger.log(string_format('[S7-1G] engine raceFlagType %s -> %s (owned=%s focusedInZone=%s overrideEnabled=%s)',
+      tostring(lastLoggedEngineFlag), tostring(engineFlag), tostring(ownedGlobalFlag),
+      tostring(focusedCarInZone), tostring(ENABLE_GLOBAL_CAUTION_FLAG)))
+    lastLoggedEngineFlag = engineFlag
+  end
+  if flagResidueActive then
+    if ownedGlobalFlag ~= nil then
+      flagResidueActive = false
+    else
+      flagResidueElapsed = flagResidueElapsed + dt
+      if engineFlag ~= ac.FlagType.Caution then
+        Logger.log(string_format('[S7-1G] engine flag clear observed raceFlagType=%s after=%.2fs retries=%d',
+          tostring(engineFlag), flagResidueElapsed, flagResidueRetries))
+        flagResidueActive = false
+      elseif flagResidueElapsed >= FLAG_RESIDUE_RETRY_INTERVAL_S * (flagResidueRetries + 1) then
+        if flagResidueRetries >= FLAG_RESIDUE_MAX_RETRIES then
+          Logger.log(string_format('[S7-1G] engine flag still Caution after %d re-issued None writes; giving up (elapsed=%.2fs)',
+            flagResidueRetries, flagResidueElapsed))
+          flagResidueActive = false
+        else
+          flagResidueRetries = flagResidueRetries + 1
+          local reissued = pcall(RaceFlagManager_removeRaceFlag)
+          Logger.log(string_format('[S7-1G] engine flag still Caution after release; re-issuing None attempt=%d ok=%s elapsed=%.2fs',
+            flagResidueRetries, tostring(reissued), flagResidueElapsed))
+        end
+      end
+    end
+  end
+  -- Log (once per transition) when the engine reports Caution while this app owns nothing and is
+  -- not verifying a release: tells us whether the yellow comes from somewhere other than this app.
+  local engineCautionUnowned = engineFlag == ac.FlagType.Caution and ownedGlobalFlag == nil and not flagResidueActive
+  if engineCautionUnowned and not engineCautionUnownedLogged then
+    Logger.log('[S7-1G] engine reports Caution while this app owns no flag override')
+  end
+  engineCautionUnownedLogged = engineCautionUnowned
   -- local playerCarSplinePosition = playerCar.splinePosition
   -- local isPlayerInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(playerCarSplinePosition)
   -- if isPlayerInYellowFlagZone then
