@@ -78,6 +78,7 @@ Partial evidence: the per-car state came back after the `physics.allowed` cdata 
   - low-severity contacts create no zone;
   - a zone is removed after 3 s with no obstruction;
   - log lines stay within budget.
+- [ ] **S7-1G (flag stays yellow after an accident):** reported 2026-11-08: HUD and track stayed yellow after the zone was removed, cars not slowing. After an accident, check the log for `[S7-1G] engine flag clear observed` (fixed) or `still Caution ... giving up` / `engine reports Caution while this app owns no flag override` (cause is elsewhere), and confirm visually that the flag clears.
 - [ ] **S7-1F:**
   - The global Caution flag is released, with partial evidence. Pending: the user visually confirms that the flag does not stay yellow.
   - Pending: the zone-edge tolerance on the flag path.

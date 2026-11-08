@@ -23,6 +23,7 @@ Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](do
 - Removed `tools/`: the installer, payload list, syntax-check script and all headless tests. Last run before removal: 22/23 tests PASS (`test_ui_smoke` blocked by a missing fixture).
 
 ### Incident lane (merged)
+- **S7-1G (fix, CSP pending):** the HUD/track flag stayed yellow after the zone was removed even though the app wrote `None`. After releasing its own Caution override the app now checks `sim.raceFlagType`, re-issues `None` up to 3 times (0.5 s apart) and logs what the engine reports (`[S7-1G]` lines).
 - S2-D, S3-A/B/C (no automatic collision disabling), OBS1–3 bounded observability, S4 pair deduplication, S5-A cyclic zone geometry, S6-A invalid references, S7-1 severity gate and zone resolution by absence of obstruction, S7-2 log budget, S7-1F global Caution flag release. CSP acceptance partial/pending.
 
 ### Docs and repository
