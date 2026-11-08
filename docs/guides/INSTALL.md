@@ -1,63 +1,76 @@
-# SimOpenTrackDay — instalação
+# Installation
 
-O instalador copia os arquivos de runtime listados em `tools/payload.manifest` para `<Assetto Corsa>\apps\lua\SimOpenTrackDay\`. **Nunca copie os módulos diretamente para a raiz do jogo:** arquivos homônimos ali podem ser carregados antes dos módulos atuais e deixar as abas vazias. Veja o [incidente e o plano de prevenção](../archive/MODULE_LOADING_HARDENING.md).
+The installer copies the runtime files listed in `tools/payload.manifest` to `<Assetto Corsa>\apps\lua\SimOpenTrackDay\`.
 
-O instalador atual apaga o conteúdo da pasta de destino antes de copiar. Não oferece backup nem rollback automático. Feche o jogo e o launcher, faça backup da instalação existente e preserve as configurações antes de prosseguir.
+**Never copy the modules directly into the game root.** Same-named files there can be loaded before the current modules and leave the tabs blank. See the [incident and prevention plan](../archive/MODULE_LOADING_HARDENING.md).
 
-## Requisitos
+The current installer **deletes the contents of the destination folder before copying**. It has no automatic backup or rollback. Before you continue:
+- close the game and the launcher;
+- back up the existing installation;
+- make sure your settings are preserved.
 
-- Windows com PowerShell 5.1 (padrão do Windows 10/11).
-- Uma instalação do Assetto Corsa (Steam, Epic ou GOG) que já contenha `apps\lua\` — qualquer versão que rode com CSP.
+## Requirements
 
-## Como instalar
+- Windows with PowerShell 5.1 (the Windows 10/11 default).
+- An Assetto Corsa installation (Steam, Epic or GOG) that already contains `apps\lua\` — any version that runs with CSP.
 
-1. No checkout, abra `tools\install.bat`. Uma janela do terminal vai abrir.
-2. Quando pedir o caminho da instalação, informe a **raiz do Assetto Corsa**, sem acrescentar `apps\lua`. Exemplos:
+## Install
+
+1. In the checkout, open `tools\install.bat`. A terminal window opens.
+2. When it asks for the installation path, enter the **Assetto Corsa root**. Do not add `apps\lua`. Examples:
    - Steam: `D:\Steam\steamapps\common\assettocorsa`
-   - Outra instalação: `C:\Jogos\AssettoCorsa`
-3. Confira o destino exibido: `<raiz informada>\apps\lua\SimOpenTrackDay\`. O script acrescenta `apps\lua` automaticamente.
-4. Digite `YES` e pressione Enter para confirmar; a comparação não diferencia maiúsculas de minúsculas. Qualquer outra resposta cancela.
-5. Leia o resultado. O `.bat` aguarda uma tecla ao final; confirme que a cópia terminou sem erro antes de abrir o jogo.
+   - Other: `C:\Games\AssettoCorsa`
+3. Check the destination it shows: `<root>\apps\lua\SimOpenTrackDay\`. The script appends `apps\lua` for you.
+4. Type `YES` and press Enter to confirm. Case does not matter, and any other answer cancels.
+5. Read the result. The `.bat` waits for a key press at the end. Confirm the copy finished without errors before you start the game.
 
-Embora o parâmetro receba a raiz do jogo, os arquivos são copiados somente para a pasta do app. Se for instalar manualmente, use esse mesmo destino e o payload listado no manifest; não extraia o repositório inteiro na raiz do AC.
+The parameter takes the game root, but files are copied only into the app folder. To install manually, use the same destination and the payload listed in the manifest. Never extract the whole repository into the AC root.
 
-## Como atualizar
+## Update
 
-Faça um novo backup, feche o jogo/launcher e execute `tools\install.bat` novamente. O instalador substitui o conteúdo da pasta do app; arquivos adicionais colocados nela também serão removidos. Não é necessário apagar a instalação manualmente antes. As configurações externas à pasta do app não devem ser apagadas para atualizar ou diagnosticar a UI.
+1. Make a fresh backup.
+2. Close the game and the launcher.
+3. Run `tools\install.bat` again.
 
-## Se der erro
+The installer replaces the contents of the app folder, so any extra files you put there are removed too. You do not need to delete the installation first. Settings stored outside the app folder must not be deleted to update or to troubleshoot the UI.
 
-A janela mostra uma mensagem curta. O motor PowerShell registra o destino, operações de cópia e a mensagem de erro em
+## If something fails
+
+The window shows a short message. The PowerShell engine logs the destination, the copy operations and the error to:
 
 ```
 %LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs\installer-yyyyMMdd-HHmmss.txt
 ```
 
-Para abrir:
+To open it, press Win+R, enter `%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs`, and open the newest `.txt` file in a text editor.
 
-1. Pressione Win+R, digite `%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs` e dê Enter.
-2. Abra o arquivo `.txt` mais recente num editor de texto (Notepad serve).
+Common errors:
 
-Erros comuns:
+- **`Folder not found` / `Assetto Corsa root not found`:** check the installation path.
+- **`Missing apps\lua under` / `Expected apps\lua folder under`:** enter the game root that contains `apps\lua`, not the `apps\lua` folder itself.
+- **`Aborted`:** the confirmation was not `YES`, so nothing was installed in that run.
+- **Access denied:** close the game and launcher and check permissions. The message alone does not identify the cause.
+- **Blank tabs / `drawContent` nil:** follow the [troubleshooting](TESTING.md#6-operational-troubleshooting) steps. Reinstalling only the app folder does not remove conflicting module copies in the game root, and the installer does not detect that situation yet.
 
-- **`Folder not found` / `Assetto Corsa root not found`** — confira o caminho da instalação.
-- **`Missing apps\lua under` / `Expected apps\lua folder under`** — informe a raiz do jogo que contém `apps\lua`, não a própria pasta `apps\lua`.
-- **`Aborted`** — a confirmação não foi `YES`; nada foi instalado nessa execução.
-- **Acesso negado** — feche jogo/launcher e confira as permissões; a mensagem sozinha não determina a causa.
-- **Abas vazias / `drawContent` nil** — siga o [troubleshooting](TESTING.md#6-operational-troubleshooting). Reinstalar somente a pasta do app não remove cópias conflitantes de módulos na raiz do jogo. O instalador atual ainda não detecta essa situação automaticamente.
+## What the installer copies
 
-## O que o instalador copia
+It copies everything listed in `tools/payload.manifest`:
+- the root Lua modules;
+- `manifest.ini` and `LICENSE`;
+- the runtime paths in the declared subfolders.
 
-Tudo o que está listado em `tools/payload.manifest`: módulos Lua da raiz do mod, `manifest.ini`, `LICENSE` e os caminhos de runtime das subpastas declaradas. A lista é a fonte de verdade; não copie arquivos de desenvolvimento por associação de nome. Para adicionar um arquivo de runtime, inclua seu caminho relativo no manifest e revise o payload.
+The list is the source of truth. Do not copy development files because their names look similar. To add a runtime file, add its relative path to the manifest and review the payload.
 
-## Para desenvolvedores
+## For developers
 
-`installer.ps1` é o motor. Pode ser chamado direto:
+`installer.ps1` is the engine and can be called directly:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\installer.ps1" -AssettoCorsaRoot "C:\Jogos\AssettoCorsa"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\installer.ps1" -AssettoCorsaRoot "C:\Games\AssettoCorsa"
 ```
 
-O motor chamado diretamente **não pede a confirmação `YES`**: ela pertence ao `.bat`. Revise o destino e faça backup antes de executar esse comando. Você sempre informa a raiz da instalação; o script define o destino dentro de `apps\lua`.
+Called directly, the engine **does not ask for the `YES` confirmation**, which belongs to the `.bat`. Check the destination and make a backup before you run it. You always pass the installation root; the script picks the destination inside `apps\lua`.
 
-Verificações locais estão em `tools/test_*.lua` e `tools/check_lua_syntax.ps1`, com limites descritos em [Testing](TESTING.md). O instalador não valida carregamento, renderização ou comportamento no CSP. Para desfazer uma atualização, feche o jogo e restaure manualmente o backup da pasta do app, preservando as configurações.
+Local checks are `tools/test_*.lua` and `tools/check_lua_syntax.ps1`; their limits are described in [Testing](TESTING.md). The installer does not validate loading, rendering or behavior in CSP.
+
+To roll back an update, close the game and restore the backup of the app folder manually, preserving your settings.
