@@ -428,8 +428,9 @@ local flagResidueElapsed = 0
 local flagResidueRetries = 0
 local engineCautionUnownedLogged = false
 -- S7-1G diagnostic A/B switch: false = the app never writes the global flag, so any yellow seen
--- on the HUD afterwards cannot come from physics.overrideRacingFlag. Normal builds keep true.
-local ENABLE_GLOBAL_CAUTION_FLAG = true
+-- on the HUD cannot come from physics.overrideRacingFlag. Default false: in-game test 2026-11-08 showed
+-- overrideRacingFlag(Caution) leaves sim.raceFlagType stuck on Caution even after None; with false it stays None.
+local ENABLE_GLOBAL_CAUTION_FLAG = false
 local lastLoggedEngineFlag = nil
 
 local function releaseOwnedGlobalFlag(reason)
