@@ -45,7 +45,7 @@ v0.2 is complete when the existing AI behavior is safe and observable in CSP. Ne
 1. ~~Integrate the incident lane~~ — done (`04b2bd7`).
 2. **Finish Incident & Safety:** S7-1H → S7-3 → S7-4 → S8 → S9, each with its own approved ticket.
 3. **Close the pending in-game checks** for M1a, M1b, S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
-4. **Repository layout (done in source):** runtime moved into `SimOpenTrackDay/` (copy-paste install), dormant modules into `experimental/`, SDK into `sdk/`; `tools/` (installer, payload list, syntax checker, headless tests) removed. Needs one in-game smoke test of the copied folder.
+4. **Repository layout (done):** runtime moved into `SimOpenTrackDay/` (copy-paste install), dormant modules into `experimental/`, SDK into `sdk/`; `tools/` (installer, payload list, syntax checker, headless tests) removed. The copied folder was smoke-tested in game by the user on 2026-11-08 (app loads and works).
 5. **Release:** bump `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
 
 M2 (driving phases) is the first candidate for v0.3.
