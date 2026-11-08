@@ -5,7 +5,7 @@ This is the only index. Documents describe source code and plans; they do not pr
 ## Start here
 
 - [Project README](../README.md): what the app is, requirements, installation, credits.
-- [Roadmap](ROADMAP.md): **current status**, v0.2 scope, milestone rules.
+- [Roadmap](ROADMAP.md): **current status**, vision, phases F0–F5, v0.2 scope.
 - [Workflow](guides/WORKFLOW.md): how Claude Code and OpenCode work on this repo; branches and worktrees.
 - [Contributing](../CONTRIBUTING.md) · [Changelog](../CHANGELOG.md).
 
@@ -21,10 +21,11 @@ This is the only index. Documents describe source code and plans; they do not pr
 - [Architecture](reference/ARCHITECTURE.md): callbacks, per-frame flow, hot paths, coupling, DoD, storage, conventions.
 - [State machine](reference/STATE_MACHINE.md): AI car states and transitions.
 - [CSP capability audit](reference/CSP_CAPABILITY_AUDIT.md): which CSP APIs exist, how they are used, risks.
+- [Prior art](reference/PRIOR_ART.md): other open AC AI projects, their licences and the ideas we take.
 
 ## Planning
 
-- [Roadmap](ROADMAP.md): milestones M0–M9 and Incident & Safety S1–S9.
+- [Roadmap](ROADMAP.md): phases F0–F5 (replacing M0–M9 / S1–S9), CSP target build.
 - [Backlog](BACKLOG.md): track-day realism ideas (personalities, pit lifecycle, session phases, tyres/wear, weather, logbook).
 
 ## Archive
