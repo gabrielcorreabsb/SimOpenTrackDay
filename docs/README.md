@@ -1,29 +1,34 @@
 # Documentation index
 
-Browse by intent. Documents describe source; they do not prove installation or CSP runtime behavior.
+This is the only index. Documents describe source code and plans; they do not prove installation or CSP runtime behavior. Live docs are in English; `archive/` is read-only history.
 
 ## Start here
-- [Project README](../README.md) — overview, manual installation, quick checks.
-- [Contributing](../CONTRIBUTING.md) — checkout and contribution conventions.
-- [OpenCode workflow](../docs/guides/WORKFLOW.md) — task-scoped reading and handoff.
-- [Detailed project guide](AGENT.md) — technical context; consult as needed.
 
-## Reference
-- [Architecture](../docs/reference/ARCHITECTURE.md) · [State machine](../docs/reference/STATE_MACHINE.md)
-- [Localization](../docs/guides/LOCALIZATION.md) · [Testing](../docs/guides/TESTING.md)
+- [Project README](../README.md): what the app is, requirements, installation, credits.
+- [Roadmap](ROADMAP.md): **current status**, v0.2 scope, milestone rules.
+- [Workflow](guides/WORKFLOW.md): how Claude Code and OpenCode work on this repo; branches and worktrees.
+- [Contributing](../CONTRIBUTING.md) · [Changelog](../CHANGELOG.md).
 
-## Workflow and plans
-- [CSP capability audit (M0)](../docs/reference/CSP_CAPABILITY_AUDIT.md) — source evidence, risks, local checks and pending in-game verification.
-- [Incremental development plan](../docs/archive/DEVELOPMENT_PLAN.md) — revised milestones, acceptance gates and proposed OpenCode/worktree workflow; implementation requires separate approval.
-- [Incident & Safety handoff prompt](../docs/archive/INCIDENT_SAFETY_HANDOFF_PROMPT.md) — copy into a new context to resume S2–S9; preserves uncommitted S1/S2 and starts with inspection and an exact-scope approval gate, not blanket runtime permission.
-- [Original track-day roadmap](../docs/archive/SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md) — preserved hypotheses and backlog; consult the audit and revised plan before execution.
-- [Restructuring plan](../docs/archive/RESTRUCTURING_PLAN.md) — current phased plan and acceptance gates.
-- [Project organization](../docs/archive/PROJECT_ORGANIZATION.md) — proposed documentation/context steps.
-- [UI identity](../docs/archive/UI_IDENTITY.md) — proposed direction and phases.
-- [UI standardization](../docs/archive/UI_STANDARDIZATION.md) — shared UI control tokens and phased validation plan.
-- [Lua module loading](../docs/archive/MODULE_LOADING_HARDENING.md) — resolved blank-UI incident, bootstrap implemented in source (CSP validation pending), and unapproved installer proposal.
+## Guides (how to)
 
-## Historical inventory
-- [UI redesign discovery](../docs/archive/UI_REDESIGN_DISCOVERY.md) — earlier inventory and status addendum; not a standalone redesign specification.
+- [Install](guides/INSTALL.md): installer, manual install, update, rollback.
+- [Testing](guides/TESTING.md): local checks, smoke tests, troubleshooting, rollback.
+- [In-game validation](guides/IN_GAME_VALIDATION.md): every check still pending in CSP.
+- [Localization](guides/LOCALIZATION.md): msgids, locales, IDs.
 
-Reference documents remain at their current paths. Any future restructuring should be evaluated and all affected links updated.
+## Reference (how it works)
+
+- [Architecture](reference/ARCHITECTURE.md): callbacks, per-frame flow, hot paths, coupling, DoD, storage, conventions.
+- [State machine](reference/STATE_MACHINE.md): AI car states and transitions.
+- [CSP capability audit](reference/CSP_CAPABILITY_AUDIT.md): which CSP APIs exist, how they are used, risks.
+
+## Planning
+
+- [Roadmap](ROADMAP.md): milestones M0–M9 and Incident & Safety S1–S9.
+- [Backlog](BACKLOG.md): track-day realism ideas (personalities, pit lifecycle, session phases, tyres/wear, weather, logbook).
+
+## Archive
+
+- [Archive index](archive/README.md): finished plans, the original PT roadmap and decision log, historical UI docs.
+
+Generated `codemap.md` files (from `.slim/codemap.json`) may exist locally for agents. They are not tracked; [Architecture](reference/ARCHITECTURE.md) is the maintained reference.

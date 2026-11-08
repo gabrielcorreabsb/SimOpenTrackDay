@@ -10,7 +10,6 @@ Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
 | --- | --- | --- |
 | `MANIFEST__UPDATE(dt)` | `SimOpenTrackDay.lua` | **Per-frame core**: physics and decision-making for all cars |
 | `MANIFEST__FUNCTION_MAIN(dt)` | `SimOpenTrackDay.lua` | Main window (ImGui) |
-| `MANIFEST__FUNCTION_SETTINGS()` | `SimOpenTrackDay.lua` | Settings window |
 | `MANIFEST__FUNCTION_ICON()` | `SimOpenTrackDay.lua` | Vector drawing of the OTD icon |
 | `MANIFEST__TRANSPARENT(dt)` | `SimOpenTrackDay.lua` | World-space overlay (overhead text, car name) |
 
@@ -73,7 +72,7 @@ Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
 - `CarManager.lua` — DoD state by `carIndex`, defaults, speed sampling, lateral offset cache, incremental car-list sorting.
 - `CarOperations.lua` — `physics.*` wrappers + drive/yield/overtake, blockage raycasts, anchor points, anti-drag-race, teleport.
 - `CarStateMachine/CarStateMachine.lua` — central per-car FSM: `states_entryFunctions` / `states_transitionFunctions` / `states_updateFunctions` / `states_exitFunctions`.
-- `CarStateMachine/States/*.lua` — implementation of each state (see `docs/STATE_MACHINE.md`).
+- `CarStateMachine/States/*.lua` — implementation of each state (see [STATE_MACHINE.md](STATE_MACHINE.md)).
 - `StorageManager.lua` — options DoD (enum → collection → fillInDoDTables → storageTable → `ac.storage`) + behavior profiles.
 - `SettingsWindow.lua` — settings UI (ImGui), slider sections (Global/Debugging/AI Car Values/Yielding/Overtaking/Behavior/Pathfinding).
 - `UIManager.lua` — per-car debug table, overhead text, lateral-offset section (preview).
@@ -239,7 +238,7 @@ table.clear(carList)
 | `CarStateMachine` | `StorageManager`, `Strings*`, `CarManager`, `CarOperations`, `RaceTrackManager`, `AccidentManager`, `QueueManager` | entry point, states, `CarManager` |
 | `States/*` | `CarStateMachine`, `CarManager`, `CarOperations`, `RaceTrackManager`, `StorageManager`, `Strings*` | entry point (`require`; registers functions) |
 | `StorageManager` | `ac`, `Constants` | nearly all (captured at load time) |
-| `SettingsWindow` | `StorageManager`, `UIOperations`, `RaceTrackManager`, `Logger` | entry point (`MANIFEST__FUNCTION_SETTINGS`) |
+| `SettingsWindow` | `StorageManager`, `UIOperations`, `RaceTrackManager`, `Logger` | `MainWindow` (`SettingsWindow.drawContent(activeTab, ...)` per tab) |
 | `UIManager` | `CarManager`, `CarStateMachine`, `StorageManager`, `RaceTrackManager`, `Strings`, widgets | entry point |
 | `RaceTrackManager` | `ac`, `CompletableIndexCollectionManager`, `Logger` | `CarManager`, `CarOperations`, `CarStateMachine`, UI, `AccidentManager` |
 | `BehaviorPolish` | **nothing** (pure) | loaded by the entry point; no current runtime consumers |
@@ -327,7 +326,7 @@ Pipeline in `StorageManager.lua`:
 
 In `SettingsWindow.lua`, the profile dropdown is inferred from persisted `storage_Behavior` values. It is not stored as `storage_Behavior.profile`: the UI compares selected profile values against the saved `mode`, `humanErrorEnabled`, and `entryBlendTime_s`, and falls back to `Realistic` when no match is found. Choosing a profile applies its values to the declared behavior fields. The `advancedBehaviorOpen` UI toggle is a local variable and is not persisted; `showBehaviorAdvanced` is not read or written by the UI.
 
-`getStorage_UI()` delegates to the shared `UIStorage.lua` schema and lazy singleton, providing app-wide language preferences in the `ui` namespace, with `uiLanguage = ''` marking first use. `Localization` uses the same shared storage when a legacy manager lacks that getter. It migrates a valid legacy `global.uiLanguage` only when UI storage is empty; subsequent language changes persist only in UI storage, independent of track and session mode. The legacy global field remains declared for compatibility. See [`docs/LOCALIZATION.md`](../guides/LOCALIZATION.md) for localization details.
+`getStorage_UI()` delegates to the shared `UIStorage.lua` schema and lazy singleton, providing app-wide language preferences in the `ui` namespace, with `uiLanguage = ''` marking first use. `Localization` uses the same shared storage when a legacy manager lacks that getter. It migrates a valid legacy `global.uiLanguage` only when UI storage is empty; subsequent language changes persist only in UI storage, independent of track and session mode. The legacy global field remains declared for compatibility. See [`docs/guides/LOCALIZATION.md`](../guides/LOCALIZATION.md) for localization details.
 
 ### 5.2 Behavior profiles
 
@@ -394,9 +393,10 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 ├─ CarStateMachine/
 │  ├─ CarStateMachine.lua           central FSM (`updateCar`)
 │  ├─ CarState_TEMPLATE.lua         new-state contract
-│  └─ States/*.lua                  states (see docs/STATE_MACHINE.md)
+│  └─ States/*.lua                  states (see STATE_MACHINE.md)
 ├─ StorageManager.lua               enum→collection→DoD→storage→getters
-├─ SettingsWindow.lua               settings UI (`draw`)
+├─ MainWindow.lua                   single window: header + tabs
+├─ SettingsWindow.lua               tab content (`drawContent`)
 ├─ UIManager.lua                    car list / overhead / offsets preview
 ├─ RaceTrackManager.lua             track metadata + sides + yellow-zone buckets
 ├─ BehaviorPolish.lua               pure functions (lerp / hesitation / look-ahead)
@@ -414,4 +414,33 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 └─ lib/uilib/                       project-owned library
 ```
 
-Related documents: `docs/AGENT.md` (onboarding), `docs/STATE_MACHINE.md` (FSM), `docs/TESTING.md` (validation), `README.md` (product).
+---
+
+## 10. Where to start, by task
+
+| Task | Start at |
+| --- | --- |
+| Main per-frame flow | `SimOpenTrackDay.lua` → `script.MANIFEST__UPDATE` |
+| One car's decisions | `CarManager.lua` (`getActualTrackLateralOffset`) and `CarStateMachine/States/` |
+| Main window / tabs | `MainWindow.lua` (called from `MANIFEST__FUNCTION_MAIN`) → `SettingsWindow.drawContent` |
+| Settings / persistence | `StorageManager.lua` (§5) and `SettingsModel.lua` |
+| Operational car list | `UIManager.lua` |
+| Icon | `lib/uilib/Logo.lua` (`Logo.draw` from `MANIFEST__FUNCTION_ICON`) |
+
+## 11. Code conventions
+
+- **Naming:** `snake_case` for functions and locals; `CamelCase` with the module name for main tables and enums (`CarManager`, `StorageManager.Options_Behavior`, `CarStateMachine.CarStateType`).
+- **Top-level local bindings:** each file binds the APIs it uses near the top (`local ac_getCar = ac.getCar`) and uses the locals inside functions. This avoids table lookups in hot paths and keeps one coupling point.
+- **Storage:** never create ad hoc storage; use the `StorageManager.getStorage*()` getters (`getStorage`, `getStorage_Global`, `getStorage_UI`, `getStorage_Yielding`, `getStorage_Overtaking`, `getStorage_AICarValues`, `getStorage_PathFinding`, `getStorage_Behavior`, ...). Settings are saved per track and game mode; `getStorage_UI` is app-wide.
+- **Intentional errors:** `HumanErrorManager` deliberately calls `physics.setAIBrakeMistake` / `setAITractionMistake`. "Too perfect" behavior is wrong for this app; do not "fix" these as bugs.
+
+## 12. Adding a feature (typical workflow)
+
+1. **New option:** add an ID to the relevant enum (e.g. `StorageManager.Options_Behavior`), an entry to the `optionsCollection_*_beforeDoD` collection and a field to the matching `storageTable_*`. Defaults/min/max flow through `fillInDoDTables`. If it affects AI behavior, consider `StorageManager.BehaviorProfiles`.
+2. **UI control:** add it to the relevant tab section in `SettingsWindow.lua`; UI text goes through localization ([LOCALIZATION.md](../guides/LOCALIZATION.md)).
+3. **AI logic:** for a new state follow [STATE_MACHINE.md §5](STATE_MACHINE.md) using `CarStateMachine/CarState_TEMPLATE.lua`; otherwise extend the relevant manager (`CarOperations`, `AccidentManager`, ...).
+4. **Wiring:** per-frame work from `MANIFEST__UPDATE`; car events via the `ac.onCarJumped` / `ac.onCarCollision` handlers registered in the entry point.
+5. **New CSP API:** register it with `CSPCompatibilityManager.addFunction(...)` in the entry point (§8) and record it in [CSP_CAPABILITY_AUDIT.md](CSP_CAPABILITY_AUDIT.md).
+6. **Validate:** run the relevant checks in [TESTING.md](../guides/TESTING.md) and add any in-game check to [IN_GAME_VALIDATION.md](../guides/IN_GAME_VALIDATION.md).
+
+Related documents: [STATE_MACHINE.md](STATE_MACHINE.md) (FSM), [TESTING.md](../guides/TESTING.md) (validation), [README](../../README.md) (product).
