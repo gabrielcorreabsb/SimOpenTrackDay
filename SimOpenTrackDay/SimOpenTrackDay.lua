@@ -163,7 +163,7 @@ else
     local cspGateMessage = string.format(
         "%s requires Custom Shaders Patch build %d or newer (detected: %s). The app stays inert.",
         Constants.APP_NAME, Constants.MIN_CSP_BUILD, tostring(Constants.CSP_BUILD or "unknown"))
-    ac.error("[F0-CSP-GATE] " .. cspGateMessage)
+    ac.error("[F0-CSP-GATE] " .. cspGateMessage .. " probe: " .. tostring(Constants.CSP_BUILD_PROBE))
     anyMissingCSPElements = true
     if missingCSPElementsErrorMessage and missingCSPElementsErrorMessage ~= "" then
         missingCSPElementsErrorMessage = missingCSPElementsErrorMessage .. "\n\n" .. cspGateMessage
