@@ -12,7 +12,7 @@ This file is the single source for **where the project stands and what comes nex
 - universal physical mechanical failures;
 - teleporting cars by default.
 
-**CSP target:** the latest Custom Shaders Patch. The reference build today is **0.3.2-preview2 (build 4305)**. Older builds are not a design constraint. A minimum-build gate (F0) keeps the app inert on builds that lack the required APIs. The repo copy of the SDK in `sdk/ac_apps/` predates this build, and refreshing it is an F0 ticket.
+**CSP target:** the latest Custom Shaders Patch. The reference build today is **0.3.2-preview2 (build 4305)**. Older builds are not a design constraint. A minimum-build gate (F0) keeps the app inert on builds that lack the required APIs. The repo copy of the SDK in `sdk/ac_apps/` is taken from that build.
 
 **Status vocabulary**
 - **Done:** delivered, reviewed and accepted in CSP.
@@ -52,7 +52,7 @@ v0.2 is complete when the existing AI behavior is safe and observable on the tar
 
 1. ~~Integrate the incident lane~~: done (`04b2bd7`).
 2. ~~Repository layout~~: done. The copied folder was smoke-tested in game on 2026-11-08 (app loads and works).
-3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK (a vendor update with its own ticket) and add the minimum-build gate.
+3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK and add the minimum-build gate ([issue #1](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/1)): **observed in CSP** on 2026-11-08 (build 4305: `[F0-CSP-GATE] build=4305 min=4305 gate passed`, then `mode=live`). The forced-failure check (`MIN_CSP_BUILD` above the installed build) is still **pending**.
 4. **Close the pending in-game checks** for M1a, M1b and S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
 5. **Release:** bump the `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
 

@@ -32,9 +32,9 @@ When `physics.allowed()` returns false, only `raycastTrack` is available, as doc
 
 ## Target build update (2026-11-08)
 
-The project now targets the latest CSP. The reference build is **0.3.2-preview2 (build 4305)**, read from the user's installed `extension/config/data_manifest.ini`. Its SDK (`extension/internal/lua-sdk/ac_apps/lib.lua`) is newer than the repo copy in `sdk/ac_apps/`.
+The project now targets the latest CSP. The reference build is **0.3.2-preview2 (build 4305)**, read from the user's installed `extension/config/data_manifest.ini`. Its SDK (`extension/internal/lua-sdk/ac_apps/`) was copied byte-for-byte into `sdk/ac_apps/` (F0, issue #1; `lib.lua` sha256 `e599f16c…`, `README.md` sha256 `bf6193c7…`). The baseline line numbers in the tables below refer to the older copy. The app now fails closed below `Constants.MIN_CSP_BUILD = 4305` (see `[F0-CSP-GATE]` in the CSP log).
 
-- **Present only in the installed SDK:** `physics.overrideAIRequestedFuel`, `ac.onCarAIToggle`, `physics.setSuspensionDamage`, `physics.exportRacingLineAsync` / `importRacingLineAsync`, `physics.Collider`, `physics.offsetFinalFFB`.
+- **New relative to the previous repo copy:** `physics.overrideAIRequestedFuel`, `ac.onCarAIToggle`, `physics.setSuspensionDamage`, `physics.exportRacingLineAsync` / `importRacingLineAsync`, `physics.Collider`, `physics.offsetFinalFFB`.
 - **AI APIs in both SDKs that the app does not use yet:** `setAIPitStopRequest` (since 0.3.0-preview147, `false` also blocks pitting for a short time), `setAITimeToStart`, `setAILapsToComplete`, `setAIRainTyres`, `setAILookaheadBase`, `setAILookaheadGasBrake`, `setAISteerMultiplier`, `setAIDriverName`, `setAISplineAbsoluteOffset`, `setAITyresHint`.
 
 Evidence class: **S only** (source: SDK of build 4305). **R pending** for all of them. The baseline tables below are unchanged.

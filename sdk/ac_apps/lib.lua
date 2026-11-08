@@ -71,6 +71,7 @@ ac.SurfaceType = {
 ---| `ac.SurfaceExtendedType.Sand` @Value: 6.
 ---| `ac.SurfaceExtendedType.Ice` @Value: 7.
 ---| `ac.SurfaceExtendedType.Snow` @Value: 8.
+---| `ac.SurfaceExtendedType.Wall` @Value: 9.
 ac.SurfaceExtendedType = {
   Base = 0, ---@type ac.SurfaceExtendedType #Value: 0.
   ExtraTurf = 1, ---@type ac.SurfaceExtendedType #Value: 1.
@@ -81,6 +82,7 @@ ac.SurfaceExtendedType = {
   Sand = 6, ---@type ac.SurfaceExtendedType #Value: 6.
   Ice = 7, ---@type ac.SurfaceExtendedType #Value: 7.
   Snow = 8, ---@type ac.SurfaceExtendedType #Value: 8.
+  Wall = 9, ---@type ac.SurfaceExtendedType #Value: 9.
 }
 
 ---@alias ac.ShadowsState
@@ -2660,7 +2662,7 @@ __monitored = false
 ---Could be either a string, a number or a boolean value (will be converted into string).
 ---String can store any binary data including zero bytes. Could also be an FFI struct and it will
 ---be processed as its binary form.
----@alias binary string
+---@alias binary string|any
 
 ---Could be either a string, a number, a boolean value or a table (without circular references or any non-serializable
 ---items). Will be serialized here and deserialized in a different script. String can store any binary data including zero bytes.
@@ -3159,8 +3161,7 @@ function ac.getTrackSectorName(trackProgress) end
 ---@return string
 function ac.dirname() end
 
----If `fileName` is not an absolute path, looks for a file in script directory, then relative to CSP folder,
----then relative to AC root folder. If anything is found, returns an absolute path to found file, otherwise
+---If `fileName` is not an absolute path, looks for a file in script directory, then relative to CSP folder, *then relative to AC root folder. If anything is found, returns an absolute path to found file, otherwise
 ---returns input parameter. If such a filename is not allowed, or `fileName` is `nil`, returns an empty string.
 ---@param fileName string @File name relative to script folder, or CSP folder, or AC root folder.
 ---@return path
@@ -3171,10 +3172,9 @@ function ac.findFile(fileName) end
 ---@return string @Returns empty string if there is no match.
 function ac.getFolder(folderID) end
 
----Turns time in milliseconds into common lap time presentation, like 00:00.123. If minutes exceed 60,
----hours will also be added, but only if `allow_hours` is `true` (default is `false`).
+---Turns time in milliseconds into common lap time presentation, like 00:00.123. If minutes exceed 60, *hours will also be added, but only if `allow_hours` is `true` (default is `false`).
 ---@param time number @Time in milliseconds.
----@param allowHours boolean? @Set to `true` to add hours as well. If `false` (default value), instead it would produce 99:99.999. If `true`, milliseconds will use two digits instead of three. Default value: `false`.
+---@param allowHours boolean? @Set to `true` to add hours as well. If `false` (default value), instead it would produce 99:99.99. If `true`, milliseconds will use three digits instead of two. Default value: `false`.
 ---@return string
 function ac.lapTimeToString(time, allowHours) end
 
@@ -3230,20 +3230,17 @@ function ac.getCarTags(carIndex) end
 ---@return binary
 function ac.uniqueMachineKey() end
 
----A key unique for each individual PC (uses serial numbers of processor and motherboard). Asynchronous version. Returned value is in binary,
---- use something like `ac.encodeBase64()` to encode data in readable format. Since 0.3.0-preview144, feel free to use `ac.uniqueMachineKey()` instead,
---- value is computed once sometime at the launch.
+---A key unique for each individual PC (uses serial numbers of processor and motherboard). Asynchronous version. Returned value is in binary, * use something like `ac.encodeBase64()` to encode data in readable format. Since 0.3.0-preview144, feel free to use `ac.uniqueMachineKey()` instead, * value is computed once sometime at the launch.
 ---@param callback fun(err: string?, response: binary?)?
 function ac.uniqueMachineKeyAsync(callback) end
 
----Returns ordered list of data file names (not full paths, just the names) of a certain car. Works for both packed and unpacked cars. If failed,
----returns empty list. @nodiscard
----@param carIndex integer? @0-based car index.
+---Returns ordered list of data file names (not full paths, just the names) of a certain car. Works for both packed and unpacked cars. If failed, *returns empty list. @nodiscard
+---@param carIndex integer? @0-based car index. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@return string[]
 function ac.getCarDataFiles(carIndex) end
 
 ---Returns list of car colliders. @nodiscard
----@param carIndex integer? @0-based car index.
+---@param carIndex integer? @0-based car index. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param actualColliders boolean? @Set to `true` to draw actual physics colliders (might differ due to some physics alterations). Default value: `false`.
 ---@return {position: vec3, size: vec3}[]
 function ac.getCarColliders(carIndex, actualColliders) end
@@ -3443,7 +3440,8 @@ function ac.isInteriorView() end
 ---@return boolean
 function ac.isInReplayMode() end
 
----@param filename string
+---Not available to scripts without I/O access.
+---@param filename path
 ---@param outputFilename string
 function ac.compressTexture(filename, outputFilename) end
 
@@ -3483,6 +3481,12 @@ function ac.getAudioOutputDevice() end
 ---@return number
 function ac.getCarSpeedKmh(carIndex) end
 
+---If you need to address a switch by its index, this could help.
+---@param carIndex integer @0-based car index.
+---@param switchIndex integer @0-based switch index.
+---@return boolean
+function ac.getCarExtraSwitchState(carIndex, switchIndex) end
+
 ---Returns 'R', 'N', number of engaged gear or value set by `ac.setGearLabel()` if used (for implementing automatic gearboxes).
 ---If your code is displaying current gear, this might be a preferable choice.
 ---@param carIndex integer @0-based car index.
@@ -3502,8 +3506,7 @@ function ac.getDeltaT() end
 ---@return number @Seconds.
 function ac.getGameDeltaT() end
 
----Returns delta time for current script. If script only runs every N frames (like car display scripts by default),
----this value will be greater than regular `dt` from simulation state.
+---Returns delta time for current script. If script only runs every N frames (like car display scripts by default), *this value will be greater than regular `dt` from simulation state.
 ---@return number
 function ac.getScriptDeltaT() end
 
@@ -3561,8 +3564,7 @@ function ac.getDriverTeam(carIndex) end
 ---@return integer
 function ac.getDriverNumber(carIndex) end
 
----Returns `true` if a certain driver is using custom icon. Use `'carN::special::driver'` as image filename to draw it (when not custom,
----will give you a livery icon or a fallback dark image).
+---Returns `true` if a certain driver is using custom icon. Use `'carN::special::driver'` as image filename to draw it (when not custom, *will give you a livery icon or a fallback dark image).
 ---@param carIndex integer @0-based car index.
 ---@return boolean
 function ac.isCustomIconSet(carIndex) end
@@ -3752,14 +3754,12 @@ function ac.getServerPortUDP() end
 ---@return integer
 function ac.getCarByDriverName(driverName) end
 
----Returns leaderboard car position, same as Python function with the same name. Does not work online. For an alternative solution,
----get position calculated by CSP via `ac.getCar(N).racePosition`
+---Returns leaderboard car position, same as Python function with the same name. Does not work online. For an alternative solution, *get position calculated by CSP via `ac.getCar(N).racePosition`
 ---@param carIndex integer @0-based car index.
 ---@return integer @Returns -1 if couldn’t calculate the value.
 function ac.getCarLeaderboardPosition(carIndex) end
 
----Returns real time car position, same as Python function with the same name. Does not work online. For an alternative solution,
----get position calculated by CSP via `ac.getCar(N).racePosition`.
+---Returns real time car position, same as Python function with the same name. Does not work online. For an alternative solution, *get position calculated by CSP via `ac.getCar(N).racePosition`.
 ---@param carIndex integer @0-based car index.
 ---@return integer @Returns -1 if couldn’t calculate the value.
 function ac.getCarRealTimeLeaderboardPosition(carIndex) end
@@ -3792,8 +3792,7 @@ function ac.refreshCarShape(carIndex) end
 ---@param carIndex integer? @Default value: 0.
 function ac.refreshCarColor(carIndex) end
 
----Updates state of high-res driver model. Use it before moving driver nodes manually for extra animations: if called,
---- next model update possibly overwriting your custom positioning will be skipped. Also, model update will be enforced
+---Updates state of high-res driver model. Use it before moving driver nodes manually for extra animations: if called, * next model update possibly overwriting your custom positioning will be skipped. Also, model update will be enforced
 --- so you can blend your custom state.
 ---
 --- Since 0.1.80-preview397, does not apply if HR driver model is currently hidden unless second argument is `true` (in which
@@ -3812,15 +3811,6 @@ function ac.getDriverHeadTransformTo(ret, carIndex) end
 ---@return ac.Disposable
 function ac.blockSystemMessages(regex) end
 
----Sets a callback which will be called when car crosses a certain point on a track. Won’t be triggered if car is in pitlane or recently jumped.
----Time is relative to the same point as `ac.SimState.time`. Tracking happens on physics thread and is interpolated based on car position, so it
----should be precise more than within 3 ms steps.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
----@param progress number @Track progress from 0 to 1.
----@param callback fun(carIndex: integer, timeMs: number)
----@return ac.Disposable
-function ac.onTrackPointCrossed(carIndex, progress, callback) end
-
 ---Sets a callback which will be called when a new session starts (or restarts). Doesn’t get triggered at the start of the race (Lua scripts load when
 ---the first session is already up and running to ensure the overall state of the sim is complete)!
 ---@param callback fun(sessionIndex: integer, restarted: boolean)
@@ -3833,13 +3823,6 @@ function ac.onSessionStart(callback) end
 ---@param callback fun(newSize: vec2, makingScreenshot: boolean)
 ---@return ac.Disposable
 function ac.onResolutionChange(callback) end
-
----Sets a callback which will be called when selected tyres change for some car. For car scripts to track changes in their own car, use `car.index` as first argument.
---- Note: for physics scripts this even might come a few frames late, but it shouldn’t be a major issue since tyres changes only happen when car is stationary anyway.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
----@param callback fun(carIndex: integer, setIndex: integer, shortName: string, longName: string)
----@return ac.Disposable
-function ac.onTyresSetChange(carIndex, callback) end
 
 ---Sets a callback which will be called when new user connects the server and their car appears (doesn’t do anything outside of online race).
 ---@param callback fun(connectedCarIndex: integer, connectedSessionID: integer)
@@ -3970,8 +3953,8 @@ function ac.load(key) end
 function ac.setTextureKey(key) end
 
 ---Encode texture. To load texture later, first call `ac.setTextureKey()`.
----@param filename string @Input filename.
----@param outputFilename string @Should be inside of AC folder.
+---@param filename path @Input filename.
+---@param outputFilename string @Should be inside of AC folder. Scripts without I/O access should have it within script folder, and with .dds extension.
 ---@param key string?
 ---@param applyLz4Compression boolean?
 ---@return boolean @Returns `false` if file operations failed.
@@ -4043,39 +4026,64 @@ function ac.getCarBlindSpot(carIndex) end
 ---@return boolean @Returns `false` if failed.
 function ac.setClipboardText(text) end
 
+---If AC is launched in replay mode, returns a full filename for the replay file. Otherwise, returns `nil`.
+---@return string|nil
+function ac.getReplayFilename() end
+
 ---Sets a callback which will be called when replay activates, deactivates or jumps around when active (could be good, for things, to clear out particles).
 ---@param callback fun(event: 'start'|'stop'|'jump')
 ---@return ac.Disposable
 function ac.onReplay(callback) end
 
+---Sets a callback which will be called when car crosses a certain point on a track. Won’t be triggered if car is in pitlane or recently jumped.
+---Time is relative to the same point as `ac.SimState.time`. Tracking happens on physics thread and is interpolated based on car position, so it
+---should be precise more than within 3 ms steps.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
+---@param progress number @Track progress from 0 to 1.
+---@param callback fun(carIndex: integer, timeMs: number)
+---@return ac.Disposable
+function ac.onTrackPointCrossed(carIndex, progress, callback) end
+
+---Sets a callback which will be called when selected tyres change for some car. For car scripts to track changes in their own car, use `car.index` as first argument.
+--- Note: for physics scripts this even might come a few frames late, but it shouldn’t be a major issue since tyres changes only happen when car is stationary anyway.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
+---@param callback fun(carIndex: integer, setIndex: integer, shortName: string, longName: string)
+---@return ac.Disposable
+function ac.onTyresSetChange(carIndex, callback) end
+
 ---Sets a callback which will be called when a car changes live.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param callback fun(carIndex: integer)
 ---@return ac.Disposable
 function ac.onCarSwap(carIndex, callback) end
 
 ---Sets a callback which will be called when a car teleports somewhere or its state gets reset.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param callback fun(carIndex: integer)
 ---@return ac.Disposable
 function ac.onCarJumped(carIndex, callback) end
 
+---Sets a callback which will be called when a car becomes controlled by AI, or stops being controlled by AI.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
+---@param callback fun(carIndex: integer, aiActive: boolean)
+---@return ac.Disposable
+function ac.onCarAIToggle(carIndex, callback) end
+
 ---Sets a callback which will be called when a car’s color changes.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param callback fun(carIndex: integer)
 ---@return ac.Disposable
 function ac.onCarColorChanged(carIndex, callback) end
 
 ---Sets a callback which will be called when a car completes a lap. Should work for remote cars as well.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param callback fun(carIndex: integer, lapTime: integer, valid: boolean, cuts: integer, lapsCount: integer, splits: integer[], lineCrossTime: number)
 ---@return ac.Disposable
 function ac.onLapCompleted(carIndex, callback) end
 
----Sets a callback which will be called when a car collides with a wall or another car. Note: collisions in AC are usually lasting a few frames,
----but this callback will only be called once when collision starts (or when index of a car this car collided with has changed). Use
+---Sets a callback which will be called when a car collides with a wall or another car. Note: collisions in AC are usually lasting a few frames, *but this callback will only be called once when collision starts (or when index of a car this car collided with has changed). Use
 ---`ac.getCar().collisionDepth` and similar to analyze the collision in detail. Works in replays as well.
----@param carIndex integer @0-based car index, or -1 for an event to be called for all cars.
+---@param carIndex integer? @0-based car index to listen to. Pass -1 to listen to events for all cars. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param callback fun(carIndex: integer)
 ---@return ac.Disposable
 function ac.onCarCollision(carIndex, callback) end
@@ -4122,6 +4130,26 @@ function ac.onSetupsListRefresh(callback) end
 ---@return ac.Disposable
 function ac.onSetupFile(callback) end
 
+---Exports current setup into a string.
+---@param includeMetadata boolean? @Default value: `true`.
+---@param modifiedOnly boolean? @Default value: `false`.
+---@return string
+function ac.stringifyCurrentSetup(includeMetadata, modifiedOnly) end
+
+---Get information about tabs in setup menu. Mostly, just to check the visibility state.
+---@return {name: string, label: string, visible: boolean, modified: boolean}[]
+function ac.getSetupTabs() end
+
+---Get information about available spinners in setup menu. Names match section names of setup INI files. Value `label` might contain localized setup items. Array `itemValues` is only present for custom CSP setup entries with LUTs.
+---@return {name: string, label: string, min: integer, max: integer, step: integer, value: integer, displayMultiplier: number, visible: boolean, readOnly: boolean, units: string?, items: string[]?, itemValues: number[]?, defaultValue: integer?, showClicksMode: integer?}[]
+function ac.getSetupSpinners() end
+
+---Added in CSP 0.2.7, collects information about spinners in Quick Pitstop menu. Entries are listed in order they’re shown in UI. Each
+---entry has `value` storing value set in current preset, as well as `values` storing the list of values for each preset.
+---Use `ac.getSim().currentQuickPitPreset` to get the currently selected presets index (0-based).
+---@return {name: string, type: 'fuel'|'wing'|'compound'|'pressure'|'repair', min: integer, max: integer, readOnly: boolean, value: integer, values: integer[]}[]
+function ac.getPitstopSpinners() end
+
 ---Sets a callback which will be called when assists configuration change, either in main menu or with `physics.setAssists()`. Doesn’t affect assists changing during
 ---normal operations, such as Ctrl+A changing ABS.
 ---@param callback fun()
@@ -4130,7 +4158,7 @@ function ac.onAssistsChanged(callback) end
 
 ---Return state of assists (can be altered in offline races, either in the main menu or via Physics API. Returns `nil` if physics is not available. All percentage values are returned
 --- in 0…1 range. Added in 0.3.0-preview247.
----
+--- 
 --- Flag `editable` is `true` if assists can be edited in main menu. Use `physics.setAssists{ editable = false }` to disallow editing.
 ---@return {autoBlip: boolean, autoClutch: boolean, autoShifter: boolean, abs: 'off'|'factory'|'on', tractionControl: 'off'|'factory'|'on', stability: number, damageRate: number, fuelRate: number, tyresWear: number, tyresBlankets: boolean, slipstream: number, idealLine: boolean, editable: boolean}
 function ac.getAssists() end
@@ -4151,7 +4179,7 @@ function ac.areCarsColliding(car0, car1) end
 ---@return boolean
 function ac.areShapesColliding(shape1, transform1, shape2, transform2) end
 
----Generate list of contacts between two shapes. Added in 0.3.0-preview238. A more advanced (and expensive) version of `ac.areShapesColliding()`.
+---Generate list of contacts between two shapes. Added in 0.3.0-preview238. A more advanced (and expensive) version of `ac.areShapesColliding()`. 
 --- Returns contacts as returned by ODE. Note: if you think about calling `ac.areShapesColliding()` first, and then this one, don’t: it’s not
 --- going to help with performance.
 ---@param shape1 integer|physics.ColliderType @First entry to check intersection with, either `physics.ColliderType` or a car index.
@@ -4172,6 +4200,16 @@ function ac.getCarNameByID(carID, withYearPostfix) end
 ---@param trackID string
 ---@return string
 function ac.getTrackNameByID(trackID) end
+
+---Returns `true` if car setup can be edited now.
+---@return boolean
+function ac.isSetupAvailableToEdit() end
+
+---Return value of a setup item. Note: if you’re working on car physics script, use `ac.getSetupValue()` for better performance.
+---@param setupValueID string
+---@param fallbackValue integer? @Default value: 0.
+---@return integer
+function ac.getSetupSpinnerValue(setupValueID, fallbackValue) end
 
 ---Stops functions like `ac.log()` from logging things into CSP log file, in case you need to log a lot. With it, you
 --- can use Lua Debug app to see latest log entries.
@@ -4197,6 +4235,10 @@ function io.getAttributes(filename) end
 ---@param attributes io.FileAttributes
 ---@return boolean
 function io.setAttributes(filename, attributes) end
+
+---Returns `true` if the script has full IO access.
+---@return boolean
+function io.available() end
 
 ---Gets full filename of the main AC executable (“…/acs.exe” for most cases).
 ---Not available to scripts without I/O access.
@@ -4387,8 +4429,7 @@ function io.recycle(filename) end
 ---@return boolean
 function io.saveToZip(zipFilename, entryFilename, data) end
 
----Loads file from an archive as a string. Archive would remain open for some time to speed up consequent reads. If failed, returns `nil`. Alternatively,
----you can pass ZIP data instead.
+---Loads file from an archive as a string. Archive would remain open for some time to speed up consequent reads. If failed, returns `nil`. Alternatively, *you can pass ZIP data instead.
 ---@param zipFilename path
 ---@param entryFilename string
 ---@return string
@@ -4445,8 +4486,7 @@ function os.execute(cmd, timeoutMs, windowless) end
 ---Changes current directory. Any argument `path`, when parsed and found not to be absolute, will be resolved against current directory.
 ---By default, uses AC root folder. Any change only applies to the current script only. Current path resets when script is reloaded.
 ---
----Changes behavior of images and assets lookup as well (by default it scans script folder, CSP folder and then root folder looking for a file,
----which might cause some issues and negatively affect performance).
+---Changes behavior of images and assets lookup as well (by default it scans script folder, CSP folder and then root folder looking for a file, *which might cause some issues and negatively affect performance).
 ---
 --- For scripts without I/O access, only folders script can read from can be used here.
 ---
@@ -4475,7 +4515,119 @@ function os.addDLLDirectory(filename) end
 ---@param filename string @If not absolute, considered to be relative to script root folder.
 function os.loadDLL(filename) end
 
----Show a popup message using good old MessageBox. Please do not use it for debugging, instead consider using `ac.log()` and `ac.debug('key', 'value')`
+---Set a named pipe that can be used for IPC. Created pipe will have a name of `\\.\pipe\AcTools.CSP.Lua.NAME` where `NAME` is the required field `name` in `params`.
+---
+---Parameters:
+---- `name: string`: name of the pipe (the resulting name will be prefixed by “AcTools.CSP.Lua.” to keep things safe);
+---- `maxMessageSize: integer?`: maximum allowed message size (to prevent crashes in case of a malfunction);
+---- `inBufferSize: integer? = 64 * 1024`: size of a buffer for reading incoming messages;
+---- `outBufferSize: integer? = 64 * 1024`: size of a buffer for sending outgoing messages;
+---- `localOnly: boolean? = true`: pass `false` to allow connections from other PCs;
+---- `firstInstanceOnly: boolean? = false`: pass `true` to connect with a first client only, and ignore the rest;
+---- `onMessage: fun(msg: string): string?`: callback which will be called when new message is being received. Returned value will be send as a response.
+---
+---Scripts running in main thread will receive messages during their next `update()` call. Scripts in background threads will receive messages instantly (as long as they
+---are asleep when the message arrives).
+--- 
+---Usage example:
+---```lua
+---os.hostNamedPipe({ name = 'test', onMessage = function (msg)
+---  print(msg)
+---  return 'response:'..msg
+---end })
+---```
+---
+---C# counterpart:
+---```csharp
+---class AssettoCorsaIPCHelper : IDisposable {
+---	private NamedPipeClientStream _pipe;
+---	private bool _sending;
+---	private bool _connected;
+---
+---	public AssettoCorsaIPCHelper(string name) {
+---		_pipe = new NamedPipeClientStream(".", "AcTools.CSP.Lua." + name, PipeDirection.InOut, PipeOptions.None);
+---	}
+---
+---	public async Task<string> SendAsync(string msg) {
+---		if (msg == null || _pipe == null) return null;
+---		if (_sending) throw new Exception("Already sending");
+---		_sending = true;
+---		if (!_connected) {
+---			_connected = true;
+---			await _pipe.ConnectAsync().ConfigureAwait(false);
+---		}
+---		var req = Encoding.UTF8.GetBytes(msg);
+---		await _pipe.WriteAsync(BitConverter.GetBytes(req.Length), 0, 4).ConfigureAwait(false);
+---		await _pipe.WriteAsync(req, 0, req.Length).ConfigureAwait(false);
+---		var lenBuf = new byte[4];
+---		await ReadExact(lenBuf, 4).ConfigureAwait(false);
+---		var replyLen = BitConverter.ToUInt32(lenBuf, 0);
+---		if (replyLen == UInt32.MaxValue) return null;
+---		var reply = new byte[replyLen];
+---		await ReadExact(reply, reply.Length).ConfigureAwait(false);
+---		_sending = false;
+---		return Encoding.UTF8.GetString(reply);
+---	}
+---
+---	public void Dispose() {
+---		_pipe?.Dispose();
+---		_pipe = null;
+---	}
+---
+---	async Task ReadExact(byte[] buf, int n) {
+---		int off = 0;
+---		while (off < n) off += await _pipe.ReadAsync(buf, off, n - off).ConfigureAwait(false);
+---	}
+---}
+---
+---async Task Main() {
+---	var pipe = new AssettoCorsaIPCHelper("test");
+---	while (true) {
+---		var s = Stopwatch.StartNew();
+---		var response = await pipe.SendAsync(DateTime.Now.ToShortTimeString());
+---		Console.WriteLine($"response: {response}, time: {s.ElapsedMilliseconds} ms");
+---		await Task.Delay(200);
+---	}
+---}
+---```
+---
+---Note: there will be noticeable a delay unless it’s called from a background worker.
+---Not available to scripts without I/O access.
+---@param params {name: string?, maxMessageSize: integer?, inBufferSize: integer?, outBufferSize: integer?, localOnly: boolean?, firstInstanceOnly: boolean?, onMessage: (fun(msg: string): string?) }
+---@return ac.Disposable
+function os.hostNamedPipe(params) end
+
+---Enumerate available serial ports. Can help to find a port for `os.openSerialPort`.
+---Not available to scripts without I/O access.
+---@param callback fun(err: string?, entries: {port: string, friendlyName: string, instanceID: string, devicePath: string, hardwareIDs: string[]}[]?)
+function os.listSerialPortsAsync(callback) end
+
+---Open a COM port to exchange data with the device.
+---
+---Parameters:
+---- `port: string`: name of port to open, for example, COM7 or COM21;
+---- `baudRate: integer? = 9600`: common defaults are 9600 / 115200, any DCB-legal value is accepted;
+---- `byteSize: integer? = 8`: data bits (5…8), 8 is correct for almost every modern device;
+---- `parity: 'none'|'even'|'odd'|nil = 'none'`;
+---- `stopBits: 'one'|'two'|nil = 'one'`;
+---- `dtrEnabled: boolean? = true`: set false to keep DTR low so opening the port does NOT auto-reset Arduinos;
+---- `rtsEnabled: boolean? = true`;
+---- `initialDelayMs: integer? = 0`: sleep N ms after configuring the port before the reader thread starts, useful for Arduinos with the standard bootloader (~1500-2000 ms);
+---- `readBufferSize: integer? = 4096`: read buffer size (bytes are delivered as-they-arrive in chunks up to this size);
+---- `onData: fun(data: string)?`: receive callback getting binary data as `string` (bytes are raw — assemble lines/frames yourself if needed);
+---- `onError: fun(err: string)?`: invoked at most once when the port becomes unusable (cable yanked, driver error, configuration failure during open), reader & writer stop after that.
+---
+---Use returned value to send bytes to the port, or close the connection. If Assetto Corsa failed to establish connection, returns `nil`. 
+---Please note: if you’re opening a COM connection when your script is initializing, and release it when script is shutting down (or don’t
+---release at all, for it to be released automatically with the script), there could be a problem with reloads: some drivers might keep device
+---opened for a bit after it’s been released, leading to your script failing when it’ll try to instantly reconnect. Consider adding a small delay
+---when reopening the device.
+---Not available to scripts without I/O access.
+---@param params {port: string, baudRate: integer?, byteSize: integer?, parity: nil|'none'|'even'|'odd', stopBits: nil|'one'|'two', dtrEnabled: boolean?, rtsEnabled: boolean?, initialDelayMs: integer?, readBufferSize: integer?, onData: (fun(data: string))?, onError: (fun(err: string))?}
+---@return {release: fun(s: self), send: fun(s: self, data: binary)}|nil
+function os.openSerialPort(params) end
+
+---Show a popup message using the good old MessageBox. Please do not use it for debugging, instead consider using `ac.log()` and `ac.debug('key', 'value')`
 ---with in-game Lua Debug App.
 ---Note: do not rely on this function, most likely it might be removed in the future as obstructing.
 ---@param msg string
@@ -4487,6 +4639,11 @@ function os.showMessage(msg, type) end
 ---Not available to scripts without I/O access.
 ---@param filename path
 function os.showInExplorer(filename) end
+
+---Tweak Assetto Corsa window for some exceptional cases. More options will be added later if needed.
+---Not available to scripts without I/O access.
+---@param command {command: 'activate'|'topmost'|'title', value: boolean|string|nil}
+function os.tweakMainWindow(command) end
 
 ---Opens file or directory in Windows Explorer. If it’s a file, associated program will be launched instead.
 ---Not available to scripts without I/O access.
@@ -4510,6 +4667,64 @@ function os.openTextFile(filename, line) end
 ---@param url string
 ---@param invokeListeners boolean? @Default value: `true`.
 function os.openURL(url, invokeListeners) end
+
+---Enumerate active Windows audio render devices. Can help to find a device for `os.openAudioOutput`.
+---Each entry contains WASAPI endpoint `id` (stable, pass it back to `os.openAudioOutput`), friendly `name`, *native `channels` / `sampleRate` / `bitsPerSample` (from the device mix/engine format; DualSense haptic
+---endpoints typically report 4 / 48000 / 16) and `default` for the current console render device.
+---Not available to scripts without I/O access.
+---@param callback fun(err: string?, entries: {id: string, name: string, channels: integer, sampleRate: integer, bitsPerSample: integer, default: boolean}[]?)
+function os.listAudioDevicesAsync(callback) end
+
+---Open a WASAPI output stream and write a custom PCM buffer to a specific device. Independent from FMOD /
+---`ac.AudioEvent` — this talks to a Windows audio endpoint directly (second headphones, bass shakers, DualSense
+---haptic channels, and similar).
+---
+---Parameters:
+---- `device: string?`: WASAPI endpoint ID from `os.listAudioDevicesAsync`, a friendly-name substring (case-insensitive), *  or `nil`/`'default'` for the current default playback device;
+---- `sampleRate: integer?`: requested sample rate; omit to use the device native/mix rate;
+---- `channels: integer?`: requested channel count (1…8); omit to use the device native/mix layout. This is also
+---  how `write()` data is packed;
+---- `bitsPerSample: integer?`: 16 / 24 / 32, used when opening exclusive mode or requesting a specific shared format;
+---- `exclusive: boolean? = false`: exclusive mode (required for some devices, including DualSense 4-channel haptic).
+---  Fails via `onError` if the device is already in use;
+---- `lowLatency: boolean? = false`: ask for the minimum device period;
+---- `pcmFormat: 'float'|'int16'|nil = 'float'`: interpretation of bytes passed to `write()` — interleaved `float`
+---  (native endian) or interleaved `int16`;
+---- `volume: number? = 1`: gain applied when queueing samples;
+---- `onReady: fun(info: {sampleRate: integer, channels: integer, bitsPerSample: integer, exclusive: boolean})?`:
+---  the stream is actually running; `info` is the negotiated device format (may differ from requested in shared mode);
+---- `onError: fun(err: string)?`: invoked at most once if the device disappears, exclusive mode is refused, or the
+---  stream fails later. Writer stops after that.
+---
+---Use the returned value to queue samples or close the stream. Returns `nil` if the device could not be found.
+---`write()` accepts a binary string (or FFI `cdata` via `ffi.string`) of interleaved frames and returns how many
+---frames were queued (0 if the stream is closed or the software buffer is full — it never overwrites unread audio).
+---
+---Keep the software queue from running dry: `queuedFrames()` / `availableFrames()` report the 16384-frame ring.
+---Generate audio at `sampleRate` with `channels` samples per frame (`frameBytes` bytes per frame). Example (440 Hz tone on the default device):
+---```lua
+---local phase = 0
+---local out = os.openAudioOutput({
+---  channels = 1, *  onError = function (err) ac.error(err) end, *})
+---function script.update(dt)
+---  if not out or not out:ready() then return end
+---  local frames = math.min(out:availableFrames(), math.floor(out.sampleRate * dt + 64))
+---  if frames <= 0 then return end
+---  local buf = {} -- for better performance, reuse, or switch to `ffi.new('float[?]', frames)`
+---  local step = 2 * math.pi * 440 / out.sampleRate
+---  for i = 1, frames do
+---    buf[i] = math.sin(phase) * 0.2
+---    phase = phase + step
+---  end
+---  out:write(buf)
+---end
+---```
+---
+---Please note: if you open an exclusive stream while the script is initializing and immediately reopen it on reload, *the previous exclusive session might still be shutting down. Wait for `onError`/`onReady` or add a short delay.
+---Not available to scripts without I/O access.
+---@param params {device: string?, sampleRate: integer?, channels: integer?, bitsPerSample: integer?, exclusive: boolean?, lowLatency: boolean?, pcmFormat: nil|'float'|'int16', volume: number?, onReady: (fun(info: {sampleRate: integer, channels: integer, bitsPerSample: integer, exclusive: boolean}))?, onError: (fun(err: string))?}
+---@return {release: fun(s: self), write: fun(s: self, data: binary): integer, queuedFrames: fun(s: self): integer, availableFrames: fun(s: self): integer, ready: fun(s: self): boolean, sampleRate: integer, channels: integer, bitsPerSample: integer, frameBytes: integer, exclusive: boolean, deviceId: string, deviceName: string}|nil
+function os.openAudioOutput(params) end
 
 ---@return number
 function ac.getRealTrackHeadingAngle() end
@@ -4613,22 +4828,22 @@ function ac.setDualSense(gamepadIndex, priority, holdFor) end
 
 ---Returns extras of PS4 DualShock gamepad (or Nintendo gamepads), such as accelerometer, gyroscope or battery state. Accelerometer and gyroscope values might be different from values reported by `ac.getDualSense()` for different controllers in the same orientation.
 ---Note: if you’re writing a car script, first argument will be ignored and instead the effect would be applied to gamepad controlling the car if possible.
----@param gamepadIndex integer @0-based index, from 4 to 7 (first four are regular gamepads, second four are Dual Shock controllers).
+---@param gamepadIndex integer @0-based index, from 8 to 11 (first four are regular gamepads, second four are Dual Sense controllers, then Dual Shock).
 ---@return ac.StateDualshock?
 function ac.getDualShock(gamepadIndex) end
 
 ---Returns a structure with state of PS4 DualShock (or Nintendo) LEDs, change it to alter its state. Changes remain for some time, keep calling it for continuos adjustments.
 ---Note: if you’re writing a car script, first argument will be ignored and instead the effect would be applied to gamepad controlling the car if possible.
----@param gamepadIndex integer @0-based index, from 4 to 7 (first four are regular gamepads, second four are Dual Shock controllers).
+---@param gamepadIndex integer @0-based index, from 8 to 11 (first four are regular gamepads, second four are Dual Sense controllers, then Dual Shock).
 ---@param priority number? @If multiple scripts try to set LEDs at the same time, the call with highest priority will be applied. Default value: 0.
 ---@param holdFor number? @Time to keep the changes for in seconds. Default value: 0.5.
 ---@return ac.StateDualshockOutput? @Returns `nil` if there is no applicable controller, make sure to check for it.
 function ac.setDualShock(gamepadIndex, priority, holdFor) end
 
----Returns a structure with state of Xbox One gamepad, change it to alter its state. Changes remain for some time, keep calling it for continuos adjustments.
+---Returns a structure with state of Xbox One gamepad, change it to alter its state. Changes remain for some time, keep calling it for continuous adjustments.
 ---Note: if you’re writing a car script, first argument will be ignored and instead the effect would be applied to gamepad controlling the car if possible.
 ---@param gamepadIndex integer @0-based index, from 0 to 3.
----@param priority number? @If multiple scripts try to set LEDs at the same time, the call with highest priority will be applied. Default value: 0.
+---@param priority number? @If multiple scripts try to set something at the same time, the call with highest priority will be applied. Default value: 0.
 ---@param holdFor number? @Time to keep the changes for in seconds. Default value: 0.5.
 ---@return ac.StateXboxOutput? @Returns `nil` if there is no applicable controller, make sure to check for it.
 function ac.setXbox(gamepadIndex, priority, holdFor) end
@@ -4700,6 +4915,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field surfaceDirt number @Dirt additive coefficient of the surface below the wheel.
 ---@field surfaceSectorID integer @Sector ID of the surface below the wheel.
 ---@field surfaceSectionIndex integer @Index of section in “surfaces.ini” corresponding with surface the wheel is on, or -1 if it’s not available
+---@field surfaceOriginIndex integer @Index of “surfaces.ini” corresponding with surface the wheel is on (usually 0 for system surfaces and 1 for track surfaces), or -1 if it’s a wall
 ---@field surfaceGrip number @Grip of the surface below the wheel.
 ---@field surfaceDamping number @Damping of the surface below the wheel.
 ---@field surfaceGranularity number @Damping of the surface below the wheel.
@@ -4809,6 +5025,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field engineLifeLeft number @Engine life left (1000 for new engine, breaks at 0).
 ---@field dirt number @Body dirt level from 0 to 1.
 ---@field damage {[0|1|2|3|4]: number} @Damage values from 0 to maximum collision speed in km/h for four different zones (fifth one is not really used). 5 items, starts with 0.
+---@field suspensionDamage {[0|1|2|3]: number} @Damage values from 0 to 1. 4 items, starts with 0.
 ---@field gearboxDamage number @Gearbox damage (0 for new gearbox, 1 for non-functional).
 ---@field nodeIndex integer @Car index if 0 is nearest to camera, 1 is second nearest and so on.
 ---@field visibleIndex integer @Car index if 0 is nearest to camera and visible in main camera, 1 is second nearest visible and so on. Cars outside of main camera would have 255 here.
@@ -4820,7 +5037,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field driftComboCounter integer @Drift combo counter (calculated in any racing mode).
 ---@field collisionDepth number @How deep is current collision, in meters (generally it’s better to use change of car speed to estimate collision intensity though, depth is much less predictable).
 ---@field collisionPosition vec3 @Coordinates of current collision in car space.
----@field collidedWith integer @0 for track, non-zero for cars.
+---@field collidedWith integer @0 for track, non-zero for cars (so, car ID plus one), or -1 if there is no collision.
 ---@field lapCutsCount integer @Number of lap cuts in current lap. Physics-only (see `ac.CarState.physicsAvailable`)
 ---@field lastLapCutsCount integer @Number of lap cuts in last lap.
 ---@field aiLevel number @AI level from 0 to 1 (or -1 if there is no AI).
@@ -4974,8 +5191,8 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field steerTorque number
 ---@field ffbSteerAssist number @Value of `STEER_ASSIST` from car.ini. Broken until 0.3.0.
 ---@field ffbBase number @Value of `FFMULT` from car.ini.
----@field ffbFinal number
----@field ffbPure number
+---@field ffbFinal number @Base FFB value.
+---@field ffbPure number @FFB value scaled by controls and user gain.
 ---@field ffbMultiplier number @For 100% FFB multiplier, this value is set to 1.
 ---@field aeroLiftFront number @Aero lift coefficient in front.
 ---@field aeroLiftRear number @Aero lift coefficient in rear.
@@ -5015,6 +5232,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field leaderboard {[integer]: ac.StateLeaderboardEntry} @Items start with 0. To get number of elements, use `#state.leaderboard`.
 
 ---@class ac.StateWheelPhysics : ClassBase
+---@field driveTorque number @-1 if extended physics is disabled.
 ---@field brakeTorque number
 ---@field handbrakeTorque number
 ---@field electricTorque number
@@ -5057,7 +5275,8 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field windowHeight integer @Height of AC window in pixels (set in AC video settings). Might not be the same as UI screen size if scaling is used.
 ---@field msaaSamples integer @1 for MSAA disabled, 2 for MSAA 2x, 4 for 4x, 8 for 8x.
 ---@field worldDetailLevel integer @0 for very low, 5 for very high. Set in AC video settings
----@field windowSize vec2 @Size of AC window (not affected by UI scale).
+---@field windowSize vec2 @Size of AC window (not affected by UI scale or upscaler configuration).
+---@field renderSize vec2 @Size of scene render target (not affected by UI scale, but affected by upscaler configuration). In VR, actual VR resolution
 ---@field isFullscreen boolean @A value from AC video settings, does not change live.
 ---@field isHDR boolean @If `true`, HDR is active.
 ---@field isVSyncActive boolean @A value from AC video settings, does not change live.
@@ -5065,6 +5284,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field isVRMode boolean @True if AC was launched with either Oculus or OpenVR mode (not necessarily successfully connected).
 ---@field isOculusMode boolean @True if AC was launched with Oculus mode (not necessarily successfully connected).
 ---@field isOpenVRMode boolean @True if AC was launched with OpenVR mode (not necessarily successfully connected).
+---@field isOpenXRMode boolean @True if native OpenXR path is used (ACS still constructs OpenVR stereo camera).
 ---@field isTripleMode boolean @True if AC was launched in triple screen mode.
 ---@field isCustomVideoMode boolean @True if AC was launched with custom screen mode (fisheye, 360°, splitscreen).
 ---@field isVRConnected boolean @True if AC runs in either Oculus or OpenVR mode and initialization went successfully.
@@ -5080,15 +5300,18 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field freeCameraAllowed boolean @Can be changed in AC video settings.
 ---@field isPitsSpeedLimiterForced boolean @By default, `true`, but servers or offline races can alter session settings and disable this thing.
 ---@field customAISplinesAllowed boolean @Switches to `false` if `physics.setAISpline()` is not allowed in this session
----@field isTAAActive boolean @True with TAA or upcalers such as DLSS.
+---@field isTAAActive boolean @True with TAA or upscalers such as DLSS.
 ---@field isFSRActive boolean
 ---@field isTripleFSRActive boolean
 ---@field isLinearColorSpaceActive boolean
+---@field upscaleConfiguredFactor number @Upscalers (such as DLSS) configured factor, 1 if disabled, 0.33 for Ultra Performance. The one from graphics adjustments module
+---@field upscaleAppliedFactor number @Upscalers (such as DLSS) applied factor, 1 if disabled, 0.33 for Ultra Performance. Can be altered by post-processing filters to increase pixel density
+---@field upscaleSharpen number @Upscalers (such as DLSS) sharpening amount.
 ---@field resultScreenTime number @Results screen time in seconds (available online, -1 offline).
 ---@field raceOverTime number @Race over time in seconds (available online, -1 offline).
----@field mechanicalDamageRate number @In 0…1 range.
----@field tyreConsumptionRate number @In 0…1 range.
----@field fuelConsumptionRate number @In 0…1 range.
+---@field mechanicalDamageRate number @In 0…∞ range.
+---@field tyreConsumptionRate number @In 0…∞ range.
+---@field fuelConsumptionRate number @In 0…∞ range.
 ---@field gravity number @Negative value (pointing down), -9.81 in pretty much all cases (custom gravity might be enabled though)
 ---@field inputMode ac.UserInputMode @Input mode selected by user.
 ---@field windowHandle integer @Main window handle.
@@ -5101,9 +5324,14 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field frame number @Index of a current render frame.
 ---@field cameraPosition vec3
 ---@field cameraPositionDelta vec3 @How much camera has moved since the previous render step.
+---@field lastFinalCameraPosition vec3 @Final camera position at the start of rendering a frame in the last frame.
 ---@field cameraLook vec3 @Points forward (there was some confusion with older API).
 ---@field cameraUp vec3
 ---@field cameraSide vec3
+---@field headsetPosition vec3 @In VR, position of the headset (might be shifted relative to camera). Without VR, the same as `.cameraPosition`
+---@field headsetLook vec3 @In VR, look direction of the headset (might be shifted relative to camera). Without VR, the same as `.cameraLook`
+---@field headsetUp vec3 @In VR, up direction of the headset (might be shifted relative to camera). Without VR, the same as `.cameraUp`
+---@field headsetSide vec3 @In VR, side direction of the headset (might be shifted relative to camera). Without VR, the same as `.cameraSide`
 ---@field cameraFOV number @Returns current camera FOV in degrees. In VR, always returns 90°
 ---@field cameraClipNear number @Distance to near clipping plane in meters.
 ---@field cameraClipFar number @Distance to far clipping plane in meters.
@@ -5207,7 +5435,7 @@ function physics.getExtendedDamperTravel(carIndex, corner) end
 ---@field timeSinceLastUDPPacket number @Time since last UDP packet in seconds. Returns -1 outside of online session (change in CSP 0.2.7).
 ---@field replayFrames integer @Number of recorded replay frames.
 ---@field replayCurrentFrame integer @0-based index of current replay frame.
----@field replayPlaybackRate number @0-based index of current replay frame.
+---@field replayPlaybackRate number @1 at 100% replay speed, 0.5 for the 50% slow motion replay
 ---@field weatherType ac.WeatherType @Current weather type, set by WeatherFX controller or guessed from weather name.
 ---@field weatherSkyOcclusion number @Estimates sky occlusion based on current weather type.
 ---@field baseAltitude number @Altitude in meters above sea level associated with Y=0 level.
@@ -5795,11 +6023,11 @@ function math.cross(x, y) end
 ---@nodiscard
 function math.dot(x, y) end
 
----Calculates angle between vectors in radians.
+---Calculates angle between vectors in radians. Actually works, unlike old broken `math.angle()`.
 ---@param x vec2|vec3|vec4
 ---@return number @Radians.
 ---@nodiscard
-function math.angle(x, y) end
+function math.angle2(x, y) end
 
 ---Calculates distance between vectors.
 ---@param x vec2|vec3|vec4
@@ -6146,7 +6374,7 @@ function table.chain(table, ...) end
 
 --[[ common/table.lua ]]
 
----Checks if table is an array or not. Arrays are tables that only have consecutive numeric keys. If this function returns `true`, it doesn’t mean
+---Checks if table is an array or not. Arrays are tables that only have consecutive numeric keys, starting with 1. If this function returns `true`, it doesn’t mean
 ---underlying LuaJIT structure is exactly a dense array, but it does mean that it could be. For example, `{[2]=2, [1]=1}` is not a dense array from
 ---LuaJIT POV, but semantically it is, and so `table.isArray()` would return `true`.
 ---@param t table|any[]
@@ -6252,7 +6480,7 @@ function table.same(t1, t2, deep) end
 ---@generic TCallbackData
 ---@param t {[TKey]: T}
 ---@param itemsJoin string? @Default value: ','.
----@param keyValueJoin string? @Default value: '='.
+---@param keyValueJoin string? @Default value: '=' (unless `toStringCallback` is set).
 ---@param toStringCallback nil|fun(item: T, key: TKey, callbackData: TCallbackData): string
 ---@param toStringCallbackData TCallbackData?
 ---@overload fun(t: table, itemsJoin: string, toStringCallback: fun(item: any, key: any, callbackData: any), toStringCallbackData: any)
@@ -6271,7 +6499,7 @@ function table.join(t, itemsJoin, keyValueJoin, toStringCallback, toStringCallba
 ---@nodiscard
 function table.slice(t, from, to, step) end
 
----Flips table from back to front, requires an array.
+---Flips table from back to front.
 ---@generic T
 ---@param t T[]
 ---@return T[]
@@ -6430,7 +6658,6 @@ function table.minEntry(t, callback, callbackData) end
 ---@param t {[TKey]: T}
 ---@param callback fun(item: T, key: TKey, callbackData: TCallbackData)
 ---@param callbackData TCallbackData?
----@return table
 function table.forEach(t, callback, callbackData) end
 
 ---Creates a new table with unique elements from original table only. Optionally, a callback
@@ -6468,7 +6695,7 @@ function table.findLeftOfIndex(t, testCallback, testCallbackData) end
 ---@return T
 function table.assign(target, ...) end
 
----Flattens table similar to JavaScript function with the same name. Requires an array.
+---Flattens table similar to JavaScript function with the same name.
 ---@param t any[]
 ---@param maxLevel integer? @Default value: 1.
 ---@return any[]
@@ -6491,7 +6718,7 @@ function table.flatten(t, maxLevel) end
 function table.range(endingIndex, startingIndex, step, callback, callbackData) end
 
 ---Creates a new table from iterator. Supports iterators returning one or two values (if two values are returned, first is considered the key,
----if not, values are simply added to a list).
+---if not, values are simply added to a list). If `nil` is returned, stops building and returns the resulting table.
 ---
 ---Example:
 ---```
@@ -6686,6 +6913,14 @@ function physics.Collider.Ray(length, origin, dir, debug) end
 ---@return physics.ColliderType
 function physics.Collider.Track() end
 
+---Track walls. Added in 0.3.0-preview641.
+---@return physics.ColliderType
+function physics.Collider.TrackWalls() end
+
+---Track ground (entire track except walls). Added in 0.3.0-preview641.
+---@return physics.ColliderType
+function physics.Collider.TrackGround() end
+
 --[[ common/ac_extras_ini.lua ]]
 
 ---A wrapper for data parsed from an INI files, supports different INI formats. Parsing is done on
@@ -6824,12 +7059,18 @@ function ac.INIConfig.load(filename, format, includeFolders) end
 ---@return ac.INIConfig
 function ac.INIConfig.carData(carIndex, fileName) end
 
----Load track data INI file. Can be used by track scripts which might not always  have access to those files directly.
+---Load track data INI file. Can be used by track scripts which might not always have access to those files directly.
 ---
 ---Returned file can’t be saved.
 ---@param fileName string @Car data file name, such as `'tyres.ini'`.
 ---@return ac.INIConfig
 function ac.INIConfig.trackData(fileName) end
+
+---Load system surfaces INI file.
+---
+---Returned file can’t be saved.
+---@return ac.INIConfig
+function ac.INIConfig.systemSurfacesData(fileName) end
 
 ---Returns CSP config for a car. Might be slow: some of those configs are huge. Make sure to cache the resulting value if you need to reuse it.
 ---
@@ -7330,6 +7571,11 @@ function ac.tagAsFriend(driverName, isFriend) end
 ---@field trackNumber integer @1-based track number in current album, or 0 if value is not available.
 ---@field trackDuration integer @Track duration in seconds, or -1 if value is not available.
 ---@field trackPosition integer @Track position in seconds, or -1 if value is not available.
+---@field shuffleMode integer @Shuffle mode (1 if active, 0 if not), or -1 if value is not available.
+---@field repeatMode integer @Repeat mode (1 for track, 2 for list, 0 if disabled), or -1 if value is not available.
+---@field playbackType integer @Playback type (0 for unknown, 1 for music, 2 for video, 3 for image), or -1 if value is not available.
+---@field playbackStatus integer @Playback status (0 for closed, 1 for opened, 2 for changing, 3 for stopped, 4 for playing, 5 for paused), or -1 if value is not available.
+---@field playbackRate integer @Playback rate (speed multiplier), or -1 if value is not available.
 local _musicData = {}
 
 --[[ common/ac_music.lua ]]
@@ -7706,11 +7952,40 @@ function ac.getDualShockControllers() end
 
 --[[ common/ac_web.lua ]]
 
+---Table with headers. Numbers will be turned into strings, booleans encoded as 0 or 1. Pass an array of strings as a value, and it’ll turn into a single comma-separated value (so, `['Access-Control-Allow-Methods'] = {'GET', 'POST'}` is the same as `['Access-Control-Allow-Methods'] = 'GET, POST`).
+---
+---Note: array support was added in 0.3.0-preview451.
+---
+---Header keys can’t use “:”, so there are special values with “:” prefix to tweak a request further:
+---
+---- Use `[':headers-only'] = true` if you don’t need actual response, and only need the response headers (for the servers without proper support of HEAD method);
+---
+---- Add `[':https-certificate'] = string|true` for HTTPS pinning (added in 0.2.10). If set to `true`, `WebResponse` will have a `certificate` field with SHA256 fingerprint of the leaf certificate of the first request. Alternatively, you can set it to the fingerprint value, and request will fail if certificate doesn’t match. In 0.3.0-preview451, more options were added (you can list the via comma, or pass all of them in a table): 
+---  - `collect`: collect detailed information about certificates (returned `certificate` field will store a table instead of a string); 
+---  - `chain`: check the entire certificate chain, not just the leaf certificate;
+---  - `publicKey`: check SHA256 checksums of public keys as well;
+---  - `first`: check certificates of the initial request;
+---  - `middle`: check certificates of the intermediate redirecting requests;
+---  - `last`: check certificates of the final request;
+--- 
+---  If none of `first`, `middle` or `last` flags set, CSP will check certificates of the first request only, raising an error if there is a mismatch.
+---  Also, with preview499 update, CSP allows to pass multiple checksums to compare against, and filters out non-hex characters out of them, so you can
+---  copy-paste a SHA256 fingerprint from Firefox, for example, directly.
+---
+---- Add `[':https-ignore-errors'] = {…}` to ignore certain HTTPS errors (added in 0.3.0-preview451). Together with `':https-certificate'`, this allows to pin to
+---self-signed HTTPS certificates. Available values to list:
+---  - `ca`: allow an invalid certificate authority (basically, self-signed certificates);
+---  - `date`: allow an invalid certificate date, that is, an expired or not-yet-effective certificate;
+---  - `name`: allow an invalid common name (when host name doesn’t match the one in certificate);
+---  - `usage`: allow a certificate of incorrect type, for example, a non-server certificate;
+---  - `any`: ignore errors that are possible to ignore;
+---@alias web.Headers table<string, string|string[]|number|boolean>
+
 ---@class WebResponse
 ---@field status integer
 ---@field headers table<string, string>
 ---@field body string
----@field certificate string? @Set `[':https-certificate'] = true` header to get hex-encoded SHA-256 fingerprint of the HTTPS certificate (or fail if HTTPS is not used). Disables caching. Alternatively, set `[':https-certificate'] = 'SHA256_GOES_HERE'` to add a simple direct fingerprint test without disabling cache. Fingerprints match those reported by Firefox as SHA-256 fingerprint. You can also specify this header (with a value) for `web.loadRemote…` functions.
+---@field certificate string|table? @Filled with some configurations of `':https-certificate'` headed. See `web.Headers` for more information.
 local _webResponse = {}
 
 ---Two possible ways to present payload: either as a string with data, or a table with a key `'filename'`.
@@ -7737,7 +8012,7 @@ function web.timeouts(resolve, connect, send, receive, threads) end
 ---a faulty script wouldn’t spam a remote server or overload internet connection (that’s how I lost access
 ---to one of my API tokens for some time, accidentally sending a request each frame).
 ---@param url string @URL.
----@param headers table<string, string|number|boolean>? @Optional headers. Use special `[':headers-only'] = true` header if you only need to load headers (for servers without proper support of HEAD method). Another special key added in 0.2.10 is `[':https-certificate'], see `WebResponse` docs for more info.
+---@param headers web.Headers? @Optional headers.
 ---@param callback fun(err: string, response: WebResponse)
 ---@overload fun(url: string, callback: fun(err: string, response: WebResponse))
 function web.get(url, headers, callback) end
@@ -7746,7 +8021,7 @@ function web.get(url, headers, callback) end
 ---a faulty script wouldn’t spam a remote server or overload internet connection (that’s how I lost access
 ---to one of my API tokens for some time, accidentally sending a request each frame).
 ---@param url string @URL.
----@param headers table<string, string|number|boolean>? @Optional headers. Use special `[':headers-only'] = true` header if you only need to load headers (for servers without proper support of HEAD method).
+---@param headers web.Headers? @Optional headers.
 ---@param data WebPayload? @Optional data.
 ---@param callback fun(err: string, response: WebResponse)
 ---@overload fun(url: string, data: string, callback: fun(err: string, response: WebResponse))
@@ -7758,7 +8033,7 @@ function web.post(url, headers, data, callback) end
 ---to one of my API tokens for some time, accidentally sending a request each frame).
 ---@param method "'GET'"|"'POST'"|"'PUT'"|"'HEAD'"|"'DELETE'"|"'PATCH'"|"'OPTIONS'" @HTTP method.
 ---@param url string @URL.
----@param headers table<string, string|number|boolean>? @Optional headers. Use special `[':headers-only'] = true` header if you only need to load headers (for servers without proper support of HEAD method).
+---@param headers web.Headers? @Optional headers.
 ---@param data WebPayload? @Optional data.
 ---@param callback fun(err: string, response: WebResponse)
 ---@overload fun(method: string, url: string, data: string, callback: fun(err: string, response: WebResponse))
@@ -7770,7 +8045,7 @@ function web.request(method, url, headers, data, callback) end
 
 ---Open a WebSocket connection.
 ---@param url string @URL.
----@param headers table<string, string|number|boolean>? @Optional headers.
+---@param headers web.Headers? @Optional headers.
 ---@param callback nil|fun(data: binary)
 ---@param params web.SocketParams?
 ---@return web.Socket
@@ -7817,7 +8092,7 @@ physics = {}
 ---it wouldn’t allow code to access existing functions by default.
 ---@param obj table|number|string|boolean|nil @Object to serialize.
 ---@param compact boolean? @If true, resulting string would not have spaces and line breaks, slightly faster and a lot more compact.
----@param depthLimit integer? @Limits how deep serialization would go. Default value: 20.
+---@param depthLimit integer? @Limits how deep serialization would go. Default value: 20. With 0, table `obj` will be serlialized, but not the inner tables.
 ---@return string @String with input data presented in Lua syntax.
 function stringify(obj, compact, depthLimit) end
 
@@ -7857,7 +8132,7 @@ function stringify.register(name, fn) end
 ---@param ptr integer @Position within `out` table to write next word into. At the very start, when table is empty, it would be 1.
 ---@param obj any @Item to serialize.
 ---@param lineBreak string|nil @Line break with some spaces for aligning child items, or `nil` if compact stringify mode is used. One tab is two spaces.
----@param depthLimit integer @Limits how many steps down serialization can go. If 0 or below, no tables would be serialized.
+---@param depthLimit integer @Limits how many steps down serialization can go. If -1 or below, no tables would be serialized.
 ---@return integer @Updated `ptr` value (if one item was added to `out`, should increase by 1).
 function stringify.substep(out, ptr, obj, lineBreak, depthLimit) end
 
@@ -8012,23 +8287,23 @@ function vec2:type() end
 
 ---@param x vec2|number
 ---@param y number?
----@return vec2 @Returns itself.
+---@return self @Returns itself.
 function vec2:set(x, y) end
 
 ---@param vec vec2
 ---@param scale number
----@return vec2 @Returns itself.
+---@return self @Returns itself.
 function vec2:setScaled(vec, scale) end
 
 ---@param value1 vec2
 ---@param value2 vec2
 ---@param mix number
----@return vec2 @Returns itself.
+---@return self @Returns itself.
 function vec2:setLerp(value1, value2, mix) end
 
 ---Copies its values to a different vector.
 ---@param out vec2
----@return vec2 @Returns itself.
+---@return self @Returns itself.
 function vec2:copyTo(out) end
 
 ---@param valueToAdd vec2|number
@@ -8108,7 +8383,7 @@ function vec2:closerToThan(otherVector, distanceThreshold) end
 
 ---@param otherVector vec2
 ---@return number @Radians.
-function vec2:angle(otherVector) end
+function vec2:angle2(otherVector) end
 
 ---@param otherVector vec2
 ---@return number
@@ -8221,29 +8496,30 @@ function vec3:type() end
 ---@param x vec3|number
 ---@param y number?
 ---@param z number?
----@return vec3 @Returns itself.
+---@return self @Returns itself.
 function vec3:set(x, y, z) end
 
 ---@param vec vec3
 ---@param scale number
----@return vec3 @Returns itself.
+---@return self @Returns itself.
 function vec3:setScaled(vec, scale) end
 
 ---@param value1 vec3
 ---@param value2 vec3
 ---@param mix number
----@return vec3 @Returns itself.
+---@return self @Returns itself.
 function vec3:setLerp(value1, value2, mix) end
 
----Sets itself to a normalized result of cross product of value1 and value2.
+---Sets itself to a normalized result of cross product of value1 and value2. Replaces old `:setCrossNormalized()`
+---which had its arguments wrong way around.
 ---@param value1 vec3
 ---@param value2 vec3
----@return vec3 @Returns itself.
-function vec3:setCrossNormalized(value1, value2) end
+---@return self @Returns itself.
+function vec3:setCrossNormalized2(value1, value2) end
 
 ---Copies its values to a different vector.
 ---@param out vec3
----@return vec3 @Returns itself.
+---@return self @Returns itself.
 function vec3:copyTo(out) end
 
 ---@param valueToAdd vec3|number
@@ -8323,7 +8599,7 @@ function vec3:closerToThan(otherVector, distanceThreshold) end
 
 ---@param otherVector vec3
 ---@return number @Radians.
-function vec3:angle(otherVector) end
+function vec3:angle2(otherVector) end
 
 ---@param otherVector vec3
 ---@return number
@@ -8460,29 +8736,23 @@ function vec4:type() end
 ---@param y number?
 ---@param z number?
 ---@param w number?
----@return vec4 @Returns itself.
+---@return self @Returns itself.
 function vec4:set(x, y, z, w) end
 
 ---@param vec vec4
 ---@param scale number
----@return vec4 @Returns itself.
+---@return self @Returns itself.
 function vec4:setScaled(vec, scale) end
 
 ---@param value1 vec4
 ---@param value2 vec4
 ---@param mix number
----@return vec4 @Returns itself.
+---@return self @Returns itself.
 function vec4:setLerp(value1, value2, mix) end
-
----Sets itself to a normalized result of cross product of value1 and value2.
----@param value1 vec4
----@param value2 vec4
----@return vec4 @Returns itself.
-function vec4:setCrossNormalized(value1, value2) end
 
 ---Copies its values to a different vector.
 ---@param out vec4
----@return vec4 @Returns itself.
+---@return self @Returns itself.
 function vec4:copyTo(out) end
 
 ---@param valueToAdd vec4|number
@@ -8562,7 +8832,7 @@ function vec4:closerToThan(otherVector, distanceThreshold) end
 
 ---@param otherVector vec4
 ---@return number @Radians.
-function vec4:angle(otherVector) end
+function vec4:angle2(otherVector) end
 
 ---@param otherVector vec4
 ---@return number
@@ -9358,7 +9628,7 @@ function web.encryptKey(key) end
 ---loading until that happens (function returns straight away, and you can create new audio events straight
 ---away, but they would only become valid after audio initialization is complete).
 ---@param soundbank string @Path to “.bank” file, could be absolute or relative to Lua script folder.
----@param guids string? @Path to “.txt” file with GUIDs, if missing, “GUIDs.txt” from soundbank folder will be used.
+---@param guids string? @Path to “.txt” file with GUIDs, if missing, “GUIDs.txt” from soundbank folder will be used. Since 0.3.0-preview370, could also be actual GUIDs as text.
 ---@return boolean @Returns `true` if both files were found.
 function ac.loadSoundbank(soundbank, guids) end
 
@@ -9449,6 +9719,13 @@ function _ac_AudioEvent:isPaused() end
 ---@return boolean
 function _ac_AudioEvent:isWithinRange() end
 
+---A shortcut to quickly set those multipliers.
+---@param interior number? @Volume multiplier from 0 to 1. Default value: 1.
+---@param exterior number? @Volume multiplier from 0 to 1. Default value: 1.
+---@param track number? @Volume multiplier from 0 to 1. Default value: 1.
+---@return self
+function _ac_AudioEvent:setVolumeMultipliers(interior, exterior, track) end
+
 function _ac_AudioEvent:resume() end
 
 ---If condition is `true`, start an audio event if it’s stopped, resume it if it’s paused. If condition is false, stop audio event.
@@ -9493,12 +9770,34 @@ function _ac_AudioEvent:getDSPMetering(i, dir) end
 --[[ csp.lua ]]
 
 ---GIF player can be used to display animated GIFs. Also supports regular and animated WEBP images.
----@param source string|{width: number, height: number, decompress: boolean?} @URL, filename or binary data.
+---
+---Also, it can be used to efficiently draw (or pass to a shader) any arbitrary data (GIF decoding happens on CPU, and for it, there is all this
+---logic to efficiently push data from CPU to GPU — so why not let Lua, if needed, to instead push arbitrary data). For it, instead of a URL or
+---a filename, pass a table to the constructor with `width` and `height`. This would create an empty image. Call `:push(data)`, and it’ll copy
+---passed data (could be a string, or, for example, a struct) to GPU. Add a field `decompress` set to `true`, and it’ll run `ac.decompress()` on
+---that data first. Since CSP 0.3.0-preview466, you can also add a `format` field to specify a custom format (before that, it was always RGBA8888).
+---Possible use cases:
+---- A fast way to draw pixels directly (use `ac.StructItem.build()` to build a structure holding pixel data, update values and push them to the player);
+---- An efficient way to pass a lot of data to a shader (these textures can be bound to shaders and accessed as textures, but they don’t have to store actual images);
+---- The simplest “video” streaming solution (if target resolution is small, an API endpoint can serve basic compressed binary data, and clients can
+---repeatedly acquire it and push it here).
+---@param source string|{width: number, height: number, decompress: boolean?, format: render.TextureFormat?} @URL, filename or binary data.
 ---@param simTime boolean? @Pass `true` to use simulation time (pause GIF when AC is paused), or `false` to use UI time. By default, `true` for car and track scripts.
 ---@return ui.GIFPlayer
 function ui.GIFPlayer(source, simTime) end
 
 ---GIF player can be used to display animated GIFs. Also supports regular and animated WEBP images.
+---
+---Also, it can be used to efficiently draw (or pass to a shader) any arbitrary data (GIF decoding happens on CPU, and for it, there is all this
+---logic to efficiently push data from CPU to GPU — so why not let Lua, if needed, to instead push arbitrary data). For it, instead of a URL or
+---a filename, pass a table to the constructor with `width` and `height`. This would create an empty image. Call `:push(data)`, and it’ll copy
+---passed data (could be a string, or, for example, a struct) to GPU. Add a field `decompress` set to `true`, and it’ll run `ac.decompress()` on
+---that data first. Since CSP 0.3.0-preview466, you can also add a `format` field to specify a custom format (before that, it was always RGBA8888).
+---Possible use cases:
+---- A fast way to draw pixels directly (use `ac.StructItem.build()` to build a structure holding pixel data, update values and push them to the player);
+---- An efficient way to pass a lot of data to a shader (these textures can be bound to shaders and accessed as textures, but they don’t have to store actual images);
+---- The simplest “video” streaming solution (if target resolution is small, an API endpoint can serve basic compressed binary data, and clients can
+---repeatedly acquire it and push it here).
 ---@class ui.GIFPlayer
 ---@field keepRunning boolean @By default GIFs stop playing if they are not actively used in rendering. If you need them to keep running in background, set this property to `true`.
 local _ui_GIFPlayer = nil
@@ -9610,6 +9909,11 @@ function _ac_VertexBuffer:get(index) end
 ---@param index integer @1-based index.
 ---@param vertex ac.MeshVertex
 function _ac_VertexBuffer:set(index, vertex) end
+
+---KN5 filename relative to script folder or AC root folder. Since 0.2.5, you can instead pass a table with filename and
+---a filter (for example, `'{ ! renderable:no }'`; note that filter will applied to every node and mesh).
+---Add `forceRenderableOn = true` flag, and non-renderable geometry will be loaded as renderable (the flag has been added in 0.3.0-preview477).
+---@alias ac.LoadKN5Params string|{filename: string, filter: string?, forceRenderableOn: boolean?}
 
 ---Buffer with mesh indieces. Contains `integer` items (limited by 16 bits for AC to handle).
 ---@param size nil|integer|integer[] "Initial size or initializing values."
@@ -9776,6 +10080,17 @@ function _ac_SceneReference:createNode(name, keepAlive) end
 ---@return ac.SceneReference @Newly created mesh or `nil` if failed
 function _ac_SceneReference:createMesh(name, materialName, vertices, indices, keepAlive, moveData) end
 
+---Create a new mesh with a given name and attach it as a child asyncronously. Steals passed vertices and indices to avoid reallocating
+---memory, so make sure to use `vertices:clone()` when passing if you want to keep the original data. 
+---@param name string
+---@param materialName string?
+---@param vertices ac.VertexBuffer
+---@param indices ac.IndicesBuffer
+---@param keepAlive boolean|`true`|`false` @Set to `true` to create a long-lasting node which wouldn’t be removed when script is reloaded.
+---@param moveData boolean? @Set to `true` to move vertices and indices data thus saving on reallocating memory. You can use `vertices:clone()` for one of them to retain original array. Default value: `false`.
+---@param callback fun(err: string?, loaded: ac.SceneReference?) @Callback called once mesh is created.
+function _ac_SceneReference:createMeshAsync(name, materialName, vertices, indices, keepAlive, moveData, callback) end
+
 ---Replace mesh vertices dynamically. New number of vertices should match existing one, indices work the same. Can be used for dynamic
 ---mesh alteration (for example, deformation). Calling it each frame with highly detailed mesh might still affect performance negatively though.
 ---@param vertices ac.VertexBuffer
@@ -9806,7 +10121,7 @@ function _ac_SceneReference:createBoundingSphereNode(name, radius) end
 ---
 ---Node: The way it actually works, KN5 would be loaded in a pool and then copied here (with sharing
 ---of resources such as vertex buffers). This generally helps with performance.
----@param filename string|{filename: string, filter: string} @KN5 filename relative to script folder or AC root folder. Since 0.2.5, you can instead pass a table with filename and a filter (for example, `'{ ! renderable:no }'`; note that filter will applied to every node and mesh).
+---@param filename ac.LoadKN5Params
 ---@return ac.SceneReference @Can return `nil` if failed.
 function _ac_SceneReference:loadKN5(filename) end
 
@@ -9815,7 +10130,7 @@ function _ac_SceneReference:loadKN5(filename) end
 ---Node: The way it actually works, KN5 would be loaded in a pool and then copied here (with sharing
 ---of resources such as vertex buffers). This generally helps with performance. Main KN5 would be
 ---loaded as well, but not shown, and instead kept in a pool.
----@param filename string|{filename: string, filter: string} @KN5 filename relative to script folder or AC root folder. Since 0.2.5, you can instead pass a table with filename and a filter (for example, `'{ ! renderable:no }'`; note that filter will applied to every node and mesh).
+---@param filename ac.LoadKN5Params
 ---@param mainFilename string @Main KN5 filename relative to script folder or AC root folder.
 ---@return ac.SceneReference @Can return `nil` if failed.
 function _ac_SceneReference:loadKN5LOD(filename, mainFilename) end
@@ -9824,8 +10139,8 @@ function _ac_SceneReference:loadKN5LOD(filename, mainFilename) end
 ---
 ---Node: The way it actually works, KN5 would be loaded in a pool and then copied here (with sharing
 ---of resources such as vertex buffers). This generally helps with performance.
----@param filename string|{filename: string, filter: string} @KN5 filename relative to script folder or AC root folder. Since 0.2.5, you can instead pass a table with filename and a filter (for example, `'{ ! renderable:no }'`; note that filter will applied to every node and mesh).
----@param callback fun(err: string, loaded: ac.SceneReference?) @Callback called once model is loaded.
+---@param filename ac.LoadKN5Params
+---@param callback fun(err: string?, loaded: ac.SceneReference?) @Callback called once model is loaded.
 function _ac_SceneReference:loadKN5Async(filename, callback) end
 
 ---Load KN5 model and attach it as a child asyncronously. Parameter `mainFilename` should refer to the main KN5 with all the textures.
@@ -9833,9 +10148,9 @@ function _ac_SceneReference:loadKN5Async(filename, callback) end
 ---Node: The way it actually works, KN5 would be loaded in a pool and then copied here (with sharing
 ---of resources such as vertex buffers). This generally helps with performance. Main KN5 would be
 ---loaded as well, but not shown, and instead kept in a pool.
----@param filename string|{filename: string, filter: string} @KN5 filename relative to script folder or AC root folder. Since 0.2.5, you can instead pass a table with filename and a filter (for example, `'{ ! renderable:no }'`; note that filter will applied to every node and mesh).
+---@param filename ac.LoadKN5Params
 ---@param mainFilename string @Main KN5 filename relative to script folder or AC root folder.
----@param callback fun(err: string, loaded: ac.SceneReference?) @Callback called once model is loaded.
+---@param callback fun(err: string?, loaded: ac.SceneReference?) @Callback called once model is loaded.
 function _ac_SceneReference:loadKN5LODAsync(filename, mainFilename, callback) end
 
 ---Loads animation from a file (on first call only), sets animation position. To use remote animations, first load them with `web.loadRemoteAnimation()`.
@@ -9897,7 +10212,7 @@ function _ac_SceneReference:setDepthMode(mode) end
 function _ac_SceneReference:setAttribute(key, value) end
 
 ---Gets an attribute value.
----@param key string
+---@param key string @Key `'$KN5'` would return the filename of the KN5 file.
 ---@param defaultValue number|string|nil @If `nil` is passed, returns string (or `nil` if attribute is not set).
 ---@return string|number|nil @Type is determined based on type of `defaultValue`.
 function _ac_SceneReference:getAttribute(key, defaultValue) end
@@ -9981,11 +10296,13 @@ function _ac_SceneReference:getWorldTransformationRaw() end
 function _ac_SceneReference:getStaticAABB() end
 
 ---Returns AABB (minimum and maximum coordinates in vector) of meshes in current selection in local mesh coordinates. Recalculates
----AABB live, might take some time with high-poly meshes.
+---AABB live, might take some time with high-poly meshes. If nodes are present in the selection, takes their local transforms into
+---account when computing AABBs of their child meshes.
+---@param transform mat4x4? @Optional argument for an extra transform. Added in 0.3.0-preview482.
 ---@return vec3 @Minimum coordinate.
 ---@return vec3 @Maximum coordinate.
 ---@return integer @Number of static meshes in selection.
-function _ac_SceneReference:getLocalAABB() end
+function _ac_SceneReference:getLocalAABB(transform) end
 
 ---Returns a new scene reference with a child in certain index (assuming current scene reference points to node). If current reference
 ---contains several nodes, children from all of them at given index will be collected.
@@ -10169,6 +10486,28 @@ function _ac_SceneReference:dumpShaderReplacements() end
 ---@return self
 function _ac_SceneReference:hintAsObscured(hide) end
 
+---Switch shader to bending one. Allows to easily bend geometry live, by calling functions from the returned table. Do not change `params` live
+---unless in exceptional cases: it’s slow, and motion buffer won’t work reliably.
+---
+---For `tessellation` table, `distance` and `factor` are expected to be tables with two numbers in them (minimum distance with highest details,
+---maximum distance with lowest details; tessellation factor for lowest details, factor for highest detailes).
+---
+---Up to 8 points are supported. Point can either fix geometry, or apply a shift. Positions are in mesh coordinate space;
+---@param params {points: {position: vec3, radius: vec3?, gradientOffset: number?, exponent: number?, smooth: number?}[], alphaMode: 'REFLECTION'|'DIFFUSE'|'OPAQUE'|'NORMAL'|nil, tessellation: nil|boolean|{distance: {[1]: number, [2]: number}, factor: {[1]: number, [2]: number}}}|`{ points = {  }, alphaMode = nil, tessellation = nil }`
+---@return { shift: fun(index: integer, offset: vec3), pin: fun(index: integer) }
+function _ac_SceneReference:applyBendingShader(params) end
+
+---Shift a point.
+---@param index integer @Point, from 1 to 8.
+---@param offset vec3 @Offset, in mesh coordinate space.
+---@return self
+function ac.SceneReference.shift(index, offset) end
+
+---Pin a point down.
+---@param index integer @Point, from 1 to 8.
+---@return self
+function ac.SceneReference.pin(index) end
+
 ---@param neck ac.SceneReference
 ---@param modelName string
 ---@param carIndex integer
@@ -10228,12 +10567,20 @@ function _ac_SceneReference:setParent(parentSceneRef) end
 ---@return self @Returns self for easy chaining.
 function _ac_SceneReference:setVirtualCarFlag(active) end
 
+---Simply assign material of another scene reference to all the meshes in this reference. As a result, both meshes
+---will share a material. Chain with `:ensureUniqueMaterials()` to make copied materials unique.
+---@param otherSceneRef ac.SceneReference @Scene reference to copy a material from.
+---@param index integer|nil @1-based index of an element in `otherSceneRef` to use a material of. Default value: 1.
+---@return self @Returns self for easy chaining.
+function _ac_SceneReference:assignMaterialFrom(otherSceneRef, index) end
+
 ---Finds materials in another scene reference that have the same names as materials in a given scene reference,
 ---and copies them over, so after that both references would share materials. Example use case: if you have LOD A and
 ---LOD B and LOD A got unique materials (because there are multiple objects sharing same KN5 model), with this function
 ---it’s possible to sync together materials from LOD A and LOD B by running `lodB:setMaterialsFrom(lodA)`. And because
 ---materials would not be actually copied, but instead shared, any consequent change of material properly in LOD A would
 ---be mirrored in LOD B.
+---@param materialSceneRef ac.SceneReference
 ---@return self @Returns self for easy chaining.
 function _ac_SceneReference:setMaterialsFrom(materialSceneRef) end
 
@@ -10253,10 +10600,22 @@ function _ac_SceneReference:setMaterialsFrom(materialSceneRef) end
 ---@return ac.SceneReference @Reference to a child, might be empty if there is no such child.
 function _ac_SceneReference:at(index, outSceneRef) end
 
----Returns number of nodes and meshes matching between this and another scene reference. Could be used to quickly find out if a certain element is in a set.
+---Returns number of unique nodes and meshes among this and another scene reference. Named wrongly (well, coded wrongly, but name and
+---description have been fixed to match the implementation, for compatibility).
+---Use `:countUnion()` or `:countIntersection()` instead. @deprecated
 ---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them. 
 ---@return integer
 function _ac_SceneReference:countMatches(other) end
+
+---Returns number of unique nodes and meshes among this and another scene reference. 
+---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them. 
+---@return integer
+function _ac_SceneReference:countUnion(other) end
+
+---Returns number of nodes and meshes matching between this and another scene reference. Could be used to quickly find out if a certain element is in a set.
+---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them. 
+---@return integer
+function _ac_SceneReference:countIntersection(other) end
 
 ---Creates a new scene reference containing unique elements from both sets.
 ---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them.
@@ -10268,10 +10627,16 @@ function _ac_SceneReference:makeUnionWith(other) end
 ---@return ac.SceneReference
 function _ac_SceneReference:makeIntersectionWith(other) end
 
----Creates a new scene reference containing only the elements found in first set, but not in second set.
+---Creates a new scene reference containing only the elements found in the second set, but not in first set (by mistake).
+---Use `:makeDifferenceWith()` instead. @deprecated
 ---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them. 
 ---@return ac.SceneReference
 function _ac_SceneReference:makeSubtractionWith(other) end
+
+---Creates a new scene reference containing only the elements found in first set, but not in second set.
+---@param other nil|ac.SceneReference|ac.SceneReference[] @Can be a single scene reference or a table with several of them. 
+---@return ac.SceneReference
+function _ac_SceneReference:makeDifferenceWith(other) end
 
 ---Create new fake shadow node. Uses the same shading as track fake shadows.
 ---@param params {points: vec3[], opacity: number, squaredness: vec2}|`{ points = {  }, opacity = 1, squaredness = vec2() }` "@Params for newly created node."
@@ -10300,6 +10665,15 @@ function _ac_SceneReference:setFakeShadowOpacity(opacity) end
 ---@param includeType ac.IncludeType? @Include type. If not set, includes will not be resolved, so templates won’t work. Default value: `ac.IncludeType.None`.
 ---@return self @Returns self for easy chaining.
 function _ac_SceneReference:applyShaderReplacements(data, includeType) end
+
+---Applies shader replacements stored in INI config format. Can optionally load included files, so templates
+---work as well. If there is no symbol “[” in `data`, applies passed values to all meshes and materials in selection.
+---Async variant, freezing the game a bit less (still might cause a freeze though).
+---@param data string|ac.INIConfig @Config in INIPP format.
+---@param includeType ac.IncludeType? @Include type. If not set, includes will not be resolved, so templates won’t work. Default value: `ac.IncludeType.None`.
+---@param callback fun()? @A callback that will be called once everything is done.
+---@return self @Returns self for easy chaining.
+function _ac_SceneReference:applyShaderReplacementsAsync(data, includeType, callback) end
 
 ---Projects texture onto a mesh or few meshes, draws result. Use in when updating a dynamic texture, display or an extra canvas.
 ---Position, and directions are set in world space.
@@ -10457,9 +10831,13 @@ local _ac_GeometryShot = nil
 ---Disposes geometry shot and releases resources.
 function _ac_GeometryShot:dispose() end
 
+---Returns space taken by texture in bytes.
+---@return integer
+function _ac_GeometryShot:memoryFootprint() end
+
 ---Sets geometry shot name for debugging. Shots with set name appear in Lua Debug App, allowing to monitor their state.
 ---@param name string? @Name to display texture as. If set to `nil` or `false`, name will be reset and texture will be hidden.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setName(name) end
 
 ---Updates texture making a shot of referenced geometry with given camera parameters. Camera coordinates are set in world space.
@@ -10469,14 +10847,14 @@ function _ac_GeometryShot:setName(name) end
 ---@param look vec3 @Camera direction.
 ---@param up vec3? @Camera vector facing upwards relative to camera. Default value: `vec3(0, 1, 0)`.
 ---@param fov number? @FOV in degrees. Default value: 90.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 ---@overload fun(self: ac.SceneReference, view: mat4x4, proj: mat4x4, pos: vec3?) @An overload taking raw matrices. Some visuals might not work correctly with some of wilder matrices. `pos` is optional and needed for things like speculars to work.
 function _ac_GeometryShot:update(pos, look, up, fov) end
 
 ---Updates texture making a shot from a position of a track camera. Pass the index of a car to focus on.
 ---@param carIndex integer? @0-based car index. Default value: `0`.
 ---@param camerasSet integer? @0-based cameras set index. Default value: `-1` (use currently selected set).
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:updateWithTrackCamera(carIndex, camerasSet) end
 
 ---Returns a texture reference to a depth buffer (only if created with `withDepth` set to `true`), which you can use to draw
@@ -10489,93 +10867,98 @@ function _ac_GeometryShot:depth() end
 
 ---Clears texture.
 ---@param col rgbm
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:clear(col) end
 
 ---Generates MIPs. Once called, switches texture to manual MIPs generating mode. Note: this operation is not that expensive, but it’s not free.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:mipsUpdate() end
 
 ---Forces opaque meshes to show up as white in alpha channel. Disabled by default. Might not work with some exotic materials.
 ---Since v0.2.3 also applies an extra post-processing pass fixing alpha with YEBIS.
 ---@param value boolean? @Set to `true` to enable a fix. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setOpaqueAlphaFix(value) end
 
 ---Enables or disables transparent pass (secondary drawing pass with transparent surfaces). Disabled by default.
 ---@param value boolean? @Set to `true` to enable transparent pass. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setTransparentPass(value) end
 
 ---Enables or disables drawing of car fake shadows (applies to any car roots in scene reference; when drawing entire scene
 ---car shadows will be drawn regardless). Disabled by default.
 ---@param value boolean? @Set to `true` to enable drawing of car fake shadows. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setFakeCarShadows(value) end
 
 ---Enables original lighting (stops from switching to neutral lighting active by default). With original lighting,
 ---methods like `shot:setAmbientColor()` and `shot:setReflectionColor()` would no longer have an effect.
 ---@param value boolean? @Set to `true` to enable original lighting. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setOriginalLighting(value) end
 
 ---Enables sky in the shot. By default, sky is not drawn.
 ---@param value boolean? @Set to `true` to enable sky. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setSky(value) end
 
 ---Enables particles in the shot. By default, particles are not drawn.
 ---@param value boolean? @Set to `true` to enable particles. Default value: `true`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setParticles(value) end
 
 ---Enables grass in the shot. By default, grass is not drawn. Careful: at the moment, grass exists only around the camera.
 ---@param value 'dedicated'|boolean? @Set to `true` to enable grass. Default value: `true`. Since 0.3.0-preview307, you can pass `'dedicated'` to set an alternative Grass FX spawn area (expensive).
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setGrass(value) end
 
 ---Changes used shaders set. Switch to a set like `render.ShadersType.SampleColor` to access color of surface without any extra effects.
 ---@param type render.ShadersType? @Type of shaders set to use. Default value: `render.ShadersType.Simplified`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setShadersType(type) end
 
 ---Replaces shadow set with an alternative one. Pretty expensive, use carefully.
 ---@param type 'area'|'dedicated' @Type of shadow set to use: `area` is a basic shadow map around the main camera (without directions), `dedicated` is separate set of shadows for this geometry shot (expensive).
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setAlternativeShadowsSet(type) end
 
 ---Changes maximum layer of which meshes to render. 0 is for lowest world detail, 5 for highest.
 ---@param value integer @Layer value (aka world detail level).
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setMaxLayer(value) end
 
 ---Sets clipping planes. If clipping planes are too far apart, Z-fighting might occur. Note: to avoid Z-fighting, increasing
 ---nearby clipping plane distance helps much more.
 ---@param near number? @Nearby clipping plane in meters. Default value: 0.05.
 ---@param far number? @Far clipping plane in meters. Default value: 1000.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setClippingPlanes(near, far) end
 
 ---Sets orthogonal parameters.
 ---@param size vec2
 ---@param depth number
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setOrthogonalParams(size, depth) end
 
 ---Sets clear color to clear texture with before each update. Initial value: `rgbm(0.1, 0.1, 0.1, 0)`.
 ---@param value rgbm @Clear color from 0 to 1. Initial value: `rgbm(0.1, 0.1, 0.1, 0)`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setClearColor(value) end
 
 ---Sets ambient color used for general lighting.
 ---@param value rgbm @Ambient color. Initial value: `rgbm(3, 3, 3, 1)`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setAmbientColor(value) end
+
+---Overrides reflection cubemap. More types will be added later. For now, `'menu'` is the only type, for the showroom used in main menu.
+---@param type 'menu'|'basic'|'white'|'black'? @Cubemap ID.
+---@return self @Returns itself for chaining several methods together.
+function _ac_GeometryShot:overrideReflectionCubemap(type) end
 
 ---Sets color for reflection gradient.
 ---@param zenith rgbm @Zenith reflection color. Initial value: `rgbm(1, 1, 1, 1)`.
 ---@param horizon rgbm @Horizon reflection color. Initial value: `rgbm(0, 0, 0, 1)`.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setReflectionColor(zenith, horizon) end
 
 ---Configures geometry shot for the best possible quality for a scene shot, such as including all the geometry (maximum
@@ -10585,12 +10968,12 @@ function _ac_GeometryShot:setReflectionColor(zenith, horizon) end
 ---
 ---Please avoid using it for something like rear view camera or a track display though, they could definitely benefit from
 ---using simpler shaders or lower level of detail.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setBestSceneShotQuality() end
 
 ---Overrides exposure used if antialiasing mode is set to YEBIS value. By default scene exposure is used.
 ---@param value number? @Exposure used by YEBIS post-processing. Pass `nil` to reset to default behavior.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:setExposure(value) end
 
 ---Returns texture resolution (or zeroes if element has been disposed).
@@ -10617,13 +11000,13 @@ function _ac_GeometryShot:sharedHandle(crossProcess) end
 
 ---Manually applies antialiasing to the texture (works only if it was created with a specific antialiasing mode).
 ---By default antialiasing is applied automatically, but calling this function switches AA to a manual mode.
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:applyAntialiasing() end
 
 ---Saves shot as an image.
 ---@param filename string @Destination filename.
 ---@param format ac.ImageFormat? @Texture format (by default guessed based on texture name).
----@return ac.GeometryShot @Returns itself for chaining several methods together.
+---@return self @Returns itself for chaining several methods together.
 function _ac_GeometryShot:save(filename, format) end
 
 ---Returns image encoded in DDS format. Might be useful if you would need to store an image
@@ -10638,7 +11021,7 @@ function _ac_GeometryShot:encode() end
 
 ---Downloads data from GPU to CPU asyncronously (usually takes about 0.15 ms to get the data). Resulting data can be
 ---used to access colors of individual pixels or upload it back to CPU restoring original state.
----@param callback fun(err: string, data: ui.ExtraCanvasData)
+---@param callback fun(err: string?, data: ui.ExtraCanvasData)
 function _ac_GeometryShot:accessData(callback) end
 --[[ lib_tracklines.lua ]]
 
@@ -10880,6 +11263,20 @@ function _ac_TrackPaint:triangle(pos, size, angle, thickness, color) end
 ---@return self
 function _ac_TrackPaint:arrow(pos, size, angle, thickness, color, shape1, shape2) end
 
+---Collects RainFX racing line state (dynamic wetness offset left by cars driving over the track) into a compressed
+---binary blob. Collection runs on the rain processing thread, compression in the background. Use with
+---`physics.importRacingLineAsync()` to sync the state in online races.
+---@param callback fun(err: string, data: string)
+function physics.exportRacingLineAsync(callback) end
+
+---Applies RainFX racing line state previously collected with `physics.exportRacingLine()`. Decompression runs in the
+---background, applying data happens on the rain processing thread. By default replaces the whole state; pass `false` as
+---the third argument to merge cells instead.
+---@param data blob_view
+---@param callback fun(err: string)
+---@param replace boolean? @Set to `false` to merge incoming cells into existing state instead of replacing it. Default value: `true`.
+function physics.importRacingLineAsync(data, callback, replace) end
+
 ---New Mode scripts can use this function even if the rest of Physics API is not available.
 ---@param allowedTyresOut integer @Set to a negative value to disable the penalty.
 function physics.setAllowedTyresOut(allowedTyresOut) end
@@ -10894,7 +11291,7 @@ function physics.setWrongWayPenalty(penalty) end
 
 ---Set assists. Added in 0.3.0-preview254. New Mode scripts can use this function even if the rest of Physics API is not available. If a field is not set, original value will remain.
 --- Changing `tyresBlankets` property while car is in pits resets tyre state.
----
+--- 
 --- Set `editable` to `false` to disallow editing assists from the main menu.
 ---@param assists {autoBlip: boolean?, autoClutch: boolean?, autoShifter: boolean?, abs: 'off'|'factory'|'on'?, tractionControl: 'off'|'factory'|'on'?, stability: number?, damageRate: number?, fuelRate: number?, tyresWear: number?, tyresBlankets: boolean?, slipstream: number?, idealLine: boolean?, editable: boolean?}
 ---@param targetCarIndex integer? @Target car index. If non-zero, global assists will be ignored. Per-car assists: auto-blip, auto-clutch, auto-shift, ABS, TC, stability control, slipstream. Default value: 0.
@@ -11120,8 +11517,11 @@ function _ac_AppWindowAccessor:redirectLayer2() end
 
 ---Moves window to a different render layer, or back to existance with `0` passed as `layer`. Windows in separate layers don’t get mouse
 ---commands (but this wrapper can be used to send fake commands instead).
+---
+---- With flag `clipped`, resulting texture will be the size of the first window to be drawn, with window drawn at the top left corner. Some apps might malfunction in this mode. Can help to save some VRAM if you need separate textures for each window.
+---- With flag `mips`, resulting texture will get MIP chain.
 ---@param layer integer? @Default value: `0`.
----@param duplicate boolean? @Set to `true` to clone a window to a different layer instead of moving it there. Be careful: this might break some Python apps. Default value: `false`.
+---@param duplicate {duplicate: boolean?, clipped: boolean?, mips: boolean?}|boolean? @Set to `true` to clone a window to a different layer instead of moving it there. Be careful: this might break some Python apps. Default value: `false`. Alternatively, since 0.3.0-preview410, you can pass a table with a bunch of flags.
 ---@return ac.AppWindowAccessor
 function _ac_AppWindowAccessor:setRedirectLayer(layer, duplicate) end
 
@@ -11394,12 +11794,14 @@ render.TextureMaskFlags = {
 ---| `render.AntialiasingMode.CMAA` @Faster and sharper option comparing to FXAA.
 ---| `render.AntialiasingMode.ExtraSharpCMAA` @Like CMAA, but even sharper.
 ---| `render.AntialiasingMode.YEBIS` @Applies YEBIS antialiasing together with the whole filtering HDR→LDR conversion using main PP settings. Note: first run for each resolution can take a lot of time. Each resolution creates its own YEBIS post-processing step, with many different resolutions things might get too expensive.
+---| `render.AntialiasingMode.SimplifiedYEBIS` @Applies HDR→LDR conversion which is similar to YEBIS, but a lot cheaper. For anti-aliasing, CMAA is used on top.
 render.AntialiasingMode = {
   None = 0, ---@type render.AntialiasingMode #No antialiasing.
   FXAA = 101, ---@type render.AntialiasingMode #Blurry and slower than CMAA.
   CMAA = 102, ---@type render.AntialiasingMode #Faster and sharper option comparing to FXAA.
   ExtraSharpCMAA = 103, ---@type render.AntialiasingMode #Like CMAA, but even sharper.
   YEBIS = 104, ---@type render.AntialiasingMode #Applies YEBIS antialiasing together with the whole filtering HDR→LDR conversion using main PP settings. Note: first run for each resolution can take a lot of time. Each resolution creates its own YEBIS post-processing step, with many different resolutions things might get too expensive.
+  SimplifiedYEBIS = 105, ---@type render.AntialiasingMode #Applies HDR→LDR conversion which is similar to YEBIS, but a lot cheaper. For anti-aliasing, CMAA is used on top.
 }
 
 ---@alias render.TextureFormat
@@ -12474,7 +12876,8 @@ function render.debugPlane(center, dir, color, size) end
 ---@param to vec3
 ---@param color rgbm? @Default value: `rgbm(3, 0, 0, 1)`.
 ---@param colorEnd rgbm|nil @Default value: `nil`.
-function render.debugLine(from, to, color, colorEnd) end
+---@param dashed boolean? @Default value: `false`.
+function render.debugLine(from, to, color, colorEnd, dashed) end
 
 ---@param from vec3
 ---@param to vec3
@@ -12549,11 +12952,11 @@ function ui.endToolWindow() end
 ---@param inputs boolean? @Default value: `false`.
 function ui.beginTransparentWindow(windowID, pos, size, noPadding, inputs) end
 
+function ui.endTransparentWindow() end
+
 function ui.bringWindowToFront() end
 
 function ui.bringWindowToBack() end
-
-function ui.endTransparentWindow() end
 
 ---Adds hyperlink effect to the previous item, returns `true` if it’s clicked.
 ---@param hyperlinkColor rgbm? @Default value: `rgbm(0, 0.5, 1, 1)`.
@@ -12727,8 +13130,7 @@ function ui.availableSpace() end
 ---@return vec2
 function ui.imageSize(imageSource) end
 
----Imports image from its binary data. Any formats supported by system are supported. Also, new DDS formats are supported as well. Result is cached,
----so subsequent calls don’t take a lot of time. Data string can contain zero bytes.
+---Imports image from its binary data. Any formats supported by system are supported. Also, new DDS formats are supported as well. Result is cached, *so subsequent calls don’t take a lot of time. Data string can contain zero bytes.
 ---
 ---To clear cached image and free memory, pass returned value to `ui.unloadImage()`.
 ---@param data binary|number|boolean|ac.FFIStruct
@@ -12872,6 +13274,15 @@ function ui.drawRect(p1, p2, color, rounding, roundingFlags, thickness) end
 
 ---@param p1 number|vec2
 ---@param p2 number|vec2
+---@param colorTopLeft rgbm
+---@param colorTopRight rgbm
+---@param colorBottomRight rgbm
+---@param colorBottomLeft rgbm
+---@param thickness number? @Default value: 1.
+function ui.drawRectMultiColor(p1, p2, colorTopLeft, colorTopRight, colorBottomRight, colorBottomLeft, thickness) end
+
+---@param p1 number|vec2
+---@param p2 number|vec2
 ---@param color rgbm
 ---@param rounding number? @Default value: 0.
 ---@param roundingFlags ui.CornerFlags? @Default value: `ui.CornerFlags.All`.
@@ -12990,6 +13401,10 @@ function ui.pathClear() end
 ---Don’t forget to finish shape with either `ui.pathFillConvex()` or `ui.pathStroke()`.
 ---@param pos number|vec2
 function ui.pathLineTo(pos) end
+
+---Set color of the next point in current path, which will act as a multiplier to final stroke/fill color. Pass white color to reset.
+---@param color rgbm
+function ui.pathSetColor(color) end
 
 ---Adds a line segment to current path, but only if position is different from current path point position.
 ---Don’t forget to finish shape with either `ui.pathFillConvex()` or `ui.pathStroke()`.
@@ -13596,6 +14011,8 @@ function ui.storeBool(id, value) end
 
 function ui.nextColumn() end
 
+function ui.nextRow() end
+
 ---@param columnIndex integer
 ---@param width number
 function ui.setColumnWidth(columnIndex, width) end
@@ -13934,8 +14351,7 @@ function ui.itemToggledSelection() end
 ---@param mode ui.ImageFit? @Stretch mode. Default value: `ui.ImageFit.Stretch`.
 function ui.image(imageSource, size, color, borderColor, uv1, uv2, mode) end
 
----Adds a button with an image on it. If image is missing or loading (if it’s remote or asyncronous loading is enabled),
----button would still appear, but without an image.
+---Adds a button with an image on it. If image is missing or loading (if it’s remote or asyncronous loading is enabled), *button would still appear, but without an image.
 ---
 ---Note: if image source doesn’t have “##” in it, `color` and `bgColor` are swapped. For compatibility reason things are left as is, please
 ---use `ui.iconButton()` instead.
@@ -13953,8 +14369,7 @@ function ui.image(imageSource, size, color, borderColor, uv1, uv2, mode) end
 ---@return boolean
 function ui.imageButton(imageSource, size, bgColor, color, uv1, uv2, framePadding, mode) end
 
----Adds a button with an image on it. If image is missing or loading (if it’s remote or asyncronous loading is enabled),
----button would still appear, but without an image.
+---Adds a button with an image on it. If image is missing or loading (if it’s remote or asyncronous loading is enabled), *button would still appear, but without an image.
 ---@overload fun(iconID: ui.ImageSource, size: vec2, color: rgbm, framePadding: number?, keepAspectRatio: boolean?, flags: ui.ButtonFlags?)
 ---@overload fun(iconID: ui.ImageSource, size: vec2, framePadding: number?, keepAspectRatio: boolean?, flags: ui.ButtonFlags?)
 ---@param iconID ui.Icons @Icon or path to the image, absolute or relative to script folder or AC root. URLs are also accepted. Use `##…` postfix for unique ID if you have multiple buttons with the same filename (or, even better, use `ui.pushID()/ui.popID()`.
@@ -14080,6 +14495,27 @@ function ui.setScrollFromPosY(localY, centerYRatio) end
 ---Get current window title.
 ---@return string?
 function ui.windowTitle() end
+
+---Draw a piece of HTML using litehtml library. If any link inside is clicked, returns clicked URL.
+--- 
+--- Changing HTML causes parser to re-run, so, ideally, don’t do it too often.
+--- 
+--- By default, uses IMGUI fonts. If you’re using `font-family:monospace` with size of 14 (default size), it’ll switch to IMGUI monospace font. If you’re setting unusual
+--- font sizes, or set other font families, it’ll switch to using DWrite to render fonts.
+--- 
+--- To help sync up colors with current color scheme, special colors are added. Use `accent` for the current accent color, or `ac-text`, `ac-text-disabled`, `ac-separator`, * etc., for other IMGUI style colors.
+--- 
+--- For more information about supported features, see <https://github.com/litehtml/litehtml>. Experimental, more features will be added later (feel free to DM me if you need anything).
+--- This function might change in the future, so please do not rely on its quirks.
+---@param html string
+---@param size number|vec2? @If `.x` is 0, it’ll will all the available space. If `.y` is 0, it’ll use the document height. Default value: `vec2(0, 0)`.
+---@return nil|string
+function ui.html(html, size) end
+
+---Draw markdown text. If any link inside is clicked, returns clicked URL. Unlike `ui.html()`, changing text here is pretty much free.
+---@param markdown string
+---@return nil|string, nil|boolean
+function ui.markdown(markdown) end
 
 ---Stop frosted effect of semi-transparent IMGUI surfaces for a single frame.
 ---@param currentWindow boolean? @Set to `true` to make it affect this root window only (if you’re within HUD callback, it’ll affect the entire callback). Any window without frosty effect is drawn first, before anything with frosty effect. Option is added in 0.3.0. Default value: `false`.
@@ -14308,7 +14744,8 @@ function ac.onTrackPhysicsObjectCarCollision(name, carIndex, callback) end
 ---Teleports car to certain spawn point, invalidates current lap.
 ---@param carIndex integer
 ---@param spawnSet ac.SpawnSet
-function physics.teleportCarTo(carIndex, spawnSet) end
+---@param preserveDamage boolean? @Set to `true` to not reset damage. Default value: `false`.
+function physics.teleportCarTo(carIndex, spawnSet, preserveDamage) end
 
 ---Sets car position and orientation and invalidates current lap time. Car will be aligned on track surface.
 ---@param carIndex integer
@@ -14350,40 +14787,6 @@ function physics.lockUserControlsFor(time) end
 ---@param time number @Time in seconds; 0 to disable controls locking.
 ---@param resetGear boolean? @Set to `true` to switch gearbox to neutral as well. Default value: `false`.
 function physics.lockUserGearboxFor(time, resetGear) end
-
----Forces fully engaged brakes for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
----@param time number @Time in seconds; 0 to disable brakes forcing.
----@param brakingIntensity number? @Braking intensity, from 0 to 1. Default value: 1.
-function physics.forceUserBrakesFor(time, brakingIntensity) end
-
----Forces fully engaged throttle pedal for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
----@param time number @Time in seconds; 0 to disable brakes forcing.
----@param throttleIntensity number? @Braking intensity, from 0 to 1. Default value: 1.
-function physics.forceUserThrottleFor(time, throttleIntensity) end
-
----Forces fully engaged clutch pedal for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
----@param time number @Time in seconds; 0 to disable clutch forcing.
----@param clutchValue number? @Clutch value, from 0 to 1 (0 for pedal fully pressed). Default value: 0.
-function physics.forceUserClutchFor(time, clutchValue) end
-
----Forces fully engaged handbrake for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
----@param time number @Time in seconds; 0 to disable handbrake forcing.
----@param handbrakeValue number? @Handbrake value, from 0 to 1. Default value: 1.
-function physics.forceUserHandbrakeFor(time, handbrakeValue) end
-
----Offsets user steering angle.
----@param offset number
-function physics.offsetUserSteering(offset) end
-
----Overrides user steering angle.
----@param value number
----@param share number
-function physics.overrideUserSteering(value, share) end
-
----Overrides steering completely for a certain car.
----@param carIndex integer @0-based car index.
----@param value number @Set to `math.nan` to disable overriding.
-function physics.overrideSteering(carIndex, value) end
 
 ---Resets car state (repairs damage, resets fuel) and invalidates current lap.
 ---@param carIndex integer @0-based car index.
@@ -14440,8 +14843,13 @@ function physics.resetTrackPhysicsObject(filter) end
 ---@param wheels ac.Wheel? @Wheels to affect. Default value: `ac.Wheel.All`.
 function physics.blowTyres(carIndex, wheels) end
 
----Sets tyre blankets and invalidates current lap. If set, they would keep tyres at optimal temperature until car would reach 10 km/h,
----and then they would be removed. If you need to set tyres temperature for a moving car, use `physics.setTyresTemperature()`
+---Use this function to fix or damage car suspension. Does not invalidate current lap.
+---@param carIndex integer @0-based car index.
+---@param wheels ac.Wheel? @Wheels to affect. Default value: `ac.Wheel.All`.
+---@param damage number? @Damage (hit speed in km/h). Default value: 0.
+function physics.setSuspensionDamage(carIndex, wheels, damage) end
+
+---Sets tyre blankets and invalidates current lap. If set, they would keep tyres at optimal temperature until car would reach 10 km/h, *and then they would be removed. If you need to set tyres temperature for a moving car, use `physics.setTyresTemperature()`
 ---(to get optimal tyre temperature, use `ac.getCar(N).wheels[0].tyreOptimumTemperature`.
 ---@param carIndex integer @0-based car index.
 ---@param wheels ac.Wheel? @Wheels to affect. Default value: `ac.Wheel.All`.
@@ -14522,9 +14930,12 @@ function physics.resetColliderWears(carIndex) end
 ---Allows and disallows car DRS. If DRS is already disallowed by track zones, wouldn’t override it, but allows to add more
 --- conditions disallowing DRS further (FIA rules and all that). If DRS is already engaged, it’ll be disengaged. Does not
 --- invalidate lap.
+--- 
+--- Use `ac.setCarDRS()` instead, this one incorrectly handles lag values.
+---@deprecated
 ---@param carIndex integer @0-based car index.
----@param active boolean|`true`|`false` @Set to `false` to disallow use of DRS.
-function physics.allowCarDRS(carIndex, active) end
+---@param disable boolean|`true`|`false` @Set to `true` to disallow use of DRS (originally, was `enable`, but it was a bug).
+function physics.allowCarDRS(carIndex, disable) end
 
 ---If DRS is present and available, activates or deactivates it. Does not invalidate lap.
 ---@param carIndex integer @0-based car index.
@@ -14536,7 +14947,7 @@ function physics.setCarDRS(carIndex, active) end
 ---@param penaltyParam integer? @Penalty parameter (-1 for default value), actual role depends on penalty type. Default value: -1.
 function physics.setCarPenalty(penaltyType, penaltyParam) end
 
----Stops car from sleeping, invalidates current lap.
+---Stops car from sleeping.
 ---@param carIndex integer @0-based car index.
 function physics.awakeCar(carIndex) end
 
@@ -14606,11 +15017,27 @@ function physics.blockTeleportingToPits() end
 ---
 ---This type of worker still relies on `script.update()`. Call `worker.terminate()` to stop it. No other `worker` methods are available.
 ---Use shared structures to exchange data between your main script and a worker.
+---
+---For docs to work, add reference to `internal/lua-sdk/ac_background_pw` to `settings.json`.
 ---@overload fun(script: string, callback: function)
 ---@param script string @File name (without extension) relative to script directory, or script code.
 ---@param data serializable @Data to pass to the script (will be available as `__input` value). Use `stringify()` if you need to pass something complex.
----@param callback fun(err: string)
+---@param callback fun(err: string)?
 function physics.startPhysicsWorker(script, data, callback) end
+
+---Collects RainFX racing line state (dynamic wetness offset left by cars driving over the track) into a compressed
+---binary blob. Collection runs on the rain processing thread, compression in the background. Use with
+---`physics.importRacingLineAsync()` to sync the state in online races.
+---@param callback fun(err: string, data: string)
+function physics.exportRacingLineAsync(callback) end
+
+---Applies RainFX racing line state previously collected with `physics.exportRacingLine()`. Decompression runs in the
+---background, applying data happens on the rain processing thread. By default replaces the whole state; pass `false` as
+---the third argument to merge cells instead.
+---@param data blob_view
+---@param callback fun(err: string)
+---@param replace boolean? @Set to `false` to merge incoming cells into existing state instead of replacing it. Default value: `true`.
+function physics.importRacingLineAsync(data, callback, replace) end
 
 ---New Mode scripts can use this function even if the rest of Physics API is not available.
 ---@param allowedTyresOut integer @Set to a negative value to disable the penalty.
@@ -14626,19 +15053,60 @@ function physics.setWrongWayPenalty(penalty) end
 
 ---Set assists. Added in 0.3.0-preview254. New Mode scripts can use this function even if the rest of Physics API is not available. If a field is not set, original value will remain.
 --- Changing `tyresBlankets` property while car is in pits resets tyre state.
----
+--- 
 --- Set `editable` to `false` to disallow editing assists from the main menu.
 ---@param assists {autoBlip: boolean?, autoClutch: boolean?, autoShifter: boolean?, abs: 'off'|'factory'|'on'?, tractionControl: 'off'|'factory'|'on'?, stability: number?, damageRate: number?, fuelRate: number?, tyresWear: number?, tyresBlankets: boolean?, slipstream: number?, idealLine: boolean?, editable: boolean?}
 ---@param targetCarIndex integer? @Target car index. If non-zero, global assists will be ignored. Per-car assists: auto-blip, auto-clutch, auto-shift, ABS, TC, stability control, slipstream. Default value: 0.
 ---@return integer @Return number of changed items.
 function physics.setAssists(assists, targetCarIndex) end
 
+---Forces fully engaged brakes for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
+---@param time number @Time in seconds; 0 to disable brakes forcing.
+---@param brakingIntensity number? @Braking intensity, from 0 to 1. Default value: 1.
+---@param blend nil|'override'|'max'|'min'|'lerp0'|'lerp1'|nil @Default value: `nil`.
+function physics.forceUserBrakesFor(time, brakingIntensity, blend) end
+
+---Forces fully engaged throttle pedal for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
+---@param time number @Time in seconds; 0 to disable brakes forcing.
+---@param throttleIntensity number? @Braking intensity, from 0 to 1. Default value: 1.
+---@param blend nil|'override'|'max'|'min'|'lerp0'|'lerp1'|nil @Default value: `nil`.
+function physics.forceUserThrottleFor(time, throttleIntensity, blend) end
+
+---Forces fully engaged clutch pedal for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
+---@param time number @Time in seconds; 0 to disable clutch forcing.
+---@param clutchValue number? @Clutch value, from 0 to 1 (0 for pedal fully pressed). Default value: 0.
+function physics.forceUserClutchFor(time, clutchValue) end
+
+---Forces fully engaged handbrake for user car for given time. Invalidates lap. Subsequent calls override value set earlier.
+---@param time number @Time in seconds; 0 to disable handbrake forcing.
+---@param handbrakeValue number? @Handbrake value, from 0 to 1. Default value: 1.
+function physics.forceUserHandbrakeFor(time, handbrakeValue) end
+
+---Offsets user steering angle.
+---@param offset number
+---@param physicsOnly boolean? @Set to `true` to leave visual steering as-is. Default value: `false`.
+function physics.offsetUserSteering(offset, physicsOnly) end
+
+---Offsets FFB. Use very carefully.
+---@param offset number
+function physics.offsetFinalFFB(offset) end
+
+---Overrides user steering angle.
+---@param value number
+---@param share number
+---@param physicsOnly boolean? @Set to `true` to leave visual steering as-is. Default value: `false`.
+function physics.overrideUserSteering(value, share, physicsOnly) end
+
+---Overrides steering completely for a certain car.
+---@param carIndex integer @0-based car index.
+---@param value number @Set to `math.nan` to disable overriding.
+function physics.overrideSteering(carIndex, value) end
+
 ---Returns `true` if script can affect physics engine. If not, only `physics.raycastTrack()` is available.
 ---@return boolean
 function physics.allowed() end
 
----Casts a ray from given position in a certain direction to check if it hits any physics surfaces. Returns distance to a hit,
----or -1 if there wasn’t any. Optionally can return contact point and normal too, if vectors in their place are passed.
+---Casts a ray from given position in a certain direction to check if it hits any physics surfaces. Returns distance to a hit, *or -1 if there wasn’t any. Optionally can return contact point and normal too, if vectors in their place are passed.
 ---
 ---Note: smaller rays are faster to cast. Also, rays going straight down are slightly faster as well.
 ---@param pos vec3
@@ -14647,8 +15115,9 @@ function physics.allowed() end
 ---@param point vec3|nil @Default value: `nil`.
 ---@param normal vec3|nil @Default value: `nil`.
 ---@param includeNoise boolean? @Set to `true` to take procedural sine noise into account. Default value: `false`.
+---@param backfaceCulling boolean? @Set to `true` to enable backface culling. Default value: `false`.
 ---@return number
-function physics.raycastTrack(pos, dir, length, point, normal, includeNoise) end
+function physics.raycastTrack(pos, dir, length, point, normal, includeNoise, backfaceCulling) end
 
 ---Changes AI level. Use `ac.getCar(carIndex).aiLevel` to get current value.
 ---@param carIndex integer @0-based car index.
@@ -14678,11 +15147,6 @@ function physics.setAIDriverTeam(carIndex, team) end
 ---@param pos vec3
 ---@param dir vec3|nil @Since 0.3.0-preview124, pass `nil` to align car along AI spline. Default value: `nil`.
 function physics.setAICarPosition(carIndex, pos, dir) end
-
----Changes position of an AI car.
----@param carIndex integer @0-based car index.
----@param time number? @Delay before starting to drive, in seconds. Default value: 0.
-function physics.setAITimeToStart(carIndex, time) end
 
 ---Changes AI aggression. Use `ac.getCar(carIndex).aiAggression` to get current value.
 ---@param carIndex integer @0-based car index.
@@ -14789,6 +15253,17 @@ function physics.setAIPitStopRequest(carIndex, value) end
 ---@param value integer
 function physics.setAILapsToComplete(carIndex, value) end
 
+---Changes how long the AI will wait until starting to drive (usually, in pit stop).
+---@param carIndex integer @0-based car index.
+---@param time number? @Delay before starting to drive, in seconds. Default value: 0.
+function physics.setAITimeToStart(carIndex, time) end
+
+---Overrides how much fuel AI will request the next time.
+---@param carIndex integer @0-based car index.
+---@param fuel number @Fuel, in liters, to request, can’t exceed maximum amount of fuel. Pass `math.huge` to disable override.
+---@param lapsToComplete integer? @AI will go to refuel once it drives this amount of laps. Default value: 10000.
+function physics.overrideAIRequestedFuel(carIndex, fuel, lapsToComplete) end
+
 ---Sets currently selected tyres, resetting damage as well.
 ---@param carIndex integer @0-based car index.
 ---@param index integer @0-based tyres index.
@@ -14814,8 +15289,8 @@ function physics.setAIRainTyres(carIndex, useRainTyres) end
 ---@return boolean
 function ac.checkAdminPrivileges() end
 
----Checks if server requires a password to join. Asyncronous version. Returns error (via `err` callback parameter) if this is not an online race.
----@param callback fun(err: string, data: boolean)
+---Checks if server requires a password to join. Asynchronous version. Returns error (via `err` callback parameter) if this is not an online race.
+---@param callback fun(err: string, required: boolean)
 function ac.checkIfServerRequiresPasswordAsync(callback) end
 
 ---Sets or resets custom driver color for CSP chat app.
@@ -14839,7 +15314,7 @@ function ac.setDriverVisible(carIndex, isVisible) end
 function ac.setDriverMouthOpened(carIndex, amount) end
 
 ---Override `PRELOAD_RPM` from “driver3d.ini” live. Change persists after script has been unloaded.
----@param carIndex integer? @0-based car index.
+---@param carIndex integer? @0-based car index. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 ---@param threshold number @RPM.
 function ac.setDriverShiftAnimationPreloadThreshold(carIndex, threshold) end
 
@@ -14964,15 +15439,13 @@ function ac.setCameraExposure(exposure) end
 ---@param distance number @Value in meters, or 0 to disable DOF.
 function ac.setCameraDOF(distance) end
 
----Hide mouse for a very short period of time. Call each frame if you want for it to stay hidden. Works similar to `ui.setMouseCursor(ui.MouseCursor.None)`,
----but this one can be called from `script.update()` and has an option to restore cursor position.
+---Hide mouse for a very short period of time. Call each frame if you want for it to stay hidden. Works similar to `ui.setMouseCursor(ui.MouseCursor.None)`, *but this one can be called from `script.update()` and has an option to restore cursor position.
 ---@param restorePosition boolean? @Set to `true` if you want for mouse to restore position when reappearing. Default value: `false`.
 function ac.hideMouseCursor(restorePosition) end
 
 ---Returns mouse delta since the last call in pixels, but also, hides mouse and fixes it in place, allowing to drag things around endlessly. Good for
 ---implementing first person cameras, or something like custom mouse steering, so that mouse is no longer bound by window or screen size. Mouse will be
----released and reappear shortly after this function has stopped being called. If delta is not available (for example, if `force` is not set to `true`,
----and mouse currently is hovering some UI element), returns `vec2(0, 0)`.
+---released and reappear shortly after this function has stopped being called. If delta is not available (for example, if `force` is not set to `true`, *and mouse currently is hovering some UI element), returns `vec2(0, 0)`.
 ---@param rawInput nil|boolean|'camera' @Set to `true` to use raw input, or to `'camera'` to use raw input only if that’s user’s preference for cameras.
 ---@param restorePosition boolean? @Set to `true` to restore mouse position when mouse is released. Default value: `true`.
 ---@param force boolean? @Set to `true` to force access even if mouse is currently busy interacting with UI or something like that. Default value: `false`.
@@ -14985,8 +15458,12 @@ function ac.accessMouseDelta(rawInput, restorePosition, force) end
 function ui.onDriverContextMenu(callback) end
 
 ---Force the most detailed LOD of a car for a few frames.
----@param carIndex integer? @0-based car index.
+---@param carIndex integer? @0-based car index. Default value: 0. From a car script, pass `nil`, and it’ll choose the current car.
 function ac.forceDetailedCarLOD(carIndex) end
+
+---Returns `true` if camera is being grabbed by somebody right now.
+---@return boolean
+function ac.isCameraGrabbed() end
 
 ---Returns `true` if resetting car is allowed in current session, invalidates lap.
 ---@return boolean
@@ -15005,7 +15482,8 @@ function ac.takeAStepBack(offset) end
 ---
 --- Library `shared/sim/cars` has few helper methods allowing to deal with saved states.
 ---@param callback fun(err: string, data: string)
-function ac.saveCarStateAsync(callback) end
+---@param carIndex integer? @0-based car index, added in 0.3.0-preview523. Default value: 0.
+function ac.saveCarStateAsync(callback, carIndex) end
 
 ---Load car state. Available in few basic modes in offline only (such as practice with a single car), invalidates lap.
 ---@overload fun(data: binary, iterations: integer)
@@ -15013,8 +15491,9 @@ function ac.saveCarStateAsync(callback) end
 ---@param dataNext binary|number|boolean|ac.FFIStruct|nil @Default value: `nil`.
 ---@param blend number? @Default value: 0.
 ---@param iterations integer? @Default value: 5.
+---@param carIndex integer? @0-based car index, added in 0.3.0-preview523. Default value: 0.
 ---@return boolean @Returns false if the feature is not available in the current mode.
-function ac.loadCarState(data, dataNext, blend, iterations) end
+function ac.loadCarState(data, dataNext, blend, iterations, carIndex) end
 
 ---Marks current lap done by player as spoiled. Works only during the race
 ---@param silent boolean? @Do not show lap invalidation message. Default value: `false`.
@@ -15048,8 +15527,9 @@ function ac.tryToSkipSession() end
 function ac.tryToOpenRaceMenu(tab) end
 
 ---Teleports car to pits.
+---@param preserveDamage boolean? @Set to `true` to not reset damage. By default, depends on session settings.
 ---@return boolean @Returns `true` if teleported successfully.
-function ac.tryToTeleportToPits() end
+function ac.tryToTeleportToPits(preserveDamage) end
 
 ---@param orbit boolean|`true`|`false`
 function ac.setOrbitOnboardCamera(orbit) end
@@ -15062,8 +15542,7 @@ function ac.setOrbitOnboardCamera(orbit) end
 ---@param highlightColor rgb|nil @Pass `nil` to cancel out the highlight. Or, pass a color in 0…1 range. Default value: `nil`.
 function ac.highlightCar(carIndex, highlightColor) end
 
----Runs a sim command usually associated with AC hotkeys, such as “Ideal Line”. Original hotkey logic is applied: for example,
----most commands won’t work if the race is not started. Returns `false` if there is no such command.
+---Runs a sim command usually associated with AC hotkeys, such as “Ideal Line”. Original hotkey logic is applied: for example, *most commands won’t work if the race is not started. Returns `false` if there is no such command.
 ---@param command string
 ---@param shift boolean? @Some commands perform opposite action if shift is held down. Default value: `false`.
 ---@return boolean
@@ -15082,8 +15561,7 @@ function ac.blockEscapeButton() end
 ---@param timePassed number? @If above zero, objects will be moved along their velocities using this value as time in seconds. Default value: 0.
 function ac.resetDynamicTrackObjects(randomSeed, timePassed) end
 
----Similar to `ac.ext_applyTrackConfig()` from CSP Python API, reload a track config live. Works even if live updates are disabled. Use carefully,
----might cause a freeze or crash the game.
+---Similar to `ac.ext_applyTrackConfig()` from CSP Python API, reload a track config live. Works even if live updates are disabled. Use carefully, *might cause a freeze or crash the game.
 ---@param targetIndex integer @Set to -1 to apply track config, or to car index to apply a car config.
 ---@param data string @INI config data.
 ---@param flags string|integer|nil @Since 0.3.0-preview200, pass a string to define a new config piece with that string as a key, to quickly edit this piece alone without altering anything else and with fastest reload. Or, pass an integer for bit flags: 1: restore the state of track conditions, set by default. 2: partial mode (do not discard existing config loaded from INI file on a disk), set by default. 4: reload 3D-trees as well, set by default. 8: apply shader replacements from the config to the entire model, not just to meshes loaded from KN5. Use `bit.bor()` to combine flags.
@@ -15161,6 +15639,7 @@ function ac.configureCarForceFeedback(carIndex, ffbBase, ffbSteerAssist) end
 ---Can’t be reverted, changes time stored in replay. Affects offline races only. Does not work in replays.
 ---@param time number
 ---@param explicitDate boolean? @New state for `ac.StateSim.explicitDateSet` flag. Default value: `true`.
+---@return boolean @Returns `false` if failed.
 function ac.setWeatherExactUTC0Timestamp(time, explicitDate) end
 
 ---Sets current time multiplier used by WeatherFX. Affects offline races only.
@@ -15171,6 +15650,7 @@ function ac.setWeatherTimeMultiplier(multiplier) end
 ---in session settings and sun was using an equinox trajectory, it’ll use real trajectory now.
 ---@param offset number @Offset in seconds.
 ---@param instant boolean? @Set to `true` to apply change instantly. Default value: `false`.
+---@return boolean @Returns `false` if failed.
 function ac.setWeatherTimeOffset(offset, instant) end
 
 ---Override weather conditions in replay. Can be called each frame for smooth transition.
@@ -15205,7 +15685,8 @@ function ac.configureSceneTweaks() end
 ---@param audioChannelKey ac.AudioChannel
 ---@param value number @Value from 0 to 1.
 ---@param carIndex integer? @If set, applies volume as a multiplier to a specific car (currently supported: `'dirt'`, `'engine'`, `'opponents'`, `'surfaces'`, `'transmission'`, `'tyres'`, `'wind'`). Default value: -1.
-function ac.setAudioVolume(audioChannelKey, value, carIndex) end
+---@param save boolean? @Set to `false` to not save the value. Not available if the car index is specified. Default value: `true`.
+function ac.setAudioVolume(audioChannelKey, value, carIndex, save) end
 
 ---Use `ac.setWiperMode()` instead.
 ---@deprecated
@@ -15312,18 +15793,15 @@ function ac.simulateCustomHotkeyPress(key, frames) end
 ---@return boolean
 function ac.resetVRPose() end
 
----Changes FFB gain. Unlike `ac.setCarFFB()` in Python apps, this one takes an absolute value, not a relative offset. To get current FFB multiplier,
----use `ac.getCar(0).ffbMultiplier`.
+---Changes FFB gain. Unlike `ac.setCarFFB()` in Python apps, this one takes an absolute value, not a relative offset. To get current FFB multiplier, *use `ac.getCar(0).ffbMultiplier`.
 ---@param multiplier number @1 for regular 100% FFB gain.
 function ac.setFFBMultiplier(multiplier) end
 
----Use `ac.setFirstPersonCameraFOV()`
----@deprecated.
+---@hidden.
 ---@param fovDeg number
 function ac.setOnboardCameraFOV(fovDeg) end
 
----Use `ac.resetFirstPersonCameraFOV()`
----@deprecated.
+---@hidden.
 function ac.resetOnboardCameraFOV() end
 
 ---Changes FOV for first person camera. To get current value, use `ac.getSim().firstPersonFOV`.
@@ -15354,16 +15832,31 @@ function ac.setOnboardCameraParams(carIndex, params, save) end
 ---@return boolean
 function ac.areOnboardCameraParamsNeedSaving() end
 
+---Override settings with these limits. Could be used to temporarily limit features to save on battery and such.
+---Not available to scripts without I/O access.
+---@param limits {fpsLimit: number?, renderScale: number?, shadowResolution: integer?, extraFXAllowed: boolean?} @Limits.
+---@return ac.Disposable
+function ac.applyRenderingLimits(limits) end
+
+---Get current power state.
+---@return {batteryPercentage: integer?, energySaver: 'off'|'standard'|'high', powerSource: 'ac'|'dc'|'ups'}
+function ac.getPowerState() end
+
+---Subscribe to power state change events.
+---@param callback fun(state: {batteryPercentage: integer?, energySaver: 'off'|'standard'|'high', powerSource: 'ac'|'dc'|'ups'})
+---@return ac.Disposable
+function ac.onPowerStateUpdate(callback) end
+
 ---Applies an edit to AC config, such as “video.ini”, live without actually altering file on a disk. Only a very few values are
 ---currently supported.
 ---Not available to scripts without I/O access.
----@param config 'controls.ini'|'video.ini'|'gameplay.ini'|'assetto_corsa.ini'|'mouse_hider.ini'|'proximity_indicator.ini'|'graphics.ini'|'graphics_adjustments.ini'|'custom_rendering_modes.ini'|'general.ini'|'walking_out.ini' @Config file name, not the full path.
+---@param config 'controls.ini'|'video.ini'|'gameplay.ini'|'assetto_corsa.ini'|'chase_cam.ini'|'mouse_hider.ini'|'proximity_indicator.ini'|'freer_camera.ini'|'graphics.ini'|'graphics_adjustments.ini'|'custom_rendering_modes.ini'|'general.ini'|'walking_out.ini' @Config file name, not the full path.
 ---@param data string @Serialized INI data.
 function ac.applyLiveConfigEdit(config, data) end
 
 ---Runs asynchronously.
 ---@param filename string? @If not set, default path will be used.
----@param format {format: ac.ScreenshotFormat?, accumulation: boolean?}|ac.ScreenshotFormat|nil @Default value: `ac.ScreenshotFormat.Auto`.
+---@param format {format: ac.ScreenshotFormat?, accumulation: boolean?, iterations: integer?, onCameraStep: (fun(progress: number): {position: vec3?, look: vec3?, up: vec3?, fov: number?})}|ac.ScreenshotFormat|nil @Default value: `ac.ScreenshotFormat.Auto`.
 ---@param callback fun(err: string?)?
 function ac.makeScreenshot(filename, format, callback) end
 
@@ -15481,11 +15974,16 @@ function ac.getRealMirrorAABB(mirrorIndex, min, max) end
 function ac.setRealMirrorParams(mirrorIndex, params, userDriven) end
 
 ---Changes behavior of smoke going off a tyre (won’t affect dust or water splashes). Actual movement of smoke might change with CSP updates.
----@param tyreIndex integer
+---@param tyreIndex ac.Wheel
 ---@param intensity number @Use `math.nan` to restore original behavior, or a value from 0 to 1.
 ---@param thickness number @A value from 0 to 1.
 ---@param surfaceHeat number? @Values above 0 will get entire surface to emit smoke as well. Default value: 0.
 function ac.overrideTyreSmoke(tyreIndex, intensity, thickness, surfaceHeat) end
+
+---Changes the ignition point of a tyre (visuals only).
+---@param tyreIndex ac.Wheel
+---@param temperature number
+function ac.overrideTyreIgnitionPoint(tyreIndex, temperature) end
 
 ---Changes label used to display current gear. Label can be up to four symbols long. If label is 2 characters or less, it’ll be stored in a replay as well
 ---(do any gearboxes have labels longer than that?) Can be useful for creating automatic gearboxes and such: AC widgets will use this label, and other apps can access the label
@@ -15545,9 +16043,7 @@ function ac.flashLights() end
 ---@param wiperMode integer @Wiper mode index from 0 (disabled) to `ac.StateCar.wiperModes` (excluding).
 function ac.setWiperMode(wiperMode) end
 
----Toggles high beams on and off. Note: the way lights work, this only changes if high beams are working with low beams or if low beams are alone (and,
----in reality, they actually switch a low-beam flag used to switch headlights into low-beam mode). To flash high beams without low beams,
----use `ac.flashLights()`.
+---Toggles high beams on and off. Note: the way lights work, this only changes if high beams are working with low beams or if low beams are alone (and, *in reality, they actually switch a low-beam flag used to switch headlights into low-beam mode). To flash high beams without low beams, *use `ac.flashLights()`.
 ---@param active boolean|`true`|`false`
 function ac.setHighBeams(active) end
 
@@ -15679,27 +16175,11 @@ function ac.redirectDamageDisplayer(active) end
 ---@param active boolean|`true`|`false`
 function ac.redirectFuelWarningIndicator(active) end
 
----Added in CSP 0.2.7, collects information about spinners in Quick Pitstop menu. Entries are listed in order they’re shown in UI. Each
----entry has `value` storing value set in current preset, as well as `values` storing the list of values for each preset.
+---Change currently selected Quick Pit preset.
 ---Use `ac.getSim().currentQuickPitPreset` to get the currently selected presets index (0-based).
----@return {name: string, type: 'fuel'|'wing'|'compound'|'pressure'|'repair', min: integer, max: integer, readOnly: boolean, value: integer, values: integer[]}[]
-function ac.getPitstopSpinners() end
-
----Get information about tabs in setup menu. Mostly, just to check the visibility state.
----@return {name: string, label: string, visible: boolean, modified: boolean}[]
-function ac.getSetupTabs() end
-
----Get information about available spinners in setup menu. Names match section names of setup INI files. Value `label` might contain localized setup items. Array `itemValues` is only present for custom CSP setup entries with LUTs.
----@return {name: string, label: string, min: integer, max: integer, step: integer, value: integer, displayMultiplier: number, visible: boolean, readOnly: boolean, units: string?, items: string[]?, itemValues: number[]?, defaultValue: integer?, showClicksMode: integer?}[]
-function ac.getSetupSpinners() end
-
----@return boolean
-function ac.isSetupAvailableToEdit() end
-
----@param setupValueID string
----@param fallbackValue integer? @Default value: 0.
----@return integer
-function ac.getSetupSpinnerValue(setupValueID, fallbackValue) end
+---@param preset integer @0-based index, from 0 to 2.
+---@return boolean @Returns `false` if there is no such preset.
+function ac.setCurrentQuickPitPreset(preset) end
 
 ---Returns `false` if there is no such element or it can’t be edited now.
 ---@param valueName string
@@ -15708,16 +16188,10 @@ function ac.getSetupSpinnerValue(setupValueID, fallbackValue) end
 ---@return boolean
 function ac.setPitstopSpinnerValue(valueName, value, presetIndex) end
 
----Change currently selected Quick Pit preset.
----Use `ac.getSim().currentQuickPitPreset` to get the currently selected presets index (0-based).
----@param preset integer @0-based index, from 0 to 2.
----@return boolean @Returns `false` if there is no such preset.
-function ac.setCurrentQuickPitPreset(preset) end
-
----Returns `false` if there is no such element or it can’t be edited now.
+---Change a value of a setup item. Marks section and setup as edited. Meant for building custom setup menus.
 ---@param setupValueID string
 ---@param value integer
----@return boolean
+---@return boolean @Returns `false` if there is no such element or it can’t be edited now.
 function ac.setSetupSpinnerValue(setupValueID, value) end
 
 ---Refreshes list of setups. Any listeners set with `ac.onSetupsListRefresh()` will be called as well.
@@ -15744,11 +16218,6 @@ function ac.loadSetup(setupFilename) end
 ---Resets car setup to default values. Works only from setup menu, and only if setup is not fixed.
 ---@return boolean @Returns `true` if successful.
 function ac.resetSetupToDefault() end
-
----Exports current setup into a string.
----@param includeMetadata boolean? @Default value: `true`.
----@return string
-function ac.stringifyCurrentSetup(includeMetadata) end
 
 ---Returns information about the current vote, or `nil` if there is not any. Time is in seconds.
 ---@return {type: 'restart'|'skip'|'kick'|'unknown', voted: boolean, ownVote: boolean, votesTotal: integer, votesYes: integer, votesQuorum: integer, timeTotal: number, timeLeft: number, targetIndex: integer?}?
@@ -15801,6 +16270,16 @@ function ac.setMouseLeftButtonDown(isDown) end
 ---@param scroll number
 function ac.setMouseWheel(scroll) end
 
+---Loads a new app if it was just added. Usually file monitoring should take care of it as well, but in some cases (like with
+---symlinks) it might malfunction.
+---@param appID string
+---@return boolean @Returns `false` if there is no such app or if it’s already loaded.
+function ac.noticeNewApp(appID) end
+
+---Change lazy flag for an app.
+---@param flag nil|'NONE'|'PARTIAL'|'FULL'
+function ac.overrideAppLazyFlag(flag) end
+
 ---Load a separate Lua script and run it in background. Script simply runs once and then the returned value (or an error message if any)
 ---will be passed to the callback. Loaded script has access only to basic `ac` API, nothing specific like accessing scene or audio, thus
 ---keeping things safe. Also, there’ll be a new function `os.sleep()` allowing for a script to wait a certain amount of time (in seconds).
@@ -15809,8 +16288,7 @@ function ac.setMouseWheel(scroll) end
 ---You can use this background script do compute something heavy and return, like run a script to sum numbers from 0 to a quadrillion
 ---or load a bit of important data from a huge file. Alternatively, you can create a script which will keep running with something like
 ---`while true do … os.sleep(1) end`, awaking once a second to see if there are any new jobs that need doing. Note: to exchange data with
----other scripts (including your main script or other background scripts), you can also use shared events (`ac.broadcastSharedEvent()`,
----`ac.onSharedEvent()`), shared structures (`ac.connect()`) or even memory-mapped files.
+---other scripts (including your main script or other background scripts), you can also use shared events (`ac.broadcastSharedEvent()`, *`ac.onSharedEvent()`), shared structures (`ac.connect()`) or even memory-mapped files.
 ---
 ---Creating a new background worker and initializing a VM for it takes about 10 ms (in different thread, for your main script there won’t
 ---be any delay at all), so plan accordingly (if you have a ton of jobs taking about 2 ms each, it might be a better option to have a
@@ -15824,8 +16302,7 @@ function ac.setMouseWheel(scroll) end
 ---
 ---Worker threads are created with low priority to ensure they won’t reduce AC performance.
 ---
----Documentation for worker scripts is available in `ac_background` directory. You might need to plug it to your VS Code configuration
----manually (just add a new line with it in “.vscode/settings.json”).
+---For docs to work, add reference to `internal/lua-sdk/ac_background` to `settings.json`.
 ---@overload fun(script: string, callback: function)
 ---@param script string @File name (without extension) relative to script directory, or script code.
 ---@param data serializable|nil @Data to pass to the script (will be available as `worker.input` value). Default value: `nil`.
@@ -16214,9 +16691,10 @@ function ray:cars(culling) end
 ---Ray/physics meshes intersection. Accounts for ray length.
 ---@param outPosition vec3? @Optional vec3 to which contact point will be written.
 ---@param outNormal vec3? @Optional vec3 to which contact normal will be written.
----@param includeNoise boolean? @Set to `true` to take procedural sine noise into account.
+---@param includeNoise boolean? @Set to `true` to take procedural sine noise into account. Default value: `false`.
+---@param backfaceCulling boolean? @Set to `true` to enable backface culling. Default value: `false`.
 ---@return number @Intersection distance, or -1 if there was no intersection.
-function ray:physics(outPosition, outNormal, includeNoise) end
+function ray:physics(outPosition, outNormal, includeNoise, backfaceCulling) end
 
 ---Distance between ray and a point.
 ---@param p vec3 @Point.
@@ -16916,6 +17394,10 @@ local _ui_ExtraCanvas = nil
 ---Disposes canvas and releases resources.
 function _ui_ExtraCanvas:dispose() end
 
+---Returns space taken by texture in bytes.
+---@return integer
+function _ui_ExtraCanvas:memoryFootprint() end
+
 ---Return explicit MIP to use as an image. If called with index of 0, returns texture similar to main one, but only with a single MIP.
 ---@param index integer @0-based MIP index.
 function _ui_ExtraCanvas:mip(index) end
@@ -17229,8 +17711,12 @@ function ui.UserIconsLayer(priority, column) end
 ---@return vec2
 function ui.itemRect() end
 
----Adds a new settings item in settings list in apps.
----@param params {icon: ui.Icons, name: string, size: {default: vec2, min: vec2, max: vec2, automatic: nil|boolean}, id: string, padding: vec2, backgroundColor: rgbm, category: 'settings'|'main'|'developer'|nil, tags: string[]|nil, parent: string, onOpen: fun(), onClose: fun(), onMenu: fun(), onRemove: fun(), keepClosed: boolean}|`{icon = ui.Icons.Settings, name = '', size = {default = vec2(), min = vec2(), max = vec2(), automatic = false}}` "Table with properties:\n- `icon` (`ui.Icons`): Settings icon.\n- `name` (`string`): Name of the settings item (name of a script by default).\n- `size` (`{default: vec2, min: vec2, max: vec2, automatic: nil|boolean}`): Size settings. Default size: `vec2(320, 240)`, default min size: `vec2(40, 20)`.\n- `id` (`string`): If specified, state of a window will be remembered across AC runs or Lua reloads.\n- `padding` (`vec2`): Custom padding for the window.\n- `backgroundColor` (`rgbm`): Custom background color for the window.\n- `category` (`'settings'|'main'|'developer'|nil`): Optionally, this function can be used for simply creating new apps.\n- `tags` (`string[]|nil`): Optional list of tags for search to find the app.\n- `parent` (`string`): ID of a parent window. If set, and parent window is found, `category` will be ignored.\n- `onOpen` (`fun()`): Callback called when the tool is opened.\n- `onClose` (`fun()`): Callback called when the tool is closed.\n- `onMenu` (`fun()`): Callback for extra items in context menu opening from taskbar.\n- `onRemove` (`fun()`): Callback called once when the tool is removed. If set, there will be an item for removing the tool in taskbar context menu.\n- `keepClosed` (`boolean`): Set to `true` to keep app closed even if it was opened before."
+---Adds a new settings item in settings list in apps. Category can be changed though, so, it’s more of a function allowing to create
+---new windows live.
+---Special commands:
+---- `backgroundColor:…`: change background color live;
+---- `notifications:…`: change notifications counter.
+---@param params {icon: ui.Icons, name: string, size: {default: vec2, min: vec2, max: vec2, automatic: nil|boolean}, id: string, padding: vec2, backgroundColor: rgbm, category: 'settings'|'main'|'developer'|nil, flags: string[]|nil, tags: string[]|nil, parent: string, onOpen: fun(), onClose: fun(), onMenu: fun(), onRemove: fun(), keepClosed: boolean}|`{icon = ui.Icons.Settings, name = '', size = {default = vec2(), min = vec2(), max = vec2(), automatic = false}}` "Table with properties:\n- `icon` (`ui.Icons`): Settings icon.\n- `name` (`string`): Name of the settings item (name of a script by default).\n- `size` (`{default: vec2, min: vec2, max: vec2, automatic: nil|boolean}`): Size settings. Default size: `vec2(320, 240)`, default min size: `vec2(40, 20)`.\n- `id` (`string`): If specified, state of a window will be remembered across AC runs or Lua reloads.\n- `padding` (`vec2`): Custom padding for the window.\n- `backgroundColor` (`rgbm`): Custom background color for the window.\n- `category` (`'settings'|'main'|'developer'|nil`): Optionally, this function can be used for simply creating new apps.\n- `flags` (`string[]|nil`): Optional list of window flags, similar to flags of windows of regular Lua apps.\n- `tags` (`string[]|nil`): Optional list of tags for search to find the app.\n- `parent` (`string`): ID of a parent window. If set, and parent window is found, `category` will be ignored.\n- `onOpen` (`fun()`): Callback called when the tool is opened.\n- `onClose` (`fun()`): Callback called when the tool is closed.\n- `onMenu` (`fun()`): Callback for extra items in context menu opening from taskbar.\n- `onRemove` (`fun()`): Callback called once when the tool is removed. If set, there will be an item for removing the tool in taskbar context menu.\n- `keepClosed` (`boolean`): Set to `true` to keep app closed even if it was opened before."
 ---@param callback fun() @Callback function to draw contents of the settings window.
 ---@return ac.Disposable|fun(command: 'open'|'close'|'toggle'|'opened'|'focus'|string): any
 function ui.addSettings(params, callback) end

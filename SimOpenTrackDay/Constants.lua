@@ -8,7 +8,25 @@ Constants.APP_AUTHOR = "dreasgrech"
 Constants.APP_DEVELOPER = "SnakeD"
 Constants.APP_ICON_SIZE = vec2(128, 128)
 Constants.IS_ONLINE = sim.isOnlineRace
-Constants.CAN_APP_RUN = (not Constants.IS_ONLINE)
+
+-- F0: minimum Custom Shaders Patch build (ac.getPatchVersionCode). Below it, or when the build
+-- cannot be read, the app fails closed and stays inert. Reference build: 0.3.2-preview2 (4305).
+Constants.MIN_CSP_BUILD = 4305
+-- CSP may expose ac.getPatchVersionCode as a callable FFI cdata (like physics.allowed), and the
+-- result may be an FFI integer, so accept both and normalize the value with tonumber().
+local cspBuildFnType = type(ac.getPatchVersionCode)
+local cspBuildOk, cspBuild = false, nil
+if cspBuildFnType == 'function' or cspBuildFnType == 'cdata' then
+  cspBuildOk, cspBuild = pcall(ac.getPatchVersionCode)
+end
+local cspBuildRawType = type(cspBuild)
+cspBuild = cspBuildOk and tonumber(cspBuild) or nil
+if cspBuild ~= cspBuild then cspBuild = nil end
+Constants.CSP_BUILD = cspBuild
+Constants.CSP_BUILD_PROBE = string.format('fn=%s ok=%s result=%s', cspBuildFnType, tostring(cspBuildOk), cspBuildRawType)
+Constants.CSP_BUILD_OK = (cspBuild ~= nil) and (cspBuild >= Constants.MIN_CSP_BUILD)
+
+Constants.CAN_APP_RUN = (not Constants.IS_ONLINE) and Constants.CSP_BUILD_OK
 Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = false
 
 Constants.ENABLE_ACCIDENT_HANDLING_IN_APP = true -- disable accident handling for now since it's still WIP
