@@ -75,6 +75,11 @@ end
 ---@param storage StorageTable
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
       local car = sortedCarsList[sortedCarsListIndex]
+      if car and (car.isInPitlane == true or car.isInPit == true) then
+        CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
+        CarOperations.releaseTrafficYieldControls(carIndex)
+        return
+      end
       --local yieldSide = getYieldingSide()
       --local targetOffset = storage.maxLateralOffset_normalized
       --local rampSpeed_mps = storage.rampSpeed_mps
@@ -87,13 +92,13 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
         CarOperations_setAIThrottleLimit(carIndex, 0.4, 'TRAFFIC_YIELD')
 
         -- set the brake pedal to something low to help slow down the car while waiting for a gap
-        CarOperations_setPedalPosition(carIndex, CarOperations.CarPedals.Brake, 0.2)
+        CarOperations_setPedalPosition(carIndex, CarOperations.CarPedals.Brake, 0.2, 'TRAFFIC_YIELD')
 
         return
       end
 
       CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
-      CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
+      CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake, 'TRAFFIC_YIELD')
 
       CarStateMachine_setStateExitReason(carIndex, Strings.StringNames[Strings.StringCategories.ReasonWhyCantYield].None)
 
@@ -154,7 +159,7 @@ end
 ---@param sortedCarsListIndex integer
 ---@param storage StorageTable
 CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
-    CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
+      CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake, 'TRAFFIC_YIELD')
     CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
     CarOperations_toggleTurningLights(carIndex, ac.TurningLights.None)
 end

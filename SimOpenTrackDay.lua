@@ -237,6 +237,7 @@ local RaceTrackManager_updateYellowFlagZones = RaceTrackManager.updateYellowFlag
 local AccidentManager = AccidentManager
 local AccidentManager_registerCollision = AccidentManager.registerCollision
 local AccidentManager_informAboutCarReset = AccidentManager.informAboutCarReset
+local AccidentManager_updateRecovery = AccidentManager.updateRecovery
 local AppIconRenderer = AppIconRenderer
 local CameraManager = CameraManager
 local CameraManager_getFocusedCarIndex = CameraManager.getFocusedCarIndex
@@ -259,6 +260,22 @@ local UIManager = UIManager
 local RaceFlagManager = RaceFlagManager
 local RaceFlagManager_setRaceFlag = RaceFlagManager.setRaceFlag
 local RaceFlagManager_removeRaceFlag = RaceFlagManager.removeRaceFlag
+local rawget, pcall, type = rawget, pcall, type
+local function observeOBS1(...)
+  local lookupOK, logger = pcall(rawget, _G, 'Logger')
+  if not lookupOK then return end
+  local observeOK, fn = pcall(rawget, logger, 'observe')
+  if not observeOK then return end
+  if type(fn) == 'function' then pcall(fn, ...) end
+end
+local function observeOBS1QueuedEventProtected(kind, carIndex, event, detail)
+  local generation = type(event) == 'table' and event.culpritGeneration or nil
+  local referenceSession = type(event) == 'table' and event.session or nil
+  observeOBS1(kind, carIndex, generation, nil, nil, detail, nil, referenceSession)
+end
+local function observeOBS1QueuedEvent(kind, carIndex, event, detail)
+  pcall(observeOBS1QueuedEventProtected, kind, carIndex, event, detail)
+end
 
 -- local ENABLE_CUSTOM_AI_FLOOD_MANAGER = false
 
@@ -388,11 +405,30 @@ local function shouldAppRun()
         and storage.enabled
 end
 
-local function clearOwnedGlobalFlag()
-  if physics and type(physics.overrideRacingFlag) == 'function' and ac and ac.FlagType and ac.FlagType.None then
-    local allowed = CarManager_hasPhysicsPermission()
-    if allowed then physics.overrideRacingFlag(ac.FlagType.None) end
+-- S7-1F: ownership of the global Caution flag. nil means the app owns nothing.
+local ownedGlobalFlag = nil
+local flagEventCounts = {}
+
+local function logFlagEventThrottled(reason, message)
+  local count = (flagEventCounts[reason] or 0) + 1
+  flagEventCounts[reason] = count
+  if count == 1 or count % 10 == 0 then
+    Logger.log(string_format('%s reason=%s count=%d', message, reason, count))
   end
+end
+
+local function releaseOwnedGlobalFlag(reason)
+  if ownedGlobalFlag == nil then return false end
+  -- Release is best-effort and deliberately does NOT consult hasPhysicsPermission:
+  -- dropping our own override must work even when the car/physics gate is denied.
+  local released = pcall(RaceFlagManager_removeRaceFlag)
+  if released then
+    ownedGlobalFlag = nil
+    Logger.log(string_format('[S7-1F] global flag released reason=%s', reason))
+    return true
+  end
+  logFlagEventThrottled(reason, '[S7-1F] global flag release failed')
+  return false
 end
 
 local function canWriteGlobalFlag()
@@ -408,6 +444,7 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collisio
       -- Register an accident for the car collision
       local car = ac_getCar(carIndex)
       if not car then
+          observeOBS1QueuedEvent('queue-rejected', carIndex, event, 'callback-car-unavailable')
           Logger_error(string_format('OnCarEventManager: OnCarEventType.Collision called for invalid car index %d', carIndex))
           return
       end
@@ -421,6 +458,8 @@ OnCarEventManager.OnCarEventExecutions[OnCarEventManager.OnCarEventType.Collisio
       CarStateMachine.informAboutAccident(accidentIndex)
       --]====]
       AccidentManager_registerCollision(carIndex, event.collisionPosition, event.collidedWith, event)
+  else
+      observeOBS1QueuedEvent('incident-rejected', carIndex, event, 'accident-handler-disabled')
   end
 end
 
@@ -450,23 +489,35 @@ end
 
 ac.onCarCollision(-1, function (carIndex)
     if not shouldAppRun() or not isFiniteIntegerCarIndex(carIndex)
-      or not CarManager_isWritableAICar(carIndex) then return end
+      or not CarManager_isWritableAICar(carIndex) then
+      observeOBS1('collision-callback-filtered', carIndex, nil, nil, nil, 'runtime-or-identity-gate')
+      return
+    end
     local car = ac_getCar(carIndex)
-    if not car or car.index ~= carIndex then return end
+    if not car or car.index ~= carIndex then
+      observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-car-mismatch'); return
+    end
     local collidedWith = car.collidedWith
-    if not isFiniteIntegerCarIndex(collidedWith) then return end
+    if not isFiniteIntegerCarIndex(collidedWith) then
+      observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-collider-invalid'); return
+    end
     local victim
     if collidedWith > 0 then
       local victimIndex = collidedWith - 1
-      if not isFiniteIntegerCarIndex(victimIndex) then return end
+      if not isFiniteIntegerCarIndex(victimIndex) then
+        observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-victim-index-invalid'); return
+      end
       victim = ac_getCar(victimIndex)
-      if not victim or victim.index ~= victimIndex then return end
+      if not victim or victim.index ~= victimIndex then
+        observeOBS1('queue-rejected', carIndex, nil, nil, nil, 'callback-victim-mismatch'); return
+      end
     end
     OnCarEventManager.enqueueOnCarEvent(OnCarEventManager.OnCarEventType.Collision, carIndex, car.collisionPosition, collidedWith, car, victim)
 end)
 
 -- Monitor flood ai cars cycle event so that we also reset our state
 ac.onCarJumped(-1, function(carIndex)
+    pcall(Logger.invalidateOBS3, 'car-jump')
     local sim = ac_getSim()
     if not shouldAppRun() or not sim or sim.isLive ~= true or sim.isReplayActive ~= false or sim.isSessionStarted ~= true then
       if CarManager.invalidateCarLifecycle(carIndex) then
@@ -480,6 +531,8 @@ end)
 
 if type(ac.onCarSwap) == 'function' then
   ac.onCarSwap(-1, function(carIndex)
+    pcall(Logger.invalidateOBS3, 'car-swap')
+    observeOBS1('lifecycle-swap', carIndex, nil, nil, nil, 'callback-received')
     if CarManager.invalidateCarLifecycle(carIndex) then
       OnCarEventManager.clear()
       CarStateMachine_clearPendingLifecycle()
@@ -489,11 +542,13 @@ end
 
 ac.onSessionStart(function()
   CarManager.resetSession()
+  observeOBS1('session-start', nil, nil, nil, nil, 'generation-advanced')
   syncGateDiagnosticSession()
   OnCarEventManager.clear()
   CarStateMachine_clearPendingLifecycle()
   HumanErrorManager.resetAll()
   AccidentManager.resetSession()
+  releaseOwnedGlobalFlag('session-reset')
   if not shouldAppRun() then return end
   SessionDetails.informSessionInitiated()
 end)
@@ -542,8 +597,10 @@ function script.MANIFEST__UPDATE(dt)
   local live = suspensionReason == nil
   CarManager.runtimeEnabled, CarManager.runtimePaused, CarManager.runtimeLive = running, paused, live
   CarManager.runtimeSuspensionReason = suspensionReason
+  pcall(Logger.tickOBS3, dt)
   logSuspensionDiagnostic(suspensionReason, sim)
   if previousSuspensionReason ~= suspensionReason then
+    observeOBS1('lifecycle-context', nil, nil, nil, nil, suspensionReason or 'live')
     OnCarEventManager.clear()
     CarStateMachine_clearPendingLifecycle()
     local pauseOnlyBoundary = (previousSuspensionReason == nil or previousSuspensionReason == 'pause')
@@ -554,7 +611,7 @@ function script.MANIFEST__UPDATE(dt)
       CarStateMachine_clearPendingLifecycle()
       AccidentManager.resetSession()
     end
-    clearOwnedGlobalFlag()
+    releaseOwnedGlobalFlag('not-live')
   end
   if not live then return end
 
@@ -578,16 +635,37 @@ function script.MANIFEST__UPDATE(dt)
   -- local isPlayerComingUpToAccidentIndex = AccidentManager.isCarComingUpToAccident(playerCar, storage.distanceFromAccidentToSeeYellowFlag_meters)
   -- if isPlayerComingUpToAccidentIndex then
   local cameraFocusedCarIndex = CameraManager_getFocusedCarIndex()
-  -- Logger.log(string.format("Camera focused car index is %d", cameraFocusedCarIndex or -1))
-  local cameraFocusedCar = ac_getCar(cameraFocusedCarIndex)
-  if cameraFocusedCar then
-    local cameraFocusedCarSplinePosition = cameraFocusedCar.splinePosition
-    local isFocusedCarInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCarSplinePosition)
-    if isFocusedCarInYellowFlagZone and canWriteGlobalFlag() then
-      RaceFlagManager_setRaceFlag(ac.FlagType.Caution)
-    elseif canWriteGlobalFlag() then
-      RaceFlagManager_removeRaceFlag()
+  local cameraFocusedCar
+  if type(cameraFocusedCarIndex) == 'number' and cameraFocusedCarIndex == cameraFocusedCarIndex
+    and cameraFocusedCarIndex >= 0 and cameraFocusedCarIndex % 1 == 0 then
+    cameraFocusedCar = ac_getCar(cameraFocusedCarIndex)
+  end
+  local focusedCarValid = cameraFocusedCar ~= nil and cameraFocusedCar.index == cameraFocusedCarIndex
+  local focusedCarInZone = false
+  if focusedCarValid then
+    focusedCarInZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCar.splinePosition) == true
+  end
+  local wantCaution = focusedCarValid and focusedCarInZone
+  if wantCaution then
+    if canWriteGlobalFlag() then
+      if ownedGlobalFlag ~= ac.FlagType.Caution then
+        local wrote = pcall(RaceFlagManager_setRaceFlag, ac.FlagType.Caution)
+        if wrote then
+          ownedGlobalFlag = ac.FlagType.Caution
+          Logger.log('[S7-1F] global flag set reason=zone-entered')
+        else
+          logFlagEventThrottled('zone-entered', '[S7-1F] global flag set failed')
+        end
+      end
+    else
+      -- Permission denied must not block the release of an override we already own.
+      if ownedGlobalFlag ~= nil then releaseOwnedGlobalFlag('permission-denied') end
+      logFlagEventThrottled('permission-denied', '[S7-1F] global flag set skipped')
     end
+  else
+    -- The release must run even when the focused car could not be read.
+    local releaseReason = focusedCarValid and 'zone-cleared' or 'focused-car-invalid'
+    if ownedGlobalFlag ~= nil then releaseOwnedGlobalFlag(releaseReason) end
   end
   -- local playerCarSplinePosition = playerCar.splinePosition
   -- local isPlayerInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(playerCarSplinePosition)
@@ -638,6 +716,7 @@ function script.MANIFEST__UPDATE(dt)
   -- handle any queued accidents before updating the car state machines
   OnCarEventManager.processQueuedEvents()
   CarStateMachine_handleQueuedAccidents() -- todo: check if this can be integrated with the processQueuedEvents() above
+  AccidentManager_updateRecovery(dt)
 
   -- Human errors: simulate realistic mistakes (brake/traction) with cooldown
   local storage_Behavior = StorageManager.getStorage_Behavior()

@@ -77,7 +77,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
     -- CarOperations.driveSafelyToSide(carIndex, dt, car, driveToSide, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, true)
     local handleSideCheckingWhenOvertaking = storage_Overtaking.handleSideCheckingWhenOvertaking
     local useIndicatorLights = storage_Overtaking.UseIndicatorLightsWhenEasingOutOvertaking
-    CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, handleSideCheckingWhenOvertaking, useIndicatorLights)
+    CarOperations_driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, storage.overrideAiAwareness, handleSideCheckingWhenOvertaking, useIndicatorLights, 'TRAFFIC_OVERTAKE')
 end
 
 -- TRANSITION FUNCTION

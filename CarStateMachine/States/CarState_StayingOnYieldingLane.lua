@@ -260,8 +260,8 @@ CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCars
   CarOperations_setDefaultAIAggression(carIndex)
   CarOperations_setDefaultAIDifficultyLevel(carIndex)
   CarOperations_removeAITopSpeed(carIndex, 'TRAFFIC_YIELD')
-  CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
-  CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Gas)
+  CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Brake, 'TRAFFIC_YIELD')
+  CarOperations_resetPedalPosition(carIndex, CarOperations.CarPedals.Gas, 'TRAFFIC_YIELD')
   CarOperations_resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
   CarOperations_toggleTurningLights(carIndex, ac.TurningLights.None)
 end

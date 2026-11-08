@@ -33,7 +33,6 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
 
     CarOperations.toggleTurningLights(carIndex, ac.TurningLights.Hazards)
 
-    CarOperations.toggleCarCollisions(carIndex, false)
 end
 
 -- TRANSITION FUNCTION
