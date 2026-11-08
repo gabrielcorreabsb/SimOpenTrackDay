@@ -245,12 +245,12 @@ Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\l
 | Document | Content |
 | --- | --- |
 | [Documentation index](README.md) | Task-oriented index and references |
-| [OpenCode workflow](WORKFLOW_OPENCODE.md) | Task-scoped reading and handoff |
-| [Architecture](ARCHITECTURE.md) | Code map, module coupling, hot paths |
-| [Testing](TESTING.md) | Checks and in-game validation scenarios |
-| [Localization](LOCALIZATION.md) | Locale, IDs, persistence, test contract |
-| [UI redesign discovery](UI_REDESIGN_DISCOVERY.md) | Historical inventory and current status addendum |
-| [UI identity plan](plans/UI_IDENTITY.md) | Proposed future UI direction |
+| [OpenCode workflow](../docs/guides/WORKFLOW.md) | Task-scoped reading and handoff |
+| [Architecture](../docs/reference/ARCHITECTURE.md) | Code map, module coupling, hot paths |
+| [Testing](../docs/guides/TESTING.md) | Checks and in-game validation scenarios |
+| [Localization](../docs/guides/LOCALIZATION.md) | Locale, IDs, persistence, test contract |
+| [UI redesign discovery](../docs/archive/UI_REDESIGN_DISCOVERY.md) | Historical inventory and current status addendum |
+| [UI identity plan](../docs/archive/UI_IDENTITY.md) | Proposed future UI direction |
 | [Contributing](../CONTRIBUTING.md) | Contribution workflow |
 | [Project README](../README.md) | Overview, manual installation, usage, credits |
 
@@ -275,4 +275,4 @@ Get-ChildItem -Recurse -Filter *.lua | Where-Object { $_.FullName -notmatch '\\l
 2. For main flow, locate `MANIFEST__UPDATE` in `SimOpenTrackDay.lua`.
 3. For car behavior, inspect `CarStateMachine/CarStateMachine.lua` and a relevant state under `CarStateMachine/States/`.
 4. For persistence, inspect `StorageManager.lua` schemas and `getStorage*()` getters.
-5. Run relevant checks from [Testing](TESTING.md); a syntax check is not a substitute for UI or CSP validation.
+5. Run relevant checks from [Testing](../docs/guides/TESTING.md); a syntax check is not a substitute for UI or CSP validation.

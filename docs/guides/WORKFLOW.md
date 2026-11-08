@@ -1,13 +1,13 @@
 # OpenCode workflow
 
-Use context on demand. [`AGENTS.md`](../AGENTS.md) contains concise rules; it does not replace this human guide or automatically load other documents. See [official instructions documentation](https://opencode.ai/v2/docs/instructions/).
+Use context on demand. [`AGENTS.md`](../../AGENTS.md) contains concise rules; it does not replace this human guide or automatically load other documents. See [official instructions documentation](https://opencode.ai/v2/docs/instructions/).
 
 | Task | Start with |
 | --- | --- |
-| Orientation | [README](../README.md), [index](README.md) |
-| UI/localization | [UI plan](plans/UI_IDENTITY.md), [localization](LOCALIZATION.md), [testing](TESTING.md) |
-| Behavior/modules | [architecture](ARCHITECTURE.md), [states](STATE_MACHINE.md) as needed |
-| Organization | [organization plan](plans/PROJECT_ORGANIZATION.md) |
+| Orientation | [README](../README.md), [index](../README.md) |
+| UI/localization | [UI plan](../archive/UI_IDENTITY.md), [localization](LOCALIZATION.md), [testing](TESTING.md) |
+| Behavior/modules | [architecture](../reference/ARCHITECTURE.md), [states](../reference/STATE_MACHINE.md) as needed |
+| Organization | [organization plan](../archive/PROJECT_ORGANIZATION.md) |
 
 ## Short cycle
 

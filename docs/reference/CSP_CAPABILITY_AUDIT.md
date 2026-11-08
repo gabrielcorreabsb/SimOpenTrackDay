@@ -5,9 +5,9 @@
 - **Data:** 2026-10-21. **Baseline de código:** `10ed904d2c2178e5d3c5ec3298d474c37e34ecbd`.
 - **Resultado:** auditoria de fontes concluída; viabilidade de atuação no jogo ainda pendente. Não é certificação de suporte a uma versão do CSP.
 - A investigação original foi somente leitura do projeto, com verificações locais descritas abaixo. Esta consolidação altera apenas documentação; não implementa milestones nem modifica instalação, manifest, ferramentas, dependências ou configuração do OpenCode.
-- O [roadmap original](SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md) permanece como hipóteses/backlog. O [plano incremental](DEVELOPMENT_PLAN.md) registra a sequência revisada e os gates de execução.
+- O [roadmap original](../archive/SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md) permanece como hipóteses/backlog. O [plano incremental](../archive/DEVELOPMENT_PLAN.md) registra a sequência revisada e os gates de execução.
 
-Fontes internas consultadas na medida necessária: [regras](../../AGENTS.md), [README](../../README.md), [arquitetura](../ARCHITECTURE.md), [FSM](../STATE_MACHINE.md), [testes](../TESTING.md) e [workflow](../WORKFLOW_OPENCODE.md), confrontadas com a implementação. Descrições históricas não prevalecem sobre o código inspecionado.
+Fontes internas consultadas na medida necessária: [regras](../../AGENTS.md), [README](../../README.md), [arquitetura](ARCHITECTURE.md), [FSM](STATE_MACHINE.md), [testes](../guides/TESTING.md) e [workflow](../guides/WORKFLOW.md), confrontadas com a implementação. Descrições históricas não prevalecem sobre o código inspecionado.
 
 ### Quatro classes de evidência independentes
 
@@ -18,7 +18,7 @@ Fontes internas consultadas na medida necessária: [regras](../../AGENTS.md), [R
 | **P — projeto** | Há chamada/consumo no código atual, distinguindo ativo, parcial e inativo | Que a chamada já foi executada com sucesso no jogo |
 | **R — runtime** | Resultado observado em cenário, instalação e build identificados | Generalização para outros modos, carros, pistas ou builds |
 
-**R das capacidades de IA auditadas: pendente.** A confirmação histórica de 18/10/2026 é limitada à recuperação do carregamento da UI após retirar módulos antigos da raiz do AC; não comprova física/IA, todas as abas ou o bootstrap posterior. Ver [incidente de carregamento](MODULE_LOADING_HARDENING.md).
+**R das capacidades de IA auditadas: pendente.** A confirmação histórica de 18/10/2026 é limitada à recuperação do carregamento da UI após retirar módulos antigos da raiz do AC; não comprova física/IA, todas as abas ou o bootstrap posterior. Ver [incidente de carregamento](../archive/MODULE_LOADING_HARDENING.md).
 
 ### SDK e contexto
 
@@ -135,4 +135,4 @@ O pedido de pit e a troca de pneus têm contrato no SDK e exemplos, mas Track Da
 
 BehaviorPolish permanece sem integração; HumanError tem dt aproximado mas isolamento/reset incompletos; lifecycle/cache/storage precisam de identidade por geração. Não duplicar física nativa de pneus/chuva e não supor MRF em carros sem contrato. A suíte local não está integralmente verde, nem cobre o comportamento AI no jogo.
 
-**Próximo desenvolvimento recomendado:** M1a (isolamento/lifecycle), M1b restrito (ownership/valores solicitados versus aplicados), estabilização de incidentes e M2 observacional. Não começar por pit automático, grip novo ou arquitetura completa. Cada implementação exige milestone e arquivos explicitamente autorizados, conforme o [plano](DEVELOPMENT_PLAN.md).
+**Próximo desenvolvimento recomendado:** M1a (isolamento/lifecycle), M1b restrito (ownership/valores solicitados versus aplicados), estabilização de incidentes e M2 observacional. Não começar por pit automático, grip novo ou arquitetura completa. Cada implementação exige milestone e arquivos explicitamente autorizados, conforme o [plano](../archive/DEVELOPMENT_PLAN.md).

@@ -21,7 +21,7 @@
 
 - Use `StorageManager` getters and schemas for persistence. Declare new keys in the schema pipeline; `behavior.profile` is not a declared field.
 - Do not describe partial profile inference as reliable for every settings combination.
-- UI text localization uses the source English msgid and stable internal IDs; see [`docs/LOCALIZATION.md`](docs/LOCALIZATION.md).
+- UI text localization uses the source English msgid and stable internal IDs; see [`docs/LOCALIZATION.md`](docs/guides/LOCALIZATION.md).
 - Keep simulation enums, keys, track/car data, logs, and reason strings distinct from translated presentation text.
 - Plans must not imply that UI, AI, or profile changes have already been implemented.
 
@@ -29,7 +29,7 @@
 
 - Preserve the nine `[RTD-DIAG-*]` records and `CSPCompatibilityManager.ShowErrorModalDialog = false` unless a separately authorized and validated change requires otherwise.
 - Preserve manifest, callback IDs, and credits/licenses; do not change these contracts as incidental cleanup.
-- Validation commands and limits are in [`docs/TESTING.md`](docs/TESTING.md). Documentation-only changes require link/diff review, not Lua tests.
+- Validation commands and limits are in [`docs/TESTING.md`](docs/guides/TESTING.md). Documentation-only changes require link/diff review, not Lua tests.
 - Report only checks actually run; mocks/headless checks do not establish CSP runtime or rendering.
 - Use syntax/UI/logo/localization checks as described in `docs/TESTING.md` when relevant; do not treat them as in-game evidence.
 - Runtime installation and rollback are manual; preserve existing installations and user settings.

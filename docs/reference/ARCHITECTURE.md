@@ -327,7 +327,7 @@ Pipeline in `StorageManager.lua`:
 
 In `SettingsWindow.lua`, the profile dropdown is inferred from persisted `storage_Behavior` values. It is not stored as `storage_Behavior.profile`: the UI compares selected profile values against the saved `mode`, `humanErrorEnabled`, and `entryBlendTime_s`, and falls back to `Realistic` when no match is found. Choosing a profile applies its values to the declared behavior fields. The `advancedBehaviorOpen` UI toggle is a local variable and is not persisted; `showBehaviorAdvanced` is not read or written by the UI.
 
-`getStorage_UI()` delegates to the shared `UIStorage.lua` schema and lazy singleton, providing app-wide language preferences in the `ui` namespace, with `uiLanguage = ''` marking first use. `Localization` uses the same shared storage when a legacy manager lacks that getter. It migrates a valid legacy `global.uiLanguage` only when UI storage is empty; subsequent language changes persist only in UI storage, independent of track and session mode. The legacy global field remains declared for compatibility. See [`docs/LOCALIZATION.md`](LOCALIZATION.md) for localization details.
+`getStorage_UI()` delegates to the shared `UIStorage.lua` schema and lazy singleton, providing app-wide language preferences in the `ui` namespace, with `uiLanguage = ''` marking first use. `Localization` uses the same shared storage when a legacy manager lacks that getter. It migrates a valid legacy `global.uiLanguage` only when UI storage is empty; subsequent language changes persist only in UI storage, independent of track and session mode. The legacy global field remains declared for compatibility. See [`docs/LOCALIZATION.md`](../guides/LOCALIZATION.md) for localization details.
 
 ### 5.2 Behavior profiles
 

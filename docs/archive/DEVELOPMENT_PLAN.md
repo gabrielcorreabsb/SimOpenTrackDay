@@ -2,7 +2,7 @@
 
 ## Estado e autoridade
 
-**Consolidado em 2026-10-21; status atualizado em 2026-10-23**, a partir da conversa, da [auditoria M0](CSP_CAPABILITY_AUDIT.md) e do [roadmap original](SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md). Baseline histórica da auditoria M0: `10ed904d2c2178e5d3c5ec3298d474c37e34ecbd`. Base integrada do ticket S1 abaixo: `9ce6f47e98e2e80ca40a274e72103a99960d2e02`; a implementação S2 também depende do conteúdo S1, reunido no checkpoint da branch `omos/incident-stale-cleanup`. Não confundir essa base anterior com o HEAD corrente; conferir log, status e remoto.
+**Consolidado em 2026-10-21; status atualizado em 2026-10-23**, a partir da conversa, da [auditoria M0](../reference/CSP_CAPABILITY_AUDIT.md) e do [roadmap original](SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md). Baseline histórica da auditoria M0: `10ed904d2c2178e5d3c5ec3298d474c37e34ecbd`. Base integrada do ticket S1 abaixo: `9ce6f47e98e2e80ca40a274e72103a99960d2e02`; a implementação S2 também depende do conteúdo S1, reunido no checkpoint da branch `omos/incident-stale-cleanup`. Não confundir essa base anterior com o HEAD corrente; conferir log, status e remoto.
 
 - **Entrega documental original (`a45ab3b`):** consolidação publicada em `main`; sua autorização não incluía código nem worktrees.
 - **M0:** auditoria de fontes concluída; confirmação funcional no CSP pendente. A matriz distingue SDK, exemplos externos, código atual e runtime.
@@ -242,7 +242,7 @@ O [prompt de continuidade](INCIDENT_SAFETY_HANDOFF_PROMPT.md) inicia outro conte
 - **Falhas parciais:** setter pode produzir efeito e lançar erro. Não inventar aquisição ou conclusão; tentar novamente somente quando permitido e seguro. Canal incerto pode manter episódio pendente, mas não autoriza renovar a parada após seu prazo nem reter controles próprios que já podem ser liberados.
 - **Suspensão e reset:** o critério final não exige escrita proibida para forçar limpeza física. Em identidade válida, sessão ativa e permissão positiva, confirmar o handback próprio; após invalidação, descartar propriedade em memória sem adoção por outra identidade. Registrar resíduos/liberações não comprovadas como limitações ou pendências, nunca sucesso.
 - **Incidente não é intervenção:** completar S2 não resolve risco nem remove zona. Preservar o descarte S1 de registros obsoletos; eventual perigo de participantes restantes exige observação válida atual, não reaproveitar evento/identidade descartados.
-- **Escopo:** LuaJIT 2.1/Lua 5.1, `bit.*`, runtime na raiz, bindings locais e tabelas DoD/buffers reutilizáveis. Seguir [arquitetura](../ARCHITECTURE.md), [FSM](../STATE_MACHINE.md) e [testes](../TESTING.md), confrontando descrições históricas com o código. Preservar os nove registros `[RTD-DIAG-*]`, modal desabilitado, manifest/callbacks, créditos/licenças, vendor/submódulo e instalações/settings existentes.
+- **Escopo:** LuaJIT 2.1/Lua 5.1, `bit.*`, runtime na raiz, bindings locais e tabelas DoD/buffers reutilizáveis. Seguir [arquitetura](../reference/ARCHITECTURE.md), [FSM](../reference/STATE_MACHINE.md) e [testes](../guides/TESTING.md), confrontando descrições históricas com o código. Preservar os nove registros `[RTD-DIAG-*]`, modal desabilitado, manifest/callbacks, créditos/licenças, vendor/submódulo e instalações/settings existentes.
 - **Não objetivos:** punições esportivas/enforcement, novas bandeiras operacionais, M2, pit automático, grip/tuning, teleporte, recuperação física completa, nova arbitragem universal, `FlagDirector` paralelo ou segunda FSM completa preventiva. Não alterar OpenCode, SDK, dependências, manifest ou instalador incidentalmente. Necessidade demonstrada não dispensa aprovação do arquivo/contrato.
 
 ### Entregas S2–S9
@@ -325,7 +325,7 @@ Os recursos existentes já bastam: não é necessário criar agentes, slash comm
 
 ### Sessões e checkpoints
 
-Uma sessão principal por milestone reduz mistura de objetivos. Subagentes recebem objetivo, caminhos, exclusões e dono da validação; sessão não substitui o contrato em Markdown. Leitura sob demanda conforme o [workflow do projeto](../WORKFLOW_OPENCODE.md), sem carregar toda a árvore documental por padrão.
+Uma sessão principal por milestone reduz mistura de objetivos. Subagentes recebem objetivo, caminhos, exclusões e dono da validação; sessão não substitui o contrato em Markdown. Leitura sob demanda conforme o [workflow do projeto](../guides/WORKFLOW.md), sem carregar toda a árvore documental por padrão.
 
 [`/undo` e snapshots](https://opencode.ai/v2/docs/snapshots/#scope) são conveniência, não backup: cobrem arquivos elegíveis no diretório ativo, não commits/branches nem efeitos externos, e podem não capturar arquivos ignorados. Checkpoints importantes dependem de commit/backup aprovado. Mudar a conversa não garante reversão do jogo ou do shell.
 
@@ -342,7 +342,7 @@ Uma sessão principal por milestone reduz mistura de objetivos. Subagentes receb
 
 Checks futuros devem cobrir, quando aplicáveis: APIs ausentes, sensores nil/NaN, dt inválido e 30/60/120 Hz, jogador/autopilot, reset/índice reciclado, prioridades/expiração, dez ciclos de disable, storage não destrutivo e i18n. Não expandir todos os testes de uma vez; escolher os que sustentam a afirmação daquela fatia.
 
-Baseline local da auditoria: sintaxe PASS em 85 arquivos; 11 testes Lua headless PASS; `test_ui_smoke.lua` FAIL por fixture ausente. Module-path e testes de pacote/instalador não foram executados em M0. Resultados completos e limites estão na [auditoria](CSP_CAPABILITY_AUDIT.md); não marcar suíte integral verde.
+Baseline local da auditoria: sintaxe PASS em 85 arquivos; 11 testes Lua headless PASS; `test_ui_smoke.lua` FAIL por fixture ausente. Module-path e testes de pacote/instalador não foram executados em M0. Resultados completos e limites estão na [auditoria](../reference/CSP_CAPABILITY_AUDIT.md); não marcar suíte integral verde.
 
 ### Cenários manuais propostos, não executados por este plano
 

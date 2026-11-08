@@ -9,4 +9,4 @@ Concise reference to the implementation in `Localization.lua`, `StorageManager.l
 - `UIStorage.lua` owns the shared schema and lazily creates one storage handle. The manager getter delegates to it; if a legacy manager lacks `getStorage_UI`, `Localization` uses the same shared storage directly. A present but invalid or failing getter remains an error. Include `UIStorage.lua` in the root runtime payload.
 - Translate UI presentation, not numeric enums, keys, track/car data, logs, or simulation reason strings.
 - `behavior.profile` is not declared in the storage schema. The UI infers a profile by comparing only some persisted values, so the inference is partial and must not be described as reliable for every combination. `advancedBehaviorOpen` is local UI state, not persisted.
-- Translation changes require msgid/placeholder parity and stable IDs. See [`tools/test_localization.lua`](../tools/test_localization.lua) and the command in [Testing](TESTING.md).
+- Translation changes require msgid/placeholder parity and stable IDs. See [`tools/test_localization.lua`](../../tools/test_localization.lua) and the command in [Testing](TESTING.md).

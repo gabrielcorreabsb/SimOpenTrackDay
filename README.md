@@ -2,13 +2,13 @@
 
 SimOpenTrackDay is a Lua app for Assetto Corsa, running through Custom Shaders Patch (CSP). It helps AI-controlled cars yield and overtake during track-day sessions instead of staying on the racing line at all times.
 
-This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. A limited manual UI-loading recovery was reported on 2026-10-18; broader runtime behavior and visual validation in CSP remain pending. See [troubleshooting](docs/TESTING.md#6-operational-troubleshooting).
+This is an independent derivative project under development. Version `0.1` is a preview, not a certified or stable release. A limited manual UI-loading recovery was reported on 2026-10-18; broader runtime behavior and visual validation in CSP remain pending. See [troubleshooting](docs/guides/TESTING.md#6-operational-troubleshooting).
 
 - [Manual installation](#manual-installation)
-- [Package and installer guide](docs/INSTALL.md)
+- [Package and installer guide](docs/guides/INSTALL.md)
 - [Basic usage](#basic-usage)
 - [Local checks](#local-checks)
-- [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Detailed testing](docs/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/plans/PROJECT_ORGANIZATION.md)
+- [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/reference/ARCHITECTURE.md) · [Detailed testing](docs/guides/TESTING.md) · [Onboarding](docs/AGENT.md) · [Plans](docs/archive/PROJECT_ORGANIZATION.md)
 - [Report an issue](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues)
 
 ## What the app provides
@@ -17,9 +17,9 @@ This is an independent derivative project under development. Version `0.1` is a 
 - Behavior profiles and driving options rendered through `SettingsWindow.lua` content.
 - Track- and session-specific settings through `StorageManager`.
 - One main window with five tabs: Overview, Behavior, Yielding, Overtaking, and Advanced; the operational car list is in Overview.
-- UI presentation is localized in English, Brazilian Portuguese, and Spanish; see the [localization reference](docs/LOCALIZATION.md).
+- UI presentation is localized in English, Brazilian Portuguese, and Spanish; see the [localization reference](docs/guides/LOCALIZATION.md).
 
-Results depend on the track, session, and APIs available in the installed CSP version. Consult [Testing](docs/TESTING.md) before experimenting; headless checks are not in-game validation.
+Results depend on the track, session, and APIs available in the installed CSP version. Consult [Testing](docs/guides/TESTING.md) before experimenting; headless checks are not in-game validation.
 
 ## Requirements
 
@@ -32,7 +32,7 @@ The entry point registers required CSP functions and checks compatibility. This 
 
 ## Manual installation
 
-See the [installation guide](docs/INSTALL.md) for `tools/install.bat` and manual backup/restore. The current installer replaces the contents of the app directory and has no automatic backup or rollback. Supply the **AC installation root**, not `apps/lua`, when prompted; the script appends the app path. Installation remains a manual user action.
+See the [installation guide](docs/guides/INSTALL.md) for `tools/install.bat` and manual backup/restore. The current installer replaces the contents of the app directory and has no automatic backup or rollback. Supply the **AC installation root**, not `apps/lua`, when prompted; the script appends the app path. Installation remains a manual user action.
 
 The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
 
@@ -42,7 +42,7 @@ The source repository keeps runtime payload at its root; the app installation pa
 
 The installation must contain `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; the directory and entry-point names must match. Do not copy Git metadata (`.git/` directories or `.git` files), `tools/`, `docs/`, `artifacts/`, or `*.bak` files. The compatibility submodule at `lib/AssettoCorsaCSPLuaCompatibilityManager/` is part of runtime; do not copy the submodule's Git metadata.
 
-**Never copy the modules directly into the Assetto Corsa root.** Old files there can shadow the installed app's modules and leave its tabs blank. The source bootstrap now prioritizes its own directory via `__dirname`, but CSP validation of that change is pending; it does not replace already cached modules. See the [resolved incident, implemented bootstrap and remaining proposal](docs/plans/MODULE_LOADING_HARDENING.md). The installer is unchanged.
+**Never copy the modules directly into the Assetto Corsa root.** Old files there can shadow the installed app's modules and leave its tabs blank. The source bootstrap now prioritizes its own directory via `__dirname`, but CSP validation of that change is pending; it does not replace already cached modules. See the [resolved incident, implemented bootstrap and remaining proposal](docs/archive/MODULE_LOADING_HARDENING.md). The installer is unchanged.
 
 Preserve existing installations and settings. Use a separate app directory for testing; do not remove or replace old directories or reset user data during installation or rollback.
 
@@ -86,7 +86,7 @@ Strings/ DataStructures/  text support and data structures
 tools/ docs/               checks and documentation
 ```
 
-See [Architecture](docs/ARCHITECTURE.md) for module flow and [State machine](docs/STATE_MACHINE.md) for documented states.
+See [Architecture](docs/reference/ARCHITECTURE.md) for module flow and [State machine](docs/reference/STATE_MACHINE.md) for documented states.
 
 ## Local checks
 
@@ -102,7 +102,7 @@ luajit tools/test_version.lua
 
 The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `SOTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. By default, the versioned fixture remains unchanged. `SOTD_DUMP_BASELINE_FIXTURE=1` only emits a candidate Lua fixture to stdout for inspection; it does not save or regenerate the versioned fixture. Updating that fixture requires a separate deliberate, reviewed change.
 
-The localization command is included above. See [Testing](docs/TESTING.md) for command scope and limitations. Broader CSP runtime and visual validation remain pending beyond the limited UI recovery reported there.
+The localization command is included above. See [Testing](docs/guides/TESTING.md) for command scope and limitations. Broader CSP runtime and visual validation remain pending beyond the limited UI recovery reported there.
 
 ## Credits and license
 

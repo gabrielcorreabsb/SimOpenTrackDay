@@ -72,4 +72,4 @@ Os marcadores de build/origem usados na investigação eram temporários. Qualqu
 - Refatorar todos os módulos para um namespace novo antes de testar a correção mínima.
 - Corrigir deriva geral de ferramentas/testes ou afirmar que os cenários de IA/localização foram validados por este incidente.
 
-Referências: [instalação](../INSTALL.md), [troubleshooting e testes](../TESTING.md#6-operational-troubleshooting).
+Referências: [instalação](../guides/INSTALL.md), [troubleshooting e testes](../guides/TESTING.md#6-operational-troubleshooting).

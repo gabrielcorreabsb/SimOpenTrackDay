@@ -1,6 +1,6 @@
 # SimOpenTrackDay — instalação
 
-O instalador copia os arquivos de runtime listados em `tools/payload.manifest` para `<Assetto Corsa>\apps\lua\SimOpenTrackDay\`. **Nunca copie os módulos diretamente para a raiz do jogo:** arquivos homônimos ali podem ser carregados antes dos módulos atuais e deixar as abas vazias. Veja o [incidente e o plano de prevenção](plans/MODULE_LOADING_HARDENING.md).
+O instalador copia os arquivos de runtime listados em `tools/payload.manifest` para `<Assetto Corsa>\apps\lua\SimOpenTrackDay\`. **Nunca copie os módulos diretamente para a raiz do jogo:** arquivos homônimos ali podem ser carregados antes dos módulos atuais e deixar as abas vazias. Veja o [incidente e o plano de prevenção](../archive/MODULE_LOADING_HARDENING.md).
 
 O instalador atual apaga o conteúdo da pasta de destino antes de copiar. Não oferece backup nem rollback automático. Feche o jogo e o launcher, faça backup da instalação existente e preserve as configurações antes de prosseguir.
 

@@ -219,7 +219,7 @@ Use compatibility messages and CSP logs for operational errors. Diagnostic probe
 
 On 2026-10-18, CSP logged `attempt to call field 'drawContent' (a nil value)` in `MainWindow.lua`. The entrypoint/main window were current, but the loaded settings module came from `.\SettingsWindow.lua` and exposed the old `draw` interface. `Constants` reported `RealisticTrackday 0.9.8`. Old project files in the AC root were winning module resolution because relative/external paths preceded the app directory in the observed `package.path`.
 
-After identified root-level project files were backed up and removed with authorization, the user confirmed that the UI worked again. This is a limited manual result for that installation, not confirmation of every tab, locale, AI scenario or performance target. No permanent runtime loader change was applied. See the [evidence and prevention plan](plans/MODULE_LOADING_HARDENING.md).
+After identified root-level project files were backed up and removed with authorization, the user confirmed that the UI worked again. This is a limited manual result for that installation, not confirmation of every tab, locale, AI scenario or performance target. No permanent runtime loader change was applied. See the [evidence and prevention plan](../archive/MODULE_LOADING_HARDENING.md).
 
 For a similar failure:
 
@@ -266,7 +266,7 @@ After installing a test copy in CSP, verify each locale and layout. These are pr
 - Switch among English, Português (Brasil), and Español; confirm the selection persists after closing/reopening the app window and after restarting the app.
 - Verify enabled/disabled state and that disabled controls behave as expected; do not equate “enabled” with “can run.”
 - Expand/collapse advanced behavior controls and confirm their visibility and values; this open/closed UI state is local, not persisted.
-- Confirm the single window has Overview, Behavior, Yielding, Overtaking, and Advanced tabs; the header remains visible while content scrolls; gradients are subtle and primary typography is white. These are pending manual checks, not confirmed CSP results. The current direction is in the [Restructuring plan](RESTRUCTURING_PLAN.md), not historical UI proposals.
+- Confirm the single window has Overview, Behavior, Yielding, Overtaking, and Advanced tabs; the header remains visible while content scrolls; gradients are subtle and primary typography is white. These are pending manual checks, not confirmed CSP results. The current direction is in the [Restructuring plan](../archive/RESTRUCTURING_PLAN.md), not historical UI proposals.
 - Inspect narrow layouts around 80, 480, 700, 900, 1200, and 1760 px where practical, plus a wide layout; check overflow and navigation. Mocked width coverage is not a CSP visual guarantee.
 - With native title/background removed and `PADDING = 8, 8`, confirm in CSP that the app fill reaches all window edges without transparent bands while content remains inset, empty header space still moves the window, window edges still resize it, the top-right Close control closes it, and the app can be reopened from the apps bar. Check narrow and normal viewports; the wordmark may be hidden where its measured rectangle cannot fit, and narrow Close may use `X` with a localized tooltip. Headless clip-stack/geometry/manifest mocks do not prove CSP clipping, hit-testing or rendering.
 - Confirm translated labels keep stable ImGui IDs and no untranslated presentation strings are obvious. Simulation data, enums, and logs are not expected to be translated.

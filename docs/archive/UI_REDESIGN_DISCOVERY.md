@@ -1,6 +1,6 @@
 # UI redesign discovery — SimOpenTrackDay
 
-This is a historical implementation inventory for UI corrections, not a current redesign specification. Installation is manual; source documentation and local checks do not establish which files are installed or running. CSP runtime and in-game visual validation remain **PENDING**. This is not a published build or release. The earlier exclusion of the main window and `UIManager` is superseded by the user's later authorization to plan changes to those areas; see [UI identity plan](plans/UI_IDENTITY.md).
+This is a historical implementation inventory for UI corrections, not a current redesign specification. Installation is manual; source documentation and local checks do not establish which files are installed or running. CSP runtime and in-game visual validation remain **PENDING**. This is not a published build or release. The earlier exclusion of the main window and `UIManager` is superseded by the user's later authorization to plan changes to those areas; see [UI identity plan](UI_IDENTITY.md).
 
 ## Status vocabulary
 
@@ -112,4 +112,4 @@ The entry point retains nine `[RTD-DIAG-*]` log statements: five suffixed tags (
 
 ## Current plan status addendum
 
-The current direction and phases are documented in [UI identity plan](plans/UI_IDENTITY.md). The code working tree includes responsive UI/localization changes, but this documentation pass did not revalidate runtime or visual behavior in CSP. The current profile display is inferred from a subset of values and is not safe to describe as a reliable “Custom” detector. Advanced behavior controls are conditionally hidden by the UI toggle; “hidden” does not mean disabled. Translation applies to display text; internal IDs remain stable. The full car table and its existing toggle remain part of the diagnostic experience. Any future redesign must preserve these distinctions and validate the current CSP baseline first.
+The current direction and phases are documented in [UI identity plan](UI_IDENTITY.md). The code working tree includes responsive UI/localization changes, but this documentation pass did not revalidate runtime or visual behavior in CSP. The current profile display is inferred from a subset of values and is not safe to describe as a reliable “Custom” detector. Advanced behavior controls are conditionally hidden by the UI toggle; “hidden” does not mean disabled. Translation applies to display text; internal IDs remain stable. The full car table and its existing toggle remain part of the diagnostic experience. Any future redesign must preserve these distinctions and validate the current CSP baseline first.
