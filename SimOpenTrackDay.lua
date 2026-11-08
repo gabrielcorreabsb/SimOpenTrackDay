@@ -405,11 +405,30 @@ local function shouldAppRun()
         and storage.enabled
 end
 
-local function clearOwnedGlobalFlag()
-  if physics and type(physics.overrideRacingFlag) == 'function' and ac and ac.FlagType and ac.FlagType.None then
-    local allowed = CarManager_hasPhysicsPermission()
-    if allowed then physics.overrideRacingFlag(ac.FlagType.None) end
+-- S7-1F: ownership of the global Caution flag. nil means the app owns nothing.
+local ownedGlobalFlag = nil
+local flagEventCounts = {}
+
+local function logFlagEventThrottled(reason, message)
+  local count = (flagEventCounts[reason] or 0) + 1
+  flagEventCounts[reason] = count
+  if count == 1 or count % 10 == 0 then
+    Logger.log(string_format('%s reason=%s count=%d', message, reason, count))
   end
+end
+
+local function releaseOwnedGlobalFlag(reason)
+  if ownedGlobalFlag == nil then return false end
+  -- Release is best-effort and deliberately does NOT consult hasPhysicsPermission:
+  -- dropping our own override must work even when the car/physics gate is denied.
+  local released = pcall(RaceFlagManager_removeRaceFlag)
+  if released then
+    ownedGlobalFlag = nil
+    Logger.log(string_format('[S7-1F] global flag released reason=%s', reason))
+    return true
+  end
+  logFlagEventThrottled(reason, '[S7-1F] global flag release failed')
+  return false
 end
 
 local function canWriteGlobalFlag()
@@ -529,6 +548,7 @@ ac.onSessionStart(function()
   CarStateMachine_clearPendingLifecycle()
   HumanErrorManager.resetAll()
   AccidentManager.resetSession()
+  releaseOwnedGlobalFlag('session-reset')
   if not shouldAppRun() then return end
   SessionDetails.informSessionInitiated()
 end)
@@ -591,7 +611,7 @@ function script.MANIFEST__UPDATE(dt)
       CarStateMachine_clearPendingLifecycle()
       AccidentManager.resetSession()
     end
-    clearOwnedGlobalFlag()
+    releaseOwnedGlobalFlag('not-live')
   end
   if not live then return end
 
@@ -615,16 +635,37 @@ function script.MANIFEST__UPDATE(dt)
   -- local isPlayerComingUpToAccidentIndex = AccidentManager.isCarComingUpToAccident(playerCar, storage.distanceFromAccidentToSeeYellowFlag_meters)
   -- if isPlayerComingUpToAccidentIndex then
   local cameraFocusedCarIndex = CameraManager_getFocusedCarIndex()
-  -- Logger.log(string.format("Camera focused car index is %d", cameraFocusedCarIndex or -1))
-  local cameraFocusedCar = ac_getCar(cameraFocusedCarIndex)
-  if cameraFocusedCar then
-    local cameraFocusedCarSplinePosition = cameraFocusedCar.splinePosition
-    local isFocusedCarInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCarSplinePosition)
-    if isFocusedCarInYellowFlagZone and canWriteGlobalFlag() then
-      RaceFlagManager_setRaceFlag(ac.FlagType.Caution)
-    elseif canWriteGlobalFlag() then
-      RaceFlagManager_removeRaceFlag()
+  local cameraFocusedCar
+  if type(cameraFocusedCarIndex) == 'number' and cameraFocusedCarIndex == cameraFocusedCarIndex
+    and cameraFocusedCarIndex >= 0 and cameraFocusedCarIndex % 1 == 0 then
+    cameraFocusedCar = ac_getCar(cameraFocusedCarIndex)
+  end
+  local focusedCarValid = cameraFocusedCar ~= nil and cameraFocusedCar.index == cameraFocusedCarIndex
+  local focusedCarInZone = false
+  if focusedCarValid then
+    focusedCarInZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCar.splinePosition) == true
+  end
+  local wantCaution = focusedCarValid and focusedCarInZone
+  if wantCaution then
+    if canWriteGlobalFlag() then
+      if ownedGlobalFlag ~= ac.FlagType.Caution then
+        local wrote = pcall(RaceFlagManager_setRaceFlag, ac.FlagType.Caution)
+        if wrote then
+          ownedGlobalFlag = ac.FlagType.Caution
+          Logger.log('[S7-1F] global flag set reason=zone-entered')
+        else
+          logFlagEventThrottled('zone-entered', '[S7-1F] global flag set failed')
+        end
+      end
+    else
+      -- Permission denied must not block the release of an override we already own.
+      if ownedGlobalFlag ~= nil then releaseOwnedGlobalFlag('permission-denied') end
+      logFlagEventThrottled('permission-denied', '[S7-1F] global flag set skipped')
     end
+  else
+    -- The release must run even when the focused car could not be read.
+    local releaseReason = focusedCarValid and 'zone-cleared' or 'focused-car-invalid'
+    if ownedGlobalFlag ~= nil then releaseOwnedGlobalFlag(releaseReason) end
   end
   -- local playerCarSplinePosition = playerCar.splinePosition
   -- local isPlayerInYellowFlagZone = RaceTrackManager_isSplinePositionInYellowZone(playerCarSplinePosition)

@@ -9,8 +9,8 @@ Logger.OBS3_TARGET_CAR = -1
 Logger.OBS3_PEER_CAR_1 = -1
 Logger.OBS3_PEER_CAR_2 = -1
 
-local OBS_CAPACITY, OBS_DETAIL_CAP, OBS_LINE_CAP = 256, 64, 160
-local OBS_DETAIL_LINE_CAP, OBS_BYTE_CAP, OBS_LINE_BYTES, OBS_MARKER_RESERVE = 48, 61440, 384, 1152
+local OBS_CAPACITY, OBS_DETAIL_CAP, OBS_LINE_CAP = 256, 64, 400
+local OBS_DETAIL_LINE_CAP, OBS_BYTE_CAP, OBS_LINE_BYTES, OBS_MARKER_RESERVE = 48, 163840, 384, 1152
 local OBS_RING = {}
 for i = 1, OBS_CAPACITY do OBS_RING[i] = {} end
 local obsHead, obsCount, obsSeq = 1, 0, 0
@@ -145,6 +145,7 @@ local function observeProtected(kind, carIndex, generation, incidentIndex, zoneI
     or sub(kind, 1, 5) == 'zone-' or sub(kind, 1, 8) == 'pending-' or sub(kind, 1, 10) == 'lifecycle-'
      or sub(kind, 1, 8) == 'session-' or sub(kind, 1, 9) == 'collision-' or sub(kind, 1, 9) == 'callback-'
      or sub(kind, 1, 8) == 'control-' or sub(kind, 1, 5) == 'obs3-'
+    or sub(kind, 1, 9) == 'decision-'
     or sub(kind, -10) == '-essential')
   local isDetail = not isGlobal
   if isDetail and (type(carIndex) ~= 'number' or carIndex < 0 or carIndex ~= rawget(Logger, 'OBS1_FOCUS_CAR')) then return end
@@ -231,11 +232,11 @@ local function observeProtected(kind, carIndex, generation, incidentIndex, zoneI
   end
   if record.wallTimeValid then wall = record.wallTime end
   local formatOK
-  formatOK, line = pcall(format, '[OBS1] seq=%d session=%s refSession=%s active=%s context=%s wall=%s kind=%s carRef=%s genRef=%s incident=%s zone=%s from=%s detail=%s extra=%s resource=%s',
-    obsSeq, tostring(record.session or 'UNKNOWN'), tostring(record.referenceSession or 'UNKNOWN'), active, tostring(record.context), wall,
+  formatOK, line = pcall(format, '[OBS1] kind=%s carRef=%s genRef=%s incident=%s zone=%s detail=%s seq=%d session=%s refSession=%s active=%s context=%s wall=%s from=%s extra=%s resource=%s',
     tostring(record.kind or 'UNKNOWN'), tostring(record.car or 'UNKNOWN'), tostring(record.generation or 'UNKNOWN'),
-     tostring(record.incident or 'UNKNOWN'), tostring(record.zone or 'UNKNOWN'), tostring(record.previousState or 'UNKNOWN'),
-     tostring(record.detail or ''), tostring(record.extra or 'UNKNOWN'), tostring(record.resource or 'UNKNOWN'))
+    tostring(record.incident or 'UNKNOWN'), tostring(record.zone or 'UNKNOWN'), tostring(record.detail or ''),
+    obsSeq, tostring(record.session or 'UNKNOWN'), tostring(record.referenceSession or 'UNKNOWN'), active, tostring(record.context), wall,
+    tostring(record.previousState or 'UNKNOWN'), tostring(record.extra or 'UNKNOWN'), tostring(record.resource or 'UNKNOWN'))
   if not formatOK then
     obsFormatFailures = boundedIncrement(obsFormatFailures)
     obsOutputFormatterFailed, obsOutputSaturated = true, true

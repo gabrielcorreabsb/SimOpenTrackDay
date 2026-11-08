@@ -15,7 +15,7 @@ Vector.__mul = function(a, b)
 end
 local function vector(x, y, z) return setmetatable({ x = x, y = y, z = z }, Vector) end
 local sim = { isLive = true, isReplayActive = false, isSessionStarted = true,
-  isPaused = false, trackLengthM = 5000, raceSessionType = 1 }
+  isPaused = false, trackLengthM = 5000, raceSessionType = 1, carsCount = 33 }
 local cars = {}
 for i = 0, 32 do
   cars[i] = { index = i, isAIControlled = i ~= 0, isConnected = true, isActive = true,
@@ -347,6 +347,221 @@ assert(CarManager.getCarGeneration(10) == survivorGeneration and CarOperations.h
   'surviving participant episode persists after other participant reset resolves record')
 tick(1)
 assert(CarOperations.isIncidentStopCompleted(10, a6), 'survivor hands back without active accident maps')
+
+-- An admitted episode with a valid pending incident transition survives target loss before dispatch.
+local preDispatchIncident = register(22, 21)
+assert(CarOperations.admitIncidentStop(22, preDispatchIncident,
+  CarManager.getCarGeneration(22), CarManager.sessionGeneration))
+CarStateMachine.queueStateTransition(22, CarStateMachine.CarStateType.COLLIDED_WITH_CAR)
+CarStateMachine.queueStateTransition(21, CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+CarManager.cars_currentlyOvertakingCarIndex[22] = 24
+CarManager.cars_currentlyYieldingCarToIndex[22] = 24
+CarManager.cars_navigatingAroundCarIndex[22] = 24
+CarManager.cars_navigatingAroundAccidentIndex[22] = gapIncident
+local s2Episodes = upvalue(CarOperations.hasActiveIncidentStop, 'incidentEpisodes')
+local pendingEpisode, pendingGeneration = s2Episodes[22], CarManager.getCarGeneration(22)
+local pendingDeadline, pendingWrites = pendingEpisode.deadline, #writes
+CarManager.clearCarMemory(24)
+assert(#writes == pendingWrites and CarManager.getCarGeneration(22) == pendingGeneration
+  and s2Episodes[22] == pendingEpisode and pendingEpisode.deadline == pendingDeadline
+  and CarOperations.hasActiveIncidentStop(22),
+  'pre-dispatch target loss preserves admission identity/deadline and performs zero callback writes')
+local pendingIncidentState = CarStateMachine.getPendingReadOnly(22)
+assert(pendingIncidentState.pending == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+  and pendingIncidentState.generation == pendingGeneration and pendingIncidentState.valid,
+  'valid pending incident transition remains queued under unchanged owner generation')
+local collisionState = CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+local collisionEntry, collisionEntries = CarStateMachine.states_entryFunctions[collisionState], 0
+CarStateMachine.states_entryFunctions[collisionState] = function(...)
+  collisionEntries = collisionEntries + 1
+  return collisionEntry(...)
+end
+CarStateMachine.updateCar(22, .1, cars, 22)
+assert(CarStateMachine.getCurrentState(22) == collisionState and collisionEntries == 1
+  and s2Episodes[22] == pendingEpisode and pendingEpisode.deadline == pendingDeadline,
+  'preserved transition dispatches once without readmission or deadline restart')
+CarStateMachine.queueStateTransition(22, collisionState)
+assert(CarManager.ensureDefaults(24), 'test target reappears with a fresh observed memory baseline')
+CarManager.cars_currentlyOvertakingCarIndex[22] = 24
+CarManager.cars_currentlyYieldingCarToIndex[22] = 24
+CarManager.cars_navigatingAroundCarIndex[22] = 24
+local writesBeforeActiveStopLoss = #writes
+CarManager.clearCarMemory(24)
+assert(#writes == writesBeforeActiveStopLoss and s2Episodes[22] == pendingEpisode
+  and pendingEpisode.deadline == pendingDeadline
+  and CarStateMachine.getCurrentState(22) == collisionState
+  and CarStateMachine.getPendingReadOnly(22).pending == nil and collisionEntries == 1,
+  'active STOP target loss is memory-only, keeps the deadline/state, and drops redundant entry without re-admission')
+local toOriginalDeadline = pendingDeadline - now - .1
+assert(toOriginalDeadline > 0, 'pre-dispatch deadline remains in the future')
+tick(toOriginalDeadline)
+assert(now < pendingDeadline and CarOperations.hasActiveIncidentStop(22),
+  'active STOP remains in force immediately before the original deadline')
+tick(.2)
+assert(now >= pendingDeadline and s2Episodes[22] == pendingEpisode and pendingEpisode.releasing,
+  'active STOP releases at its original deadline rather than a restarted deadline')
+tick(1.2)
+assert(CarOperations.isIncidentStopCompleted(22, preDispatchIncident),
+  'preserved pre-dispatch episode completes with its original incident completion record')
+CarStateMachine.states_entryFunctions[collisionState] = collisionEntry
+CarManager.cars_navigatingAroundCarIndex[22] = 24
+CarStateMachine.invalidateReferencesToCar(24)
+assert(CarOperations.isIncidentStopCompleted(22, preDispatchIncident),
+  'dependent cleanup preserves completed incident records')
+
+-- Without an episode, dependent cleanup discards ordinary requests and applied shadows
+-- without synthesizing a physical handback, then uses only the ordinary normal-state fallback.
+local trafficState = CarStateMachine.CarStateType.EASING_IN_YIELD
+CarStateMachine.queueStateTransition(22, trafficState)
+assert(CarOperations.requestAITopSpeed(22, 80, 'TRAFFIC_YIELD')
+  and CarOperations.requestAIThrottleLimit(22, .5, 'TRAFFIC_YIELD'))
+assert(CarOperations.resolveOwnedAIControls(1000))
+CarManager.cars_currentlyOvertakingCarIndex[22] = 24
+CarManager.cars_currentlyYieldingCarToIndex[22] = 24
+CarManager.cars_navigatingAroundCarIndex[22] = 24
+local ordinaryWrites = #writes
+local trafficEntry, normalEntry = CarStateMachine.states_entryFunctions[trafficState],
+  CarStateMachine.states_entryFunctions[CarStateMachine.CarStateType.DRIVING_NORMALLY]
+local oldManeuverEntries, fallbackEntries = 0, 0
+CarStateMachine.states_entryFunctions[trafficState] = function() oldManeuverEntries = oldManeuverEntries + 1 end
+CarStateMachine.states_entryFunctions[CarStateMachine.CarStateType.DRIVING_NORMALLY] = function()
+  fallbackEntries = fallbackEntries + 1
+end
+assert(CarManager.cars_currentlyOvertakingCarIndex[22] == 24
+  and CarManager.cars_currentlyYieldingCarToIndex[22] == 24
+  and CarManager.cars_navigatingAroundCarIndex[22] == 24,
+  'ordinary owner has each dependent reference before target reset')
+CarManager.clearCarMemory(24)
+CarStateMachine.invalidateReferencesToCar(24)
+assert(#writes == ordinaryWrites and not CarOperations._topSpeedRequests[22].byOwner.TRAFFIC_YIELD.active
+  and not CarOperations._throttleRequests[22].byOwner.TRAFFIC_YIELD.active
+  and not CarOperations._topSpeedApplied[22].active and not CarOperations._throttleApplied[22].active,
+  'ordinary request/applied bookkeeping is discarded without callback writes or physical handback')
+local fallbackPending = CarStateMachine.getPendingReadOnly(22)
+assert(fallbackPending.pending == CarStateMachine.CarStateType.DRIVING_NORMALLY and fallbackPending.valid,
+  'ordinary invalidation queues only the normal-state fallback: pending=' .. tostring(fallbackPending.pending)
+    .. ' valid=' .. tostring(fallbackPending.valid))
+assert(CarOperations.resolveOwnedAIControls(1000) and #writes == ordinaryWrites,
+  'discarded ordinary applied shadows cannot trigger a later resolver handback')
+CarStateMachine.updateCar(22, .1, cars, 22)
+assert(oldManeuverEntries == 0 and fallbackEntries == 1,
+  'next FSM update cannot dispatch the obsolete maneuver and enters normal once')
+CarStateMachine.states_entryFunctions[trafficState] = trafficEntry
+CarStateMachine.states_entryFunctions[CarStateMachine.CarStateType.DRIVING_NORMALLY] = normalEntry
+
+-- A distinct contact with no S2 admission remains a live risk through unknown LC1,
+-- then resolves only after three fresh active-game seconds of valid evidence.
+local noS2Risk = register(9, 10)
+assert(not CarOperations.hasActiveIncidentStop(9) and not CarOperations.hasActiveIncidentStop(10))
+cars[9].collisionDepth, cars[10].collisionDepth = 0, 0
+CarManager.cars_currentlyOvertakingCarIndex[9] = 24
+CarManager.cars_currentlyYieldingCarToIndex[9] = 24
+CarManager.cars_navigatingAroundCarIndex[9] = 24
+CarManager.cars_navigatingAroundAccidentIndex[9] = preDispatchIncident
+CarManager.clearCarMemory(24)
+local riskZone = AccidentManager.accidents_yellowFlagZoneIndex[noS2Risk]
+assert(AccidentManager.accidents_resolved[noS2Risk] == false and riskZone ~= nil
+  and RaceTrackManager.getYellowZoneReadOnly(riskZone).resolved == false
+  and not CarOperations.hasActiveIncidentStop(9),
+  'independent non-S2 incident and zone survive owner dependent-target loss: incident='
+    .. tostring(noS2Risk) .. ' resolved=' .. tostring(AccidentManager.accidents_resolved[noS2Risk])
+    .. ' zone=' .. tostring(riskZone))
+assert(AccidentManager.registerCollision(9, { x = 0, y = 0, z = 0 }, 11) == nil
+  and AccidentManager.registerCollision(10, { x = 0, y = 0, z = 0 }, 10) == nil
+  and AccidentManager.cars_culpritInAccidentIndex[9] == noS2Risk
+  and AccidentManager.cars_victimInAccidentIndex[10] == noS2Risk,
+  'non-S2 active contact deduplicates in direct and inverse order')
+local savedHasActive = CarOperations.hasActiveIncidentStop
+CarOperations.hasActiveIncidentStop = function() return nil end
+AccidentManager.updateRecovery(.1)
+CarOperations.hasActiveIncidentStop = savedHasActive
+local unknownLC1Query = AccidentManager.isCarComingUpToAccident(cars[8], 100)
+assert(AccidentManager.accidents_resolved[noS2Risk] == false
+  and RaceTrackManager.getYellowZoneReadOnly(riskZone).resolved == false,
+  'unknown LC1 evidence retains protection and its zone')
+AccidentManager.updateRecovery(.1)
+for _ = 1, 31 do
+  now = now + .1
+  AccidentManager.updateRecovery(.1)
+end
+assert(AccidentManager.accidents_resolved[noS2Risk] == true
+  and RaceTrackManager.getYellowZoneReadOnly(riskZone).resolved == true,
+  'fresh valid LC1 evidence resolves the same non-S2 incident after three active seconds')
+assert(unknownLC1Query == noS2Risk,
+  'pre-recovery proximity query selected the independent non-S2 incident')
+
+-- Losing a referenced car invalidates only the dependent maneuver reference; the owner's
+-- independently admitted S2 episode and its logical control handback remain live.
+local targetLossRecord = register(14, 15)
+local independentOwnerIncident = register(12, 13)
+local independentOwnerZone = AccidentManager.accidents_yellowFlagZoneIndex[independentOwnerIncident]
+assert(independentOwnerZone and CarOperations.admitIncidentStop(12, independentOwnerIncident,
+  CarManager.getCarGeneration(12), CarManager.sessionGeneration))
+assert(CarOperations.admitIncidentStop(13, independentOwnerIncident,
+  CarManager.getCarGeneration(13), CarManager.sessionGeneration))
+CarStateMachine.queueStateTransition(12, CarStateMachine.CarStateType.COLLIDED_WITH_CAR)
+CarStateMachine.queueStateTransition(13, CarStateMachine.CarStateType.ANOTHER_CAR_COLLIDED_INTO_ME)
+acceptedTick(.1)
+local dependentGeneration = CarManager.getCarGeneration(12)
+CarManager.cars_currentlyOvertakingCarIndex[12] = 14
+CarManager.cars_currentlyYieldingCarToIndex[12] = 14
+CarManager.cars_navigatingAroundCarIndex[12] = 14
+CarManager.cars_navigatingAroundAccidentIndex[12] = targetLossRecord
+tick(9.8)
+assert(CarOperations.requestAITopSpeed(12, 0, 'YELLOW_FLAG'))
+fail.setAIThrottleLimit = function(_, value) return value == 1 end
+local incidentDeadline = now + .1
+tick(.2)
+assert(CarOperations._topSpeedApplied[12].owner == 'INCIDENT_STOP'
+  and CarOperations._topSpeedApplied[12].handbackOwner == 'YELLOW_FLAG'
+  and not CarOperations.isIncidentStopCompleted(12, independentOwnerIncident),
+  'equal-valued control transfer and failed throttle handback remain pending at deadline')
+CarStateMachine.queueStateTransition(12, CarStateMachine.CarStateType.NAVIGATING_AROUND_ACCIDENT)
+local writesBeforeTargetLoss = #writes
+CarManager.clearCarMemory(14)
+CarStateMachine.invalidateReferencesToCar(14)
+assert(#writes == writesBeforeTargetLoss, 'target-reference cleanup is callback-idempotent and physically write-free')
+trackedCars[14], trackedCars[15] = nil, nil
+CarManager.cars_HALF_AABSIZE[14], CarManager.cars_AABBSIZE[14] = { x = 1, y = 1, z = 2 }, { x = 2, y = 2, z = 4 }
+assert(CarManager.getCarGeneration(12) == dependentGeneration
+  and CarManager.cars_currentlyOvertakingCarIndex[12] == nil
+  and CarManager.cars_currentlyYieldingCarToIndex[12] == nil
+  and CarManager.cars_navigatingAroundCarIndex[12] == nil
+  and CarManager.cars_navigatingAroundAccidentIndex[12] == nil
+  and CarStateMachine.getCurrentState(12) == CarStateMachine.CarStateType.COLLIDED_WITH_CAR
+  and CarStateMachine.getPendingReadOnly(12).pending == nil,
+  'target identity loss clears dependent refs/maneuver dispatch but preserves owner identity and incident state')
+assert(CarOperations.hasActiveIncidentStop(12)
+  and not CarOperations.isIncidentStopCompleted(12, independentOwnerIncident),
+  'unrelated owner S2 episode remains active after target identity loss')
+assert(CarOperations._topSpeedApplied[12].active and CarOperations._throttleApplied[12].active
+  and CarOperations._topSpeedApplied[12].handbackOwner == 'YELLOW_FLAG'
+  and not CarOperations._topSpeedRequests[12].byOwner.YELLOW_FLAG.active,
+  'dependent cleanup preserves S2 applied evidence and logical equal-value handback progress')
+assert(AccidentManager.accidents_resolved[independentOwnerIncident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(independentOwnerZone).resolved == false,
+  'independent incident record and yellow zone survive dependent target loss')
+assert(AccidentManager.registerCollision(12, { x = 0, y = 0, z = 0 }, 14) == nil
+  and AccidentManager.registerCollision(13, { x = 0, y = 0, z = 0 }, 13) == nil
+  and AccidentManager.cars_culpritInAccidentIndex[12] == independentOwnerIncident
+  and AccidentManager.cars_victimInAccidentIndex[13] == independentOwnerIncident,
+  'independent record remains deduplicated in either participant order')
+local survivingProximityIncident = AccidentManager.isCarComingUpToAccident(cars[10], 100)
+assert(survivingProximityIncident == independentOwnerIncident
+  and AccidentManager.accidents_resolved[independentOwnerIncident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(independentOwnerZone).resolved == false,
+  'actual proximity query still selects the independent incident and zone after target loss: got='
+    .. tostring(survivingProximityIncident) .. ' expected=' .. tostring(independentOwnerIncident))
+tick(.2)
+assert(now >= incidentDeadline and CarOperations.hasActiveIncidentStop(12)
+  and not CarOperations.isIncidentStopCompleted(12, independentOwnerIncident),
+  'target loss does not restart or prematurely complete the original S2 deadline')
+tick(.8)
+fail.setAIThrottleLimit = false
+tick(.1)
+tick(.1)
+assert(CarOperations.isIncidentStopCompleted(12, independentOwnerIncident),
+  'failed handback retries and preserved incident completes without restarting its deadline')
 
 -- Self-query excludes the whole incident; unrelated active records remain candidates.
 local a7 = register(13, 14)

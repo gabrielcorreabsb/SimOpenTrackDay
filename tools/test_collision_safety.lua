@@ -11,7 +11,7 @@ Vec.__mul = function(a, b)
 end
 local function vec(x, y, z) return setmetatable({ x = x, y = y, z = z }, Vec) end
 local sim = { isLive = true, isReplayActive = false, isSessionStarted = true,
-  isPaused = false, trackLengthM = 5000, raceSessionType = 1 }
+  isPaused = false, trackLengthM = 5000, raceSessionType = 1, carsCount = 6 }
 local cars = {}
 for i = 0, 5 do
   cars[i] = { index = i, isAIControlled = i ~= 0, isConnected = true, isActive = true,
@@ -390,11 +390,11 @@ assert(not CarOperations.hasActiveIncidentStop(1) and not CarOperations.hasActiv
 
 -- Valid, identity-stamped contacts cover normal/pit-speed combinations without queue-driven S2 dispatch.
 local contactMatrix = {
-  { 'normal', false, false, false, false, 65, 62 },
-  { 'both-pit-fast', true, true, true, true, 55, 48 },
+  { 'normal', false, false, false, false, 65, 30 },
+  { 'both-pit-fast', true, true, true, true, 55, 20 },
   { 'both-pit-slow', true, true, true, true, 8, 12 },
   { 'mixed-pit', true, false, true, false, 10, 70 },
-  { 'unknown-pit', nil, nil, nil, nil, 40, 42 },
+  { 'unknown-pit', nil, nil, nil, nil, 40, 65 },
 }
 local function assertNoContactStopWrites(from, label)
   for i = from, #calls do
@@ -438,6 +438,26 @@ for i = 1, #contactMatrix do
   assertNoContactStopWrites(writesBeforeDrain + 1, row[1])
 end
 
+-- F5.1: a trivial AI contact creates no record, no zone and performs no car write.
+AccidentManager.informAboutCarReset(1)
+AccidentManager.informAboutCarReset(2)
+cars[1].speedKmh, cars[2].speedKmh = 60, 55
+cars[1].isInPitlane, cars[2].isInPitlane = false, false
+local trivialStamp = {
+  index = 1, generation = CarManager.getCarGeneration(1), culpritGeneration = CarManager.getCarGeneration(1),
+  victimIndex = 2, victimGeneration = CarManager.getCarGeneration(2), session = CarManager.sessionGeneration,
+  positionX = cars[1].position.x, positionY = cars[1].position.y, positionZ = cars[1].position.z,
+  splinePosition = cars[1].splinePosition, victimPositionX = cars[2].position.x,
+  victimPositionY = cars[2].position.y, victimPositionZ = cars[2].position.z,
+  victimSplinePosition = cars[2].splinePosition, culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 60, victimSpeedKmh = 55,
+}
+local trivialWritesBefore = #calls
+local trivialIncident = AccidentManager.registerCollision(1, vec(0, 0, 0), 3, trivialStamp)
+assert(trivialIncident == nil and #calls == trivialWritesBefore
+  and AccidentManager.accidents_carIndex[1] == nil,
+  'trivial AI contact performs no writes and registers no incident')
+
 -- LC1 still resolves an ordinary contact after 13 valid game-clock ticks, independently of S2 admission.
 AccidentManager.informAboutCarReset(1)
 AccidentManager.informAboutCarReset(2)
@@ -445,7 +465,7 @@ CarStateMachine.initializeCarInStateMachine(1)
 CarStateMachine.initializeCarInStateMachine(2)
 cars[1].isInPit, cars[2].isInPit = false, false
 cars[1].isInPitlane, cars[2].isInPitlane = false, false
-cars[1].speedKmh, cars[2].speedKmh = 40, 42
+cars[1].speedKmh, cars[2].speedKmh = 40, 65
 cars[1].collisionDepth, cars[2].collisionDepth = 0, 0
 local lc1Stamp = {
   index = 1, generation = CarManager.getCarGeneration(1), culpritGeneration = CarManager.getCarGeneration(1),
@@ -454,7 +474,7 @@ local lc1Stamp = {
   splinePosition = cars[1].splinePosition, victimPositionX = cars[2].position.x,
   victimPositionY = cars[2].position.y, victimPositionZ = cars[2].position.z,
   victimSplinePosition = cars[2].splinePosition, culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 40, victimSpeedKmh = 42,
+  culpritSpeedKmh = 40, victimSpeedKmh = 65,
 }
 local lc1Incident = assert(AccidentManager.registerCollision(1, vec(0, 0, 0), 3, lc1Stamp))
 local lc1WritesBefore = #calls
@@ -473,6 +493,166 @@ assert(AccidentManager.accidents_resolved[lc1Incident] == true
   and not CarOperations.hasActiveIncidentStop(1) and not CarOperations.hasActiveIncidentStop(2),
   'LC1 resolves after 13 valid 0.25-second game-clock ticks without S2 admission')
 assertNoContactStopWrites(lc1WritesBefore + 1, 'LC1 recovery')
+Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = false, -1
+
+-- Circular forward ordering must find an incident across spline zero.
+AccidentManager.informAboutCarReset(1)
+AccidentManager.informAboutCarReset(2)
+AccidentManager.informAboutCarReset(3)
+cars[1].splinePosition, cars[2].splinePosition, cars[3].splinePosition = .005, .015, .995
+cars[1].position, cars[2].position, cars[3].position, cars[4].position = vec(1, 0, 0), vec(2, 0, 0), vec(0, 0, 0), vec(0, 0, 0)
+cars[4].splinePosition = .02
+local wrapIncident = assert(AccidentManager.registerCollision(1, vec(0, 0, 0), 3))
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == wrapIncident,
+  'accident immediately ahead across spline zero is eligible')
+assert(AccidentManager.isCarComingUpToAccident(cars[4], 100) == nil,
+  'incident behind across spline zero is not incorrectly treated as ahead')
+
+local function freshIncident(culprit, victim)
+  return assert(AccidentManager.registerCollision(culprit, vec(0, 0, 0), victim + 1))
+end
+local function configureNearestCars()
+  for i = 1, 5 do cars[i].position = vec(0, 0, 0) end
+  cars[3].splinePosition = .5
+  cars[1].splinePosition, cars[2].splinePosition = .502, .504
+  cars[4].splinePosition, cars[5].splinePosition = .503, .505
+end
+AccidentManager.resetSession()
+configureNearestCars()
+local firstCreatedNear = freshIncident(1, 2)
+freshIncident(4, 5)
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == firstCreatedNear,
+  'nearest incident ranks forward spline deltas, not absolute spline coordinates')
+AccidentManager.resetSession()
+configureNearestCars()
+freshIncident(4, 5)
+local nearCreatedSecond = freshIncident(1, 2)
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == nearCreatedSecond,
+  'closest incident is invariant to reverse incident creation order')
+
+AccidentManager.resetSession()
+configureNearestCars()
+cars[1].splinePosition, cars[2].splinePosition = .504, .502
+local victimNearest = freshIncident(1, 2)
+local _, nearestParticipant = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(nearestParticipant == 2 and AccidentManager.accidents_resolved[victimNearest] == false,
+  'victim may be the closest eligible participant without resolving its incident')
+AccidentManager.resetSession()
+configureNearestCars()
+cars[1].splinePosition, cars[2].splinePosition = 1.5, .502
+local invalidCandidateIncident = freshIncident(1, 2)
+local invalidCandidateChoice = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(invalidCandidateChoice == invalidCandidateIncident and AccidentManager.accidents_resolved[invalidCandidateIncident] == false,
+  'invalid participant spline is skipped while a valid participant remains eligible')
+AccidentManager.resetSession()
+configureNearestCars()
+cars[1].splinePosition, cars[2].splinePosition = .502, .502
+freshIncident(1, 2)
+local _, culpritTie = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(culpritTie == 1, 'exact culprit/victim distance tie retains culprit priority')
+AccidentManager.resetSession()
+configureNearestCars()
+local firstTie = freshIncident(1, 2)
+freshIncident(4, 5)
+cars[4].splinePosition, cars[5].splinePosition = .502, .503
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == firstTie,
+  'equal incident-distance tie retains first incident ID')
+
+AccidentManager.resetSession()
+configureNearestCars()
+cars[1].splinePosition, cars[2].splinePosition = 0, 0
+freshIncident(1, 2)
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == nil,
+  'exact half-lap spline separation is ambiguous and not ahead')
+AccidentManager.resetSession()
+cars[3].splinePosition, cars[3].position = .5, vec(0, 0, 0)
+cars[1].splinePosition, cars[2].splinePosition = .502, .504
+cars[1].position, cars[2].position = vec(100, 0, 0), vec(100, 0, 0)
+local strictRadiusIncident = freshIncident(1, 2)
+assert(AccidentManager.isCarComingUpToAccident(cars[3], 100) == nil
+  and AccidentManager.accidents_resolved[strictRadiusIncident] == false,
+  'exact 100-meter 3D radius is excluded without resolving the incident')
+
+Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = true, 3
+for _, invalid in ipairs({ -1, 1.5, 0/0, math.huge }) do
+  cars[3].index = invalid
+  local incident, closest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+  assert(incident == nil and closest == -1 and AccidentManager.getAccidentDecisionReadOnly(3) == nil,
+    'invalid query index returns nil/-1 and publishes no consumable snapshot')
+end
+cars[3].index = nil
+local missingIndexIncident, missingIndexClosest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(missingIndexIncident == nil and missingIndexClosest == -1
+  and AccidentManager.getAccidentDecisionReadOnly(3) == nil, 'missing query index is rejected without a snapshot')
+cars[3].index = 3
+for _, invalid in ipairs({ -0.1, 1.1, 0/0, math.huge }) do
+  cars[3].splinePosition = invalid
+  local incident, closest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+  assert(incident == nil and closest == -1 and AccidentManager.getAccidentDecisionReadOnly(3) == nil,
+    'invalid query spline returns nil/-1 and invalidates the decision snapshot')
+end
+cars[3].splinePosition = .5
+local ffi = require('ffi')
+local cdataPosition = ffi.new('struct { double x; double y; double z; }', 0, 0, 0)
+local savedQueryPosition = cars[3].position
+local savedCulpritPosition, savedVictimPosition = cars[1].position, cars[2].position
+cars[1].position, cars[2].position = vec(1, 0, 0), vec(2, 0, 0)
+cars[3].position = cdataPosition
+local cdataIncident, cdataClosest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(cdataIncident == strictRadiusIncident and cdataClosest == 1,
+  'CSP-like cdata vec3 query coordinates are accepted')
+cars[3].position = savedQueryPosition
+cars[1].position, cars[2].position = savedCulpritPosition, savedVictimPosition
+for _, invalid in ipairs({ -1, 0/0, math.huge }) do
+  local incident, closest = AccidentManager.isCarComingUpToAccident(cars[3], invalid)
+  assert(incident == nil and closest == -1 and AccidentManager.getAccidentDecisionReadOnly(3) == nil,
+    'invalid query radius returns nil/-1 and invalidates the decision snapshot')
+end
+cars[3].splinePosition = nil
+local missingSplineIncident, missingSplineClosest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(missingSplineIncident == nil and missingSplineClosest == -1
+  and AccidentManager.getAccidentDecisionReadOnly(3) == nil, 'missing query spline is rejected')
+cars[3].splinePosition = .5
+local missingRadiusIncident, missingRadiusClosest = AccidentManager.isCarComingUpToAccident(cars[3], nil)
+assert(missingRadiusIncident == nil and missingRadiusClosest == -1
+  and AccidentManager.getAccidentDecisionReadOnly(3) == nil, 'missing query radius is rejected')
+for _, invalidPosition in ipairs({ false, vec(math.huge, 0, 0), vec(0/0, 0, 0) }) do
+  if invalidPosition == false then cars[3].position = nil else cars[3].position = invalidPosition end
+  local invalidCoordsIncident, invalidCoordsClosest = AccidentManager.isCarComingUpToAccident(cars[3], 100)
+  assert(invalidCoordsIncident == nil and invalidCoordsClosest == -1
+    and AccidentManager.getAccidentDecisionReadOnly(3) == nil, 'invalid query coordinates never publish a decision')
+end
+cars[3].position, Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = savedQueryPosition, false, -1
+
+-- Exercise the real NAV transition callback with cyclic progress and physical-distance thresholds.
+AccidentManager.resetSession()
+local navGeometryIncident = freshIncident(1, 2)
+local navTransition = CarStateMachine.states_transitionFunctions[CarStateMachine.CarStateType.NAVIGATING_AROUND_ACCIDENT]
+local function navResult(ours, target, ourPosition, targetPosition)
+  cars[3].splinePosition, cars[1].splinePosition = ours, target
+  cars[3].position, cars[1].position = ourPosition, targetPosition
+  AccidentManager.setCarNavigatingAroundAccident(3, navGeometryIncident, 1)
+  return navTransition(3, .016, cars, 3, storage)
+end
+local navType, drivingType = CarStateMachine.CarStateType.NAVIGATING_AROUND_ACCIDENT,
+  CarStateMachine.CarStateType.DRIVING_NORMALLY
+assert(navResult(.998, .002, vec(20, 0, 0), vec(0, 0, 0)) == nil,
+  'NAV does not exit before crossing target across spline zero')
+assert(navResult(.006, .002, vec(20, 0, 0), vec(0, 0, 0)) == drivingType,
+  'NAV exits after crossing target and exceeding the strict 10-meter threshold')
+assert(navResult(.006, .002, vec(10, 0, 0), vec(0, 0, 0)) == nil,
+  'NAV retains maneuver at exactly 10 meters')
+assert(navResult(.002, .998, vec(20, 0, 0), vec(0, 0, 0)) == drivingType,
+  'NAV exits after crossing target in the opposite wrap direction')
+assert(navResult(.006, .002, nil, vec(0, 0, 0)) == nil,
+  'invalid physical coordinates cannot trigger a NAV passage exit')
+assert(navResult(.006, .002, vec(math.huge, 0, 0), vec(0, 0, 0)) == nil,
+  'non-finite physical coordinates cannot trigger a NAV passage exit')
+AccidentManager.resetSession()
+Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = true, 3
+local noIncidentQuery, noIncidentClosest = AccidentManager.isCarComingUpToAccident({ index = -1, splinePosition = .5, position = vec(0, 0, 0) }, 100)
+assert(noIncidentQuery == nil and noIncidentClosest == -1 and AccidentManager.getAccidentDecisionReadOnly(3) == nil,
+  'invalid query with empty incident set does not publish an empty decision')
 Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = false, -1
 
 print('test_collision_safety: PASS (yellow, participants, NAV victim, exits and logical resets issue no collision writes)')

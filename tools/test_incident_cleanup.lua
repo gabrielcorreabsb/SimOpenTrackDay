@@ -11,8 +11,10 @@ for i = 0, 5 do
   cars[i] = { index = i, position = { x = i, y = 0, z = 0 }, splinePosition = .1 + i * .1 }
 end
 ac.getCar = function(index) return cars[index] end
-StorageManager = { getStorage = function() return { distanceFromAccidentToSeeYellowFlag_meters = 100 } end }
-Logger = { log = function() end }
+local storage = { distanceFromAccidentToSeeYellowFlag_meters = 100 }
+StorageManager = { getStorage = function() return storage end }
+local observations = 0
+Logger = { log = function() end, observe = function() observations = observations + 1 end }
 vec3 = function(x, y, z) return { x = x, y = y, z = z } end
 CarManager = { getCarGeneration = function() return 0 end,
   isWritableAICar = function(index) return index ~= 0 end }
@@ -256,4 +258,264 @@ local partialCoverage = assert(RaceTrackManager.getYellowZoneCoverageReadOnly(.9
 assert(partialCoverage.scanned == 32 and partialCoverage.total == 33 and partialCoverage.limited
   and partialCoverage.covered == nil, 'partial negative coverage is unknown after the 32-entry bound')
 RaceTrackManager.yellowFlagsZones_bucket[18] = bucket18
+
+-- Register both wrap orientations from event-time cars (not post-registration table edits).
+local function newWrap(culpritSpline, victimSpline)
+  AccidentManager.resetSession()
+  storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+  cars[1].splinePosition, cars[2].splinePosition = culpritSpline, victimSpline
+  local incident = assert(add(1, 2))
+  return incident, AccidentManager.accidents_yellowFlagZoneIndex[incident]
+end
+local wrapA, wrapZoneA = newWrap(.999, .001)
+local wrapBoundsA = assert(RaceTrackManager.getYellowZoneReadOnly(wrapZoneA))
+assert(math.abs(wrapBoundsA.startSplinePosition - .979) < 1e-9 and wrapBoundsA.endSplinePosition == .001,
+  '.999/.001 registration stores its shortest wrap arc and backwards padding')
+assert(RaceTrackManager.isSplinePositionInYellowZone(.979)
+  and RaceTrackManager.isSplinePositionInYellowZone(.001)
+  and RaceTrackManager.isSplinePositionInYellowZone(0)
+  and RaceTrackManager.isSplinePositionInYellowZone(1)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.5),
+  'wrap-zone endpoints are inclusive, 0 equals 1, and distant spline is outside')
+assert(RaceTrackManager.getYellowZoneCoverageReadOnly(.001).covered == true,
+  'read-only coverage agrees with operational wrap-zone endpoint query')
+
+-- R3: specific-zone containment is wrap aware, read-only and rejects invalid inputs.
+local specificRevision = RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision
+assert(RaceTrackManager.isSplinePositionInZone(wrapZoneA, .979)
+  and RaceTrackManager.isSplinePositionInZone(wrapZoneA, .001)
+  and RaceTrackManager.isSplinePositionInZone(wrapZoneA, 0)
+  and RaceTrackManager.isSplinePositionInZone(wrapZoneA, 1)
+  and not RaceTrackManager.isSplinePositionInZone(wrapZoneA, .5),
+  'specific-zone containment is wrap aware and inclusive at both endpoints')
+assert(not RaceTrackManager.isSplinePositionInZone(0, .5)
+  and not RaceTrackManager.isSplinePositionInZone(-1, .5)
+  and not RaceTrackManager.isSplinePositionInZone(1.5, .5)
+  and not RaceTrackManager.isSplinePositionInZone(9999, .5)
+  and not RaceTrackManager.isSplinePositionInZone('1', .5)
+  and not RaceTrackManager.isSplinePositionInZone(nil, .5)
+  and not RaceTrackManager.isSplinePositionInZone(wrapZoneA, 1.5)
+  and not RaceTrackManager.isSplinePositionInZone(wrapZoneA, 0/0)
+  and not RaceTrackManager.isSplinePositionInZone(wrapZoneA, math.huge)
+  and not RaceTrackManager.isSplinePositionInZone(wrapZoneA, '0.5'),
+  'specific-zone containment rejects unknown zone ids and non-finite splines')
+assert(RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision == specificRevision,
+  'specific-zone containment never mutates zone storage or revision')
+
+-- R3: full-circle containment and the resolved-zone false path, with no observation emitted.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 10000
+cars[1].splinePosition, cars[2].splinePosition = .4, .4
+local fullCircleIncident = assert(add(1, 2))
+local fullCircleZone = AccidentManager.accidents_yellowFlagZoneIndex[fullCircleIncident]
+local observationsBeforeFullCircleQuery = observations
+assert(RaceTrackManager.isSplinePositionInZone(fullCircleZone, .2)
+  and RaceTrackManager.isSplinePositionInZone(fullCircleZone, .8)
+  and RaceTrackManager.isSplinePositionInZone(fullCircleZone, .4),
+  'full-circle zone containment covers every spline position')
+assert(observations == observationsBeforeFullCircleQuery,
+  'specific-zone containment emits no observation')
+assert(RaceTrackManager.removeYellowFlagZone(fullCircleZone))
+assert(not RaceTrackManager.isSplinePositionInZone(fullCircleZone, .2),
+  'resolved zone id is never contained')
+storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+
+local wrapB, wrapZoneB = newWrap(.001, .999)
+local wrapBoundsB = assert(RaceTrackManager.getYellowZoneReadOnly(wrapZoneB))
+assert(math.abs(wrapBoundsB.startSplinePosition - .979) < 1e-9 and wrapBoundsB.endSplinePosition == .001
+  and RaceTrackManager.isSplinePositionInYellowZone(.999),
+  'reverse participant role registers identical shortest wrap protection')
+local nearWrapA, nearWrapZoneA = newWrap(.98, .02)
+local nearWrapBoundsA = assert(RaceTrackManager.getYellowZoneReadOnly(nearWrapZoneA))
+assert(math.abs(nearWrapBoundsA.startSplinePosition - .96) < 1e-9 and nearWrapBoundsA.endSplinePosition == .02
+  and RaceTrackManager.isSplinePositionInYellowZone(.98)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.5),
+  '.98/.02 wrap bounds and coverage are created at event registration')
+local nearWrapB, nearWrapZoneB = newWrap(.02, .98)
+local nearWrapBoundsB = assert(RaceTrackManager.getYellowZoneReadOnly(nearWrapZoneB))
+assert(math.abs(nearWrapBoundsB.startSplinePosition - .96) < 1e-9 and nearWrapBoundsB.endSplinePosition == .02,
+  'reversed .98/.02 participant roles create equivalent registered bounds')
+
+-- Independent overlapping zones remain indexed when one is removed; unchanged bounds do not churn buckets.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+cars[1].splinePosition, cars[2].splinePosition = .999, .001
+local overlapIncidentA = assert(add(1, 2))
+local overlapZoneA = AccidentManager.accidents_yellowFlagZoneIndex[overlapIncidentA]
+cars[4].splinePosition, cars[5].splinePosition = .98, .02
+local overlapIncidentB = assert(add(4, 5))
+local overlapZoneB = AccidentManager.accidents_yellowFlagZoneIndex[overlapIncidentB]
+assert(RaceTrackManager.isSplinePositionInYellowZone(0), 'both overlap registrations cover the seam')
+local seamBucket = RaceTrackManager.yellowFlagsZones_bucket[0]
+local seamFirst, seamSecond = seamBucket[1], seamBucket[2]
+local noChangeRevision = RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision
+RaceTrackManager.updateYellowFlagZones()
+assert(RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision == noChangeRevision
+  and RaceTrackManager.yellowFlagsZones_bucket[0] == seamBucket
+  and seamBucket[1] == seamFirst and seamBucket[2] == seamSecond,
+  'unchanged bounds preserve bucket reference, ordering, and revision')
+AccidentManager.informAboutCarReset(1)
+assert(RaceTrackManager.getYellowZoneReadOnly(overlapZoneA).resolved == true
+  and RaceTrackManager.getYellowZoneReadOnly(overlapZoneB).resolved == false
+  and RaceTrackManager.isSplinePositionInYellowZone(0)
+  and RaceTrackManager.getYellowZoneCoverageReadOnly(0).covered == true,
+  'selectively resetting one overlapping incident preserves the other in both query APIs')
+assert(overlapZoneB ~= overlapZoneA, 'overlapping incidents own independent zone IDs')
+
+-- Invalid update settings and event positions preserve active bounds and all bucket contents.
+local preservedZone = assert(RaceTrackManager.getYellowZoneReadOnly(overlapZoneB))
+local preservedBucket = RaceTrackManager.yellowFlagsZones_bucket[0]
+local preservedCount = #preservedBucket
+local preservedRevision = RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision
+storage.distanceFromAccidentToSeeYellowFlag_meters = -1
+RaceTrackManager.updateYellowFlagZones()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+AccidentManager.accidents_splinePosition[overlapIncidentB] = 1.2
+RaceTrackManager.updateYellowFlagZones()
+local afterInvalid = assert(RaceTrackManager.getYellowZoneReadOnly(overlapZoneB))
+assert(afterInvalid.startSplinePosition == preservedZone.startSplinePosition
+  and afterInvalid.endSplinePosition == preservedZone.endSplinePosition
+  and #RaceTrackManager.yellowFlagsZones_bucket[0] == preservedCount
+  and RaceTrackManager.yellowFlagsZones_bucket[0][1] == preservedBucket[1]
+  and RaceTrackManager.getYellowZoneInventoryReadOnly(1).revision == preservedRevision
+  and AccidentManager.accidents_resolved[overlapIncidentB] == false,
+  'invalid setting or event spline preserves active incident, bounds, buckets, and revision')
+for _, invalid in ipairs({ 'bad', 0/0, math.huge, -0.01, 1.01 }) do
+  assert(not RaceTrackManager.isSplinePositionInYellowZone(invalid)
+    and RaceTrackManager.getYellowZoneCoverageReadOnly(invalid) == nil,
+    'invalid operational and read-only spline queries are safe and unknown')
+end
+
+-- Point zones at the cyclic seam index only the point, never an entire bucket or lap.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 0
+cars[1].splinePosition, cars[2].splinePosition = 0, 1
+local pointIncident = assert(add(1, 2))
+local pointZone = AccidentManager.accidents_yellowFlagZoneIndex[pointIncident]
+assert(RaceTrackManager.isSplinePositionInYellowZone(0)
+  and RaceTrackManager.isSplinePositionInYellowZone(1)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.001)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.049),
+  'zero-extent seam zone is inclusive only at the point and does not expand to its bucket')
+local pointBuckets = 0
+for _, bucket in pairs(RaceTrackManager.yellowFlagsZones_bucket) do
+  for _, zone in ipairs(bucket) do if zone == pointZone then pointBuckets = pointBuckets + 1 end end
+end
+assert(pointBuckets == 1, 'seam point zone is indexed in one bucket only')
+
+-- R4: re-indexing a zone must never duplicate its id within a bucket, and distinct zones stay separate.
+-- The current public API cannot produce a duplicate id (remove runs before re-add), so this test
+-- pins the observable invariant; the dedupe loop in addYellowFlagZoneToBuckets is defensive only.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+cars[1].splinePosition, cars[2].splinePosition = .3, .32
+local hygieneIncident = assert(add(1, 2))
+local hygieneZone = AccidentManager.accidents_yellowFlagZoneIndex[hygieneIncident]
+cars[4].splinePosition, cars[5].splinePosition = .6, .62
+local hygieneOther = assert(add(4, 5))
+local hygieneOtherZone = AccidentManager.accidents_yellowFlagZoneIndex[hygieneOther]
+local function maxOccurrencesInAnyBucket(zoneID)
+  local maximum = 0
+  for _, bucket in pairs(RaceTrackManager.yellowFlagsZones_bucket) do
+    local count = 0
+    for i = 1, #bucket do if bucket[i] == zoneID then count = count + 1 end end
+    if count > maximum then maximum = count end
+  end
+  return maximum
+end
+assert(maxOccurrencesInAnyBucket(hygieneZone) == 1, 'a new zone appears at most once per bucket')
+for _ = 1, 3 do
+  AccidentManager.accidents_splinePosition[hygieneIncident] = .5
+  AccidentManager.accidents_victimSplinePosition[hygieneIncident] = .52
+  RaceTrackManager.updateYellowFlagZones()
+  AccidentManager.accidents_splinePosition[hygieneIncident] = .3
+  AccidentManager.accidents_victimSplinePosition[hygieneIncident] = .32
+  RaceTrackManager.updateYellowFlagZones()
+end
+assert(maxOccurrencesInAnyBucket(hygieneZone) == 1
+  and maxOccurrencesInAnyBucket(hygieneOtherZone) == 1,
+  're-indexing the same zone id never duplicates it in a bucket')
+assert(zoneIDPresent(hygieneZone) and zoneIDPresent(hygieneOtherZone)
+  and hygieneZone ~= hygieneOtherZone,
+  'distinct independent zones remain indexed without merging')
+
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 0
+cars[1].splinePosition, cars[2].splinePosition = .4, .4
+local interiorPointIncident = assert(add(1, 2))
+local interiorPointZone = AccidentManager.accidents_yellowFlagZoneIndex[interiorPointIncident]
+assert(RaceTrackManager.isSplinePositionInYellowZone(.4)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.399)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.401),
+  'zero-extent non-seam zone is an exact inclusive point')
+local interiorPointBucketCount = 0
+for _, bucket in pairs(RaceTrackManager.yellowFlagsZones_bucket) do
+  for _, zone in ipairs(bucket) do if zone == interiorPointZone then interiorPointBucketCount = interiorPointBucketCount + 1 end end
+end
+assert(interiorPointBucketCount == 1, 'non-seam point zone is indexed in one bucket')
+
+-- Coincident participants form an arc of zero, not a fabricated half-lap in a tie.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 3000
+cars[1].splinePosition, cars[2].splinePosition = .4, .4
+local coincidentIncident = assert(add(1, 2))
+local coincidentZone = AccidentManager.accidents_yellowFlagZoneIndex[coincidentIncident]
+local coincidentBounds = assert(RaceTrackManager.getYellowZoneReadOnly(coincidentZone))
+assert(math.abs(coincidentBounds.startSplinePosition - .8) < 1e-9 and coincidentBounds.endSplinePosition == .4
+  and RaceTrackManager.isSplinePositionInYellowZone(.2)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.5),
+  'coincident event positions plus 0.6 backward padding create a 0.6 arc, not full-circle coverage')
+
+-- Full circle from event arc plus padding, and from padding alone >= one lap.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 3000
+cars[1].splinePosition, cars[2].splinePosition = .2, .8
+local fullBySumIncident = assert(add(1, 2))
+local fullBySumZone = AccidentManager.accidents_yellowFlagZoneIndex[fullBySumIncident]
+assert(RaceTrackManager.isSplinePositionInYellowZone(.5), 'event arc plus padding reaching one lap is full circle')
+storage.distanceFromAccidentToSeeYellowFlag_meters = 0
+AccidentManager.accidents_splinePosition[fullBySumIncident] = .4
+AccidentManager.accidents_victimSplinePosition[fullBySumIncident] = .4
+RaceTrackManager.updateYellowFlagZones()
+assert(not RaceTrackManager.isSplinePositionInYellowZone(.5), 'full-to-point update removes stale full-circle bucket entries')
+local pointAfterFull = RaceTrackManager.getYellowZoneReadOnly(fullBySumZone)
+assert(pointAfterFull.startSplinePosition == .4 and pointAfterFull.endSplinePosition == .4,
+  'full-to-point update stores exact point bounds')
+local pointZoneBucketCount = 0
+for _, bucket in pairs(RaceTrackManager.yellowFlagsZones_bucket) do
+  for _, zone in ipairs(bucket) do if zone == fullBySumZone then pointZoneBucketCount = pointZoneBucketCount + 1 end end
+end
+assert(pointZoneBucketCount == 1, 'full-to-point reindex removes old full-circle bucket references')
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 10000
+cars[1].splinePosition, cars[2].splinePosition = .4, .4
+local fullByPaddingIncident = assert(add(1, 2))
+local fullByPaddingZone = AccidentManager.accidents_yellowFlagZoneIndex[fullByPaddingIncident]
+assert(RaceTrackManager.isSplinePositionInYellowZone(.2)
+  and RaceTrackManager.isSplinePositionInYellowZone(.8), 'padding >= two laps remains explicit full-circle coverage')
+assert(RaceTrackManager.removeYellowFlagZone(fullByPaddingZone)
+  and not RaceTrackManager.isSplinePositionInYellowZone(.2), 'removing a full-circle zone cleans all bucket entries')
+
+-- Invalid initial event positions reject only the zone declaration, not the incident.
+AccidentManager.resetSession()
+storage.distanceFromAccidentToSeeYellowFlag_meters = 100
+cars[1].splinePosition, cars[2].splinePosition = 1.2, .3
+local invalidInitialIncident = assert(add(1, 2))
+assert(AccidentManager.accidents_resolved[invalidInitialIncident] == false
+  and AccidentManager.accidents_yellowFlagZoneIndex[invalidInitialIncident] == nil,
+  'invalid initial zone geometry leaves the incident active without fabricating a zone')
+
+-- Invalid captured track lengths are tested by isolated module reloads, restoring fixture globals afterward.
+local originalTrackLength, originalRaceTrackManager, originalGetSim = sim.trackLengthM, RaceTrackManager, ac.getSim
+for _, invalidTrackLength in ipairs({ 0, false, 0/0, math.huge }) do
+  if invalidTrackLength == false then sim.trackLengthM = nil else sim.trackLengthM = invalidTrackLength end
+  RaceTrackManager = dofile(root .. 'RaceTrackManager.lua')
+  AccidentManager.resetSession()
+  cars[1].splinePosition, cars[2].splinePosition = .3, .31
+  local invalidTrackIncident = assert(add(1, 2))
+  assert(AccidentManager.accidents_resolved[invalidTrackIncident] == false
+    and AccidentManager.accidents_yellowFlagZoneIndex[invalidTrackIncident] == nil,
+    'invalid load-time track length leaves incident active and declines zone')
+end
+sim.trackLengthM, ac.getSim, RaceTrackManager = originalTrackLength, originalGetSim, originalRaceTrackManager
 print('test_incident_cleanup: PASS')

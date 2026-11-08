@@ -9,14 +9,14 @@ local function observe(...)
   if not observeOK then return end
   if type(fn) == 'function' then pcall(fn, ...) end
 end
-local function observeEventProtected(kind, event, detail)
+local function observeEventProtected(kind, event, detail, incidentIndex)
   if detail == nil then
     detail = event.type == OnCarEventManager.OnCarEventType.Collision and 'collision' or 'jumped'
   end
-  observe(kind, event.index, event.generation, nil, nil, detail, nil, event.session)
+  observe(kind, event.index, event.generation, incidentIndex, nil, detail, nil, event.session)
 end
-local function observeEvent(kind, event, detail)
-  pcall(observeEventProtected, kind, event, detail)
+local function observeEvent(kind, event, detail, incidentIndex)
+  pcall(observeEventProtected, kind, event, detail, incidentIndex)
 end
 
 OnCarEventManager.OnCarEventType = { None = 0, Collision = 1, Jumped = 2 }
@@ -62,6 +62,8 @@ function OnCarEventManager.enqueueOnCarEvent(eventType, carIndex, collisionLocal
   event.victimPositionX, event.victimPositionY, event.victimPositionZ, event.victimSplinePosition = nil, nil, nil, nil
   event.culpritIsInPitlane, event.victimIsInPitlane = nil, nil
   event.culpritSpeedKmh, event.victimSpeedKmh = nil, nil
+  event.culpritVelocityX, event.culpritVelocityY, event.culpritVelocityZ = nil, nil, nil
+  event.victimVelocityX, event.victimVelocityY, event.victimVelocityZ = nil, nil, nil
   if eventType == OnCarEventManager.OnCarEventType.Collision then
     event.x, event.y, event.z = collisionLocalPosition.x, collisionLocalPosition.y, collisionLocalPosition.z
     event.collisionPosition.x, event.collisionPosition.y, event.collisionPosition.z = event.x, event.y, event.z
@@ -71,6 +73,10 @@ function OnCarEventManager.enqueueOnCarEvent(eventType, carIndex, collisionLocal
       event.splinePosition = carSnapshot.splinePosition
       if type(carSnapshot.isInPitlane) == 'boolean' then event.culpritIsInPitlane = carSnapshot.isInPitlane end
       if finiteNumber(carSnapshot.speedKmh) then event.culpritSpeedKmh = carSnapshot.speedKmh end
+      local velocity = carSnapshot.velocity
+      if velocity and finiteNumber(velocity.x) and finiteNumber(velocity.y) and finiteNumber(velocity.z) then
+        event.culpritVelocityX, event.culpritVelocityY, event.culpritVelocityZ = velocity.x, velocity.y, velocity.z
+      end
     end
     if victimSnapshot then
       local victimPosition = victimSnapshot.position
@@ -78,6 +84,10 @@ function OnCarEventManager.enqueueOnCarEvent(eventType, carIndex, collisionLocal
       event.victimSplinePosition = victimSnapshot.splinePosition
       if type(victimSnapshot.isInPitlane) == 'boolean' then event.victimIsInPitlane = victimSnapshot.isInPitlane end
       if finiteNumber(victimSnapshot.speedKmh) then event.victimSpeedKmh = victimSnapshot.speedKmh end
+      local victimVelocity = victimSnapshot.velocity
+      if victimVelocity and finiteNumber(victimVelocity.x) and finiteNumber(victimVelocity.y) and finiteNumber(victimVelocity.z) then
+        event.victimVelocityX, event.victimVelocityY, event.victimVelocityZ = victimVelocity.x, victimVelocity.y, victimVelocity.z
+      end
     end
     if collidedWith > 0 and collidedWith % 1 == 0 then
       event.victimIndex = collidedWith - 1
@@ -85,8 +95,6 @@ function OnCarEventManager.enqueueOnCarEvent(eventType, carIndex, collisionLocal
     end
     event.collidedWith = collidedWith
   end
-  observeEvent('queue-received', event,
-    eventType == OnCarEventManager.OnCarEventType.Collision and 'collision' or 'jumped')
   return true
 end
 
@@ -111,9 +119,19 @@ function OnCarEventManager.processQueuedEvents()
         or event.victimIndex == nil or event.victimGeneration == CarManager.getCarGeneration(event.victimIndex)) then
       local execute = OnCarEventManager.OnCarEventExecutions[event.type]
       if execute then
-        observeEvent('queue-dispatched', event)
         execute(event.index, event)
-        observeEvent('queue-callback-returned', event)
+        local incidentIndex
+        local manager = rawget(_G, 'AccidentManager')
+        if type(manager) == 'table' then
+          local culpritMap = rawget(manager, 'cars_culpritInAccidentIndex')
+          if type(culpritMap) == 'table' then incidentIndex = culpritMap[event.index] end
+          if incidentIndex == nil then
+            local victimMap = rawget(manager, 'cars_victimInAccidentIndex')
+            if type(victimMap) == 'table' then incidentIndex = victimMap[event.index] end
+          end
+        end
+        -- One printed line per queued event; enqueue/dispatch latency is not stored, so it is omitted.
+        observeEvent('queue-dispatched', event, nil, incidentIndex)
       end
     else
       observeEvent('queue-stale', event, 'identity-or-session-mismatch')

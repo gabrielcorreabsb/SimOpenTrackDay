@@ -4,6 +4,14 @@ CarStateMachine.CarStateTypeStrings[STATE] = "NavigatingAroundAccident"
 CarStateMachine.states_minimumTimeInState[STATE] = 0
 
 local StateExitReason = Strings.StringNames[Strings.StringCategories.StateExitReason]
+local function finiteNumber(value)
+    return type(value) == 'number' and value == value and value ~= math.huge and value ~= -math.huge
+end
+local function readWorldPositionComponents(position) return position.x, position.y, position.z end
+local function validWorldPosition(position)
+    local ok, x, y, z = pcall(readWorldPositionComponents, position)
+    return ok and finiteNumber(x) and finiteNumber(y) and finiteNumber(z)
+end
 
 -- ENTRY FUNCTION
 CarStateMachine.states_entryFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
@@ -220,14 +228,20 @@ CarStateMachine.states_transitionFunctions[STATE] = function (carIndex, dt, sort
     -- make sure that the car we're navigating around is behind us
     local carToNavigateAroundSplineDistance = carToNavigateAround.splinePosition
     local ourCarSplinePosition = car.splinePosition
-    if ourCarSplinePosition > carToNavigateAroundSplineDistance then
+    local splineDataValid = finiteNumber(ourCarSplinePosition) and ourCarSplinePosition >= 0 and ourCarSplinePosition <= 1
+        and finiteNumber(carToNavigateAroundSplineDistance) and carToNavigateAroundSplineDistance >= 0 and carToNavigateAroundSplineDistance <= 1
+    local passedDelta = splineDataValid and (ourCarSplinePosition - carToNavigateAroundSplineDistance) % 1 or nil
+    local passedTarget = passedDelta ~= nil and passedDelta > 0 and passedDelta < 0.5
+    if passedTarget then
         -- make sure we're some distance away from the car we're navigating around
         local carToNavigateAroundWorldPosition = carToNavigateAround.position
         local ourCarWorldPosition = car.position
-        -- local distanceToCarToNavigateAround = MathHelpers.distanceBetweenVec3s(ourCarWorldPosition, carToNavigateAroundWorldPosition)
-        local distanceToCarToNavigateAroundSqr = MathHelpers.distanceBetweenVec3sSqr(ourCarWorldPosition, carToNavigateAroundWorldPosition)
-        -- jif distanceToCarToNavigateAround > 10 then
-        if distanceToCarToNavigateAroundSqr > 10*10 then
+        local distanceSqr
+        if validWorldPosition(ourCarWorldPosition) and validWorldPosition(carToNavigateAroundWorldPosition) then
+            local distanceOK, distance = pcall(MathHelpers.distanceBetweenVec3sSqr, ourCarWorldPosition, carToNavigateAroundWorldPosition)
+            if distanceOK and finiteNumber(distance) and distance >= 0 then distanceSqr = distance end
+        end
+        if distanceSqr and distanceSqr > 10*10 then
             -- we're more than some meters away from the car we were navigating around, so return to normal driving
             AccidentManager.setCarNavigatingAroundAccident(carIndex, nil, nil)
             CarStateMachine.setStateExitReason(carIndex, StateExitReason.AccidentIsFarBehindUs)

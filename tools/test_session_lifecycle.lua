@@ -62,7 +62,9 @@ local OnCarEventManager = dofile(root .. 'OnCarEventManager.lua')
 local E = OnCarEventManager.OnCarEventType
 OnCarEventManager.OnCarEventExecutions[E.Collision] = function(index, event)
   executed[#executed + 1] = { 'collision', index, event.collidedWith, event.x, event.positionX,
-    event.culpritIsInPitlane, event.culpritSpeedKmh, event.victimIsInPitlane, event.victimSpeedKmh }
+    event.culpritIsInPitlane, event.culpritSpeedKmh, event.victimIsInPitlane, event.victimSpeedKmh,
+    event.culpritVelocityX, event.culpritVelocityY, event.culpritVelocityZ,
+    event.victimVelocityX, event.victimVelocityY, event.victimVelocityZ }
 end
 OnCarEventManager.OnCarEventExecutions[E.Jumped] = function(index) executed[#executed + 1] = { 'jump', index } end
 
@@ -89,6 +91,23 @@ assert(#executed == 1 and executed[1][1] == 'collision'
   and executed[1][6] == nil and executed[1][7] == nil
   and executed[1][8] == nil and executed[1][9] == nil,
   'reused event slots clear all pit/speed evidence instead of reconstructing it at dequeue')
+
+-- F1: collision-time velocity vectors are captured per event and never inherited by a later contact.
+executed = {}
+OnCarEventManager.enqueueOnCarEvent(E.Collision, 1, { x = 1, y = 2, z = 3 }, 3,
+  { position = { x = 1, y = 2, z = 3 }, splinePosition = .3, speedKmh = 100,
+    velocity = { x = 30, y = 0, z = 0 } },
+  { position = { x = 4, y = 5, z = 6 }, splinePosition = .31, speedKmh = 100,
+    velocity = { x = -30, y = 0, z = 0 } })
+OnCarEventManager.enqueueOnCarEvent(E.Collision, 1, { x = 1, y = 2, z = 3 }, 3,
+  { position = { x = 1, y = 2, z = 3 }, splinePosition = .3, speedKmh = 100 },
+  { position = { x = 4, y = 5, z = 6 }, splinePosition = .31, speedKmh = 100 })
+OnCarEventManager.processQueuedEvents()
+assert(#executed == 2 and executed[1][10] == 30 and executed[1][11] == 0 and executed[1][12] == 0
+  and executed[1][13] == -30 and executed[1][14] == 0 and executed[1][15] == 0,
+  'collision-time velocity vectors are captured for both participants')
+assert(executed[2][10] == nil and executed[2][13] == nil,
+  'a later contact without velocity data does not inherit the previous velocity')
 
 -- A victim generation change invalidates the collision even if its culprit is unchanged.
 executed = {}
@@ -230,6 +249,14 @@ CarManager.cars_navigatingAroundAccidentIndex[22] = 70
 for _, owner in ipairs({ 20, 21, 22 }) do
   CarManager.carGeneration[owner] = 0
   CarManager.cars_initialized[owner] = true
+  CarManager.cars_ORIGINAL_AI_AGGRESSION[owner] = .43
+  CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[owner] = 1
+  CarManager.cars_AABBSIZE[owner] = { x = 2, y = 3, z = 4 }
+  CarManager.cars_HALF_AABSIZE[owner] = { x = 1, y = 1.5, z = 2 }
+end
+local dependentIdentity = {}
+for _, owner in ipairs({ 20, 21, 22 }) do
+  dependentIdentity[owner] = CarManager.getCarGeneration(owner)
 end
 CarManager.clearCarMemory(1)
 assert(CarManager.cars_currentlyOvertakingCarIndex[20] == nil
@@ -237,10 +264,17 @@ assert(CarManager.cars_currentlyOvertakingCarIndex[20] == nil
   and CarManager.cars_navigatingAroundCarIndex[22] == nil
   and CarManager.cars_navigatingAroundAccidentIndex[22] == nil,
   'reset target clears incoming dependent references without recursion')
-assert(CarManager.getCarGeneration(20) == 1 and CarManager.getCarGeneration(21) == 1
-  and CarManager.getCarGeneration(22) == 1
-  and CarManager.cars_initialized[20] and CarManager.cars_initialized[21] and CarManager.cars_initialized[22],
-  'dependent owners are lifecycle-invalidated without clearing their observed identity')
+assert(CarManager.getCarGeneration(20) == dependentIdentity[20]
+  and CarManager.getCarGeneration(21) == dependentIdentity[21]
+  and CarManager.getCarGeneration(22) == dependentIdentity[22],
+  'dependent reference invalidation must not change owner identity generations')
+for _, owner in ipairs({ 20, 21, 22 }) do
+  assert(CarManager.cars_initialized[owner]
+    and CarManager.cars_ORIGINAL_AI_AGGRESSION[owner] == .43
+    and CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[owner] == 1
+    and CarManager.cars_AABBSIZE[owner].z == 4 and CarManager.cars_HALF_AABSIZE[owner].z == 2,
+    'dependent reference invalidation preserves owner identity baselines and dimensions')
+end
 
 -- A pending accident is invalidated if either participant jumps before dequeue.
 AccidentManager.accidents_carIndex[50] = 1
@@ -285,13 +319,13 @@ StorageManager.getStorage = function() return runtimeStorage end
 StorageManager.getStorage_Global = function() return { appRanFirstTime = true } end
 StorageManager.getStorage_Behavior = function() return { humanErrorEnabled = false } end
 local entryCars = {
-  { index = 0, isAIControlled = true, isConnected = true, isActive = true, speedKmh = 75,
+  { index = 0, isAIControlled = true, isConnected = true, isActive = true, speedKmh = 40,
     splinePosition = .1, brake = 0, gas = 0, position = { x = 0, y = 0, z = 0 },
     collisionPosition = { x = 1, y = 2, z = 3 }, collidedWith = 0, aiAggression = .5, aiLevel = 1 },
   { index = 1, isAIControlled = true, isConnected = true, isActive = true, speedKmh = 90,
     splinePosition = .2, brake = 0, gas = 0, position = { x = 1, y = 0, z = 1 },
     collisionPosition = { x = 1, y = 2, z = 3 }, collidedWith = 3, aiAggression = .4, aiLevel = 1 },
-  { index = 2, isAIControlled = false, isConnected = true, isActive = true, speedKmh = 80,
+  { index = 2, isAIControlled = false, isConnected = true, isActive = true, speedKmh = 40,
     splinePosition = .3, brake = 0, gas = 0, position = { x = 2, y = 0, z = 2 } },
   { index = 3, isAIControlled = true, isConnected = true, isActive = false, speedKmh = 70,
     splinePosition = .4, brake = 0, gas = 0, position = { x = 3, y = 0, z = 3 } },
@@ -580,7 +614,7 @@ assert(CarStateMachine.getCurrentState(1) == nil
   and CarManager.cars_navigatingAroundCarIndex[1] == nil
   and CarManager.cars_navigatingAroundAccidentIndex[1] == nil,
   'A swap durably invalidates B maneuver state before queue purge')
-assert(CarManager.getCarGeneration(1) == dependentGeneration + 1
+assert(CarManager.getCarGeneration(1) == dependentGeneration
   and CarManager.cars_initialized[1]
   and CarManager.cars_ORIGINAL_AI_AGGRESSION[1] == .43
   and CarManager.cars_ORIGINAL_AI_DIFFICULTY_LEVEL[1] == 1
@@ -672,19 +706,76 @@ assert(CompletableIndexCollectionManager.getLastIndexCreated(1) == countBeforeFu
 assert(not CarOperations.hasActiveIncidentStop(1) and not CarOperations.hasActiveIncidentStop(2)
   and not CarOperations.hasActiveIncidentStop(3),
   'full-queue Jumped and post-jump registration remain free of S2 admission')
+-- A queued owner/player contact survives loss of its unrelated maneuver target.
+local contactOwnerGeneration = CarManager.getCarGeneration(2)
+CarManager.cars_currentlyOvertakingCarIndex[2] = 1
+CarManager.cars_currentlyYieldingCarToIndex[2] = 1
+CarManager.cars_navigatingAroundCarIndex[2] = 1
+CarManager.cars_navigatingAroundAccidentIndex[2] = saturatedIncident
+entryCars[3].collidedWith = 1 -- owner 2 contacts player 0; target 1 is unrelated
+callbacks.collision(2)
+callbacks.jump(1)
+local writesBeforeUnrelatedTargetDrain = #physicalWrites
+OnCarEventManager.processQueuedEvents()
+local queuedOwnerIncident = AccidentManager.cars_culpritInAccidentIndex[2]
+local queuedOwnerZone = queuedOwnerIncident and AccidentManager.accidents_yellowFlagZoneIndex[queuedOwnerIncident]
+assert(queuedOwnerIncident ~= nil and queuedOwnerZone ~= nil
+  and AccidentManager.accidents_resolved[queuedOwnerIncident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(queuedOwnerZone).resolved == false
+  and CarManager.getCarGeneration(2) == contactOwnerGeneration
+  and CarManager.cars_currentlyOvertakingCarIndex[2] == nil
+  and CarManager.cars_currentlyYieldingCarToIndex[2] == nil
+  and CarManager.cars_navigatingAroundCarIndex[2] == nil
+  and CarManager.cars_navigatingAroundAccidentIndex[2] == nil
+  and not CarOperations.hasActiveIncidentStop(2)
+  and #physicalWrites == writesBeforeUnrelatedTargetDrain,
+  'real queued contact registers and keeps its zone while unrelated target reset preserves owner identity without S2/writes: incident='
+    .. tostring(queuedOwnerIncident) .. ' gen=' .. tostring(CarManager.getCarGeneration(2))
+    .. '/' .. tostring(contactOwnerGeneration) .. ' writes=' .. tostring(#physicalWrites)
+    .. '/' .. tostring(writesBeforeUnrelatedTargetDrain) .. ' target=' .. tostring(entryCars[2].collidedWith))
+
+-- A contact stamped before a true participant identity loss is still rejected.
+local countBeforeParticipantLoss = CompletableIndexCollectionManager.getLastIndexCreated(1)
+local participantGeneration = CarManager.getCarGeneration(2)
+callbacks.collision(2)
+callbacks.jump(2)
+OnCarEventManager.processQueuedEvents()
+assert(CarManager.getCarGeneration(2) == participantGeneration + 1
+  and CompletableIndexCollectionManager.getLastIndexCreated(1) == countBeforeParticipantLoss
+  and AccidentManager.accidents_resolved[queuedOwnerIncident] == true,
+  'true participant identity loss rejects its stale queued contact and resolves the prior record')
+entryCars[3].collidedWith = 3
 AccidentManager.informAboutCarReset(2)
 entryCars[3].isAIControlled, entryCars[3].isActive = false, true
 entryCars[4].isActive = false
 script.MANIFEST__UPDATE(.016)
 
+local allowedApiBeforeFlagPause = physics.allowed
+physics.allowed = ffiAllowTrue
+physicalAllowed = true
+runtimeStorage.enabled = true
+lifecycleSim.isLive, lifecycleSim.isPaused, lifecycleSim.isReplayActive, lifecycleSim.isSessionStarted = true, false, false, true
+script.MANIFEST__UPDATE(.016) -- establish live runtime identity before owning the flag
+AccidentManager.informAboutCarReset(1)
+AccidentManager.informAboutCarReset(2)
+entryCars[2].isAIControlled, entryCars[2].isActive = true, true
+local flagOwnedIncident = assert(AccidentManager.registerCollision(1, { x = 0, y = 0, z = 0 }, 3, {
+  index = 1, generation = CarManager.getCarGeneration(1), session = CarManager.sessionGeneration,
+  victimIndex = 2, culpritGeneration = CarManager.getCarGeneration(1),
+  victimGeneration = CarManager.getCarGeneration(2),
+  positionX = 0, positionY = 0, positionZ = 0, splinePosition = .1,
+  victimPositionX = 1, victimPositionY = 0, victimPositionZ = 0, victimSplinePosition = .1,
+}), 'pause fixture owns a real zone around the focused car')
+CarStateMachine.clearPendingLifecycle()
+script.MANIFEST__UPDATE(.016) -- focused car (index 0) at spline .1 sets Caution
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution, 'live zone sets the owned Caution flag')
 local frozenTime = CarManager.cars_timeInCurrentState[1]
 local frozenBaseline = CarManager.cars_ORIGINAL_AI_AGGRESSION[1]
 HumanErrorManager.lastEventTimeByCar[1] = 321
 local gameTimeBeforePause, flagCount = clockUpdates, #flagWrites
 local recoveryBeforePause = recoveryUpdateCalls
-local allowedApiBeforeFlagPause = physics.allowed
-physics.allowed = ffiAllowTrue
-physicalAllowed = true
+physics.allowed = ffiAllowFalse
+physicalAllowed = false
 lifecycleSim.isLive = false
 lifecycleSim.isPaused = true
 script.MANIFEST__UPDATE(10)
@@ -695,7 +786,9 @@ assert(clockUpdates == gameTimeBeforePause and CarManager.cars_timeInCurrentStat
   and HumanErrorManager.lastEventTimeByCar[1] == 321,
   'pause freezes simulation time, FSM state, cooldown and baseline')
 assert(#flagWrites == flagCount + 1 and flagWrites[#flagWrites] == ac.FlagType.None,
-  'pause boundary releases only the owned global flag once')
+  'pause boundary releases the owned global flag once even without physics permission')
+AccidentManager.informAboutCarReset(1)
+AccidentManager.informAboutCarReset(2)
 assert(countGateDiagnosticLogs('[M1a-GATE] mode=pause') == 1,
   'pause reason is logged before the update early return')
 local pausedAccidentCount = CompletableIndexCollectionManager.getLastIndexCreated(1)
@@ -711,7 +804,7 @@ physics.allowed = ffiAllowFalse
 physicalAllowed = false
 script.MANIFEST__UPDATE(1)
 assert(#flagWrites == flagCountBeforeDeniedRelease,
-  'false callable cdata permission never releases a flag')
+  'with no owned flag, denied permission performs no flag write at all')
 runtimeStorage.enabled = true
 physics.allowed = allowedApiBeforeFlagPause
 physicalAllowed = true
@@ -928,8 +1021,10 @@ assert(recoveryUpdateCalls == recoveryBeforePause, 'pause freezes incident recov
     'same-identity pending neutral applies exactly once after pause')
 end
 for i = lifecycleFlagCount + 1, #flagWrites do
-  assert(flagWrites[i] == ac.FlagType.None and flagPermissionAtWrite[i] == true,
-    'flag cleanup is None-only and occurs only while physics permission is available')
+  -- S7-1F deliberately inverts the release direction: cleanup must happen even when
+  -- physics permission is unavailable. Setting Caution remains permission-gated.
+  assert(flagWrites[i] == ac.FlagType.None,
+    'flag cleanup is None-only and no longer requires physics permission')
 end
 assert(countGateDiagnosticLogs('[M1a-GATE] mode=disabled') == 1
   and countGateDiagnosticLogs('[M1a-GATE] mode=replay') == 1,
@@ -956,6 +1051,146 @@ script.MANIFEST__UPDATE(1)
 script.MANIFEST__UPDATE(1)
 assert(countGateDiagnosticLogs('no non-player AI sample available') == 1,
   'no-AI sample fact is logged once per session')
+
+-- S7-1F: owned global flag transitions, permission-independent release and bounded logging.
+local function flagZoneStamp()
+  return {
+    index = 1, generation = CarManager.getCarGeneration(1), session = CarManager.sessionGeneration,
+    victimIndex = 2, culpritGeneration = CarManager.getCarGeneration(1),
+    victimGeneration = CarManager.getCarGeneration(2),
+    positionX = 0, positionY = 0, positionZ = 0, splinePosition = .1,
+    victimPositionX = 1, victimPositionY = 0, victimPositionZ = 0, victimSplinePosition = .1,
+  }
+end
+local function createFlagZone()
+  AccidentManager.informAboutCarReset(1)
+  AccidentManager.informAboutCarReset(2)
+  local incident = assert(AccidentManager.registerCollision(1, { x = 0, y = 0, z = 0 }, 3, flagZoneStamp()))
+  CarStateMachine.clearPendingLifecycle()
+  return incident
+end
+local function restoreFlagFixture()
+  entryCars[1].index, entryCars[1].splinePosition = 0, .10
+  entryCars[2].isAIControlled, entryCars[2].isActive = true, true
+  physics.allowed = function() return physicalAllowed end
+  physicalAllowed = true
+  runtimeStorage.enabled = true
+  lifecycleSim.isLive, lifecycleSim.isPaused, lifecycleSim.isReplayActive, lifecycleSim.isSessionStarted = true, false, false, true
+end
+restoreFlagFixture()
+script.MANIFEST__UPDATE(.016)
+
+-- (i)/(g) preserved set and release while permission is available.
+createFlagZone()
+script.MANIFEST__UPDATE(.016)
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution and countGateDiagnosticLogs('reason=zone-entered') >= 1,
+  'zone entry sets the owned Caution flag and logs the transition')
+entryCars[1].splinePosition = .50
+local flagBeforeClear = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeClear + 1 and flagWrites[#flagWrites] == ac.FlagType.None
+  and countGateDiagnosticLogs('reason=zone-cleared') >= 1,
+  'zone clear releases the owned flag and logs the transition')
+
+-- (d) nothing owned means no write at all.
+local flagBeforeIdle = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeIdle, 'no owned flag performs no flag write')
+
+-- (a) release happens even when physics permission is false.
+createFlagZone()
+entryCars[1].splinePosition = .10
+script.MANIFEST__UPDATE(.016)
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution)
+physics.allowed = ffiAllowFalse
+physicalAllowed = false
+entryCars[1].splinePosition = .50
+local flagBeforeDeniedClear = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeDeniedClear + 1 and flagWrites[#flagWrites] == ac.FlagType.None
+  and flagPermissionAtWrite[#flagWrites] == false
+  and countGateDiagnosticLogs('reason=zone-cleared') >= 2,
+  'release writes None even when physics permission is false')
+physics.allowed = function() return physicalAllowed end
+physicalAllowed = true
+
+-- (b) invalid focused car still releases the owned flag.
+createFlagZone()
+entryCars[1].splinePosition = .10
+script.MANIFEST__UPDATE(.016)
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution)
+entryCars[1].index = 999
+local flagBeforeInvalidFocus = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeInvalidFocus + 1 and flagWrites[#flagWrites] == ac.FlagType.None
+  and countGateDiagnosticLogs('reason=focused-car-invalid') >= 1,
+  'invalid focused car still releases the owned flag')
+entryCars[1].index = 0
+
+-- (c) pause boundary releases an owned flag without permission.
+createFlagZone()
+entryCars[1].splinePosition = .10
+script.MANIFEST__UPDATE(.016)
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution)
+physics.allowed = ffiAllowFalse
+physicalAllowed = false
+local flagBeforePauseRelease = #flagWrites
+lifecycleSim.isLive, lifecycleSim.isPaused = false, true
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforePauseRelease + 1 and flagWrites[#flagWrites] == ac.FlagType.None
+  and countGateDiagnosticLogs('reason=not-live') >= 1,
+  'pause boundary releases an owned flag without permission')
+lifecycleSim.isLive, lifecycleSim.isPaused = true, false
+physics.allowed = function() return physicalAllowed end
+physicalAllowed = true
+script.MANIFEST__UPDATE(.016)
+
+-- (e) a throwing release keeps ownership, logs once, and retries successfully.
+createFlagZone()
+entryCars[1].splinePosition = .10
+script.MANIFEST__UPDATE(.016)
+assert(flagWrites[#flagWrites] == ac.FlagType.Caution)
+entryCars[1].splinePosition = .50
+local realOverride = physics.overrideRacingFlag
+local failReleaseOnce = true
+physics.overrideRacingFlag = function(flag)
+  if flag == ac.FlagType.None and failReleaseOnce then failReleaseOnce = false; error('injected release failure') end
+  return realOverride(flag)
+end
+local failureLogsBefore = countGateDiagnosticLogs('[S7-1F] global flag release failed')
+local flagBeforeFailure = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeFailure
+  and countGateDiagnosticLogs('[S7-1F] global flag release failed') == failureLogsBefore + 1,
+  'a throwing release keeps ownership and logs one failure')
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeFailure + 1 and flagWrites[#flagWrites] == ac.FlagType.None,
+  'a later frame retries the release and succeeds')
+physics.overrideRacingFlag = realOverride
+
+-- (f)/(h) setting without permission writes nothing and its log stays bounded.
+createFlagZone()
+entryCars[1].splinePosition = .10
+physics.allowed = ffiAllowFalse
+physicalAllowed = false
+local deniedLogsBefore = countGateDiagnosticLogs('reason=permission-denied')
+local flagBeforeDeniedSet = #flagWrites
+script.MANIFEST__UPDATE(.016)
+assert(#flagWrites == flagBeforeDeniedSet
+  and countGateDiagnosticLogs('reason=permission-denied') == deniedLogsBefore + 1,
+  'setting Caution without permission writes nothing and logs one skip')
+local deniedBeforeBurst = countGateDiagnosticLogs('reason=permission-denied')
+local flagBeforeBurst = #flagWrites
+for _ = 1, 100 do script.MANIFEST__UPDATE(.016) end
+local deniedAfterBurst = countGateDiagnosticLogs('reason=permission-denied')
+assert(#flagWrites == flagBeforeBurst and deniedAfterBurst - deniedBeforeBurst <= 10
+  and deniedAfterBurst - deniedBeforeBurst >= 1,
+  'persistent permission denial logging stays bounded: ' .. tostring(deniedAfterBurst - deniedBeforeBurst))
+physics.allowed = function() return physicalAllowed end
+physicalAllowed = true
+entryCars[1].splinePosition = .50
+script.MANIFEST__UPDATE(.016)
+
 
 -- Enabling the internal flag loads the module once during entry initialization;
 -- the normal update callback never performs a second require or panel draw.

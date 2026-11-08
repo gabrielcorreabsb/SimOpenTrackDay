@@ -38,6 +38,8 @@ for i = 0, 30 do
     isInPit = false, isInPitlane = false }
 end
 cars[0].isAIControlled = false
+-- R1 severity gate: the fixture contacts below must stay severity-worthy (relative speed >= 20 km/h).
+cars[2].speedKmh, cars[19].speedKmh = 90, 90
 physics = { allowed = function() return true end }
 for _, name in ipairs({ 'setAITopSpeed', 'setAIThrottleLimit', 'setAICaution', 'setAIStopCounter',
   'setGentleStop', 'preventAIFromRetiring', 'setAIAggression', 'setAILevel', 'setExtraAIGrip', 'setAISplineOffset' }) do
@@ -408,11 +410,11 @@ local function findRecord(stats, kind, car)
     if record.kind == kind and (car == nil or record.car == car) then return record end
   end
 end
-local acceptedRecord, createdRecord = findRecord(baselineEpisode.records, 'incident-accepted', 1),
-  findRecord(baselineEpisode.records, 'incident-created', 1)
-assert(acceptedRecord and createdRecord and acceptedRecord.sequence < createdRecord.sequence
-  and findRecord(baselineEpisode.records, 'fsm-entry-returned-essential', 1),
-  'actual IA x IA episode records acceptance, creation and returned entry in order')
+local createdRecord = findRecord(baselineEpisode.records, 'incident-created', 1)
+local returnedEntryRecord = findRecord(baselineEpisode.records, 'fsm-entry-returned-essential', 1)
+assert(createdRecord and returnedEntryRecord and createdRecord.sequence < returnedEntryRecord.sequence
+  and findRecord(baselineEpisode.records, 'incident-accepted', 1) == nil,
+  'actual IA x IA episode records a single creation line and returned entry in order')
 local offEpisode = runEpisode('off')
 compareEpisode(offEpisode, baselineEpisode, 'OBS enabled')
 for _, mode in ipairs({ 'helper-throw', 'format-throw', 'sink-throw' }) do
@@ -554,8 +556,22 @@ cars[18].collisionPosition = vec(0, 0, 0)
 rootCallbacks.collision(18)
 assert(OnCarEventManager.processQueuedEvents() == nil, 'real collision callback event queue processes')
 local rootIncident = AccidentManager.cars_culpritInAccidentIndex[18]
-assert(rootIncident and hasEvent('incident-created', 18) and hasEvent('queue-callback-returned', 18),
-  'real entrypoint callback produces correlated incident and callback-returned events')
+assert(rootIncident and hasEvent('incident-created', 18) and hasEvent('queue-dispatched', 18)
+  and not hasEvent('queue-callback-returned', 18),
+  'real entrypoint callback produces one queue line per event plus correlated incident events')
+local queueDispatchedCount, queueReceivedCount, dispatchedIncident = 0, 0, nil
+local rootQueueSnapshot = snapshot()
+for i = 1, rootQueueSnapshot.count do
+  local record = rootQueueSnapshot.records[i]
+  if record.kind == 'queue-dispatched' and record.car == 18 then
+    queueDispatchedCount = queueDispatchedCount + 1
+    dispatchedIncident = record.incident
+  end
+  if record.kind == 'queue-received' and record.car == 18 then queueReceivedCount = queueReceivedCount + 1 end
+end
+assert(queueDispatchedCount == 1, 'a queued event prints exactly one queue-dispatched line')
+assert(dispatchedIncident == rootIncident, 'the single queue line carries the registered incident index')
+assert(queueReceivedCount == 1, 'OnCarEventManager emits no queue-received; only the consumer incident queue does')
 local rootCaptureBefore = Logger.getOBS1Stats().capture
 rootCallbacks.session()
 assert(hasEvent('session-start') and Logger.getOBS1Stats().capture == rootCaptureBefore + 1,
@@ -807,18 +823,120 @@ assert(AccidentManager.accidents_resolved[incidentA] and AccidentManager.acciden
 assert(hasEvent('incident-resolved') and hasEvent('zone-removed'), 'logical incident resolution is correlated to zone removal')
 assert(RaceTrackManager.removeYellowFlagZone(zoneA) == false, 'zone removal is idempotent')
 
+-- S7-2: legibility — one creation line, plain removal line, rejection counters and decision trace.
+CarManager.resetSession()
+AccidentManager.resetSession()
+Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = true, -1
+table.clear(output)
+
+-- G4: incident creation prints once (incident-created), never also incident-accepted.
+local legibilityStamp = {
+  index = 1, generation = CarManager.getCarGeneration(1), culpritGeneration = CarManager.getCarGeneration(1),
+  victimIndex = 2, victimGeneration = CarManager.getCarGeneration(2), session = CarManager.sessionGeneration,
+  positionX = cars[1].position.x, positionY = cars[1].position.y, positionZ = cars[1].position.z,
+  splinePosition = cars[1].splinePosition, victimPositionX = cars[2].position.x,
+  victimPositionY = cars[2].position.y, victimPositionZ = cars[2].position.z,
+  victimSplinePosition = cars[2].splinePosition, culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60,
+}
+local legibilityIncident = assert(AccidentManager.registerCollision(1, vec(0, 0, 0), 3, legibilityStamp))
+local createdCount, acceptedCount = 0, 0
+local legibilitySnapshot = snapshot()
+for i = 1, legibilitySnapshot.count do
+  local record = legibilitySnapshot.records[i]
+  if record.kind == 'incident-created' and record.incident == legibilityIncident then createdCount = createdCount + 1 end
+  if record.kind == 'incident-accepted' then acceptedCount = acceptedCount + 1 end
+end
+assert(createdCount == 1 and acceptedCount == 0, 'incident creation prints exactly one lifecycle line')
+
+-- G5: the plain log reports the zone removal with incident and zone index.
+local outputBeforeRemoval = #output
+AccidentManager.informAboutCarReset(1)
+local sawRemovalLine = false
+for i = outputBeforeRemoval + 1, #output do
+  local line = output[i]
+  if line:find('Removed yellow flag zone', 1, true)
+    and line:find('(incident #' .. tostring(legibilityIncident) .. ')', 1, true) then
+    sawRemovalLine = true
+  end
+end
+assert(sawRemovalLine, 'plain log reports zone removal with incident and zone index')
+
+-- G3: repeated rejections of the same pair print once, then every tenth occurrence with a count.
+local duplicateStamp = {
+  index = 4, generation = CarManager.getCarGeneration(4), culpritGeneration = CarManager.getCarGeneration(4),
+  victimIndex = 5, victimGeneration = CarManager.getCarGeneration(5), session = CarManager.sessionGeneration,
+  positionX = cars[4].position.x, positionY = cars[4].position.y, positionZ = cars[4].position.z,
+  splinePosition = cars[4].splinePosition, victimPositionX = cars[5].position.x,
+  victimPositionY = cars[5].position.y, victimPositionZ = cars[5].position.z,
+  victimSplinePosition = cars[5].splinePosition, culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60,
+}
+assert(AccidentManager.registerCollision(4, vec(0, 0, 0), 6, duplicateStamp))
+for _ = 1, 25 do AccidentManager.registerCollision(4, vec(0, 0, 0), 6, duplicateStamp) end
+local rejectedLines, lastRejectedExtra = 0, nil
+local rejectedSnapshot = snapshot()
+for i = 1, rejectedSnapshot.count do
+  local record = rejectedSnapshot.records[i]
+  if record.kind == 'incident-rejected' and record.car == 4
+    and record.detail == 'duplicate-contact-pair' then
+    rejectedLines = rejectedLines + 1
+    lastRejectedExtra = record.extra
+  end
+end
+assert(rejectedLines == 3 and lastRejectedExtra == 'count=20',
+  'repeated pair rejections print at counts 1, 10 and 20 only: lines=' .. tostring(rejectedLines)
+    .. ' last=' .. tostring(lastRejectedExtra))
+
+-- G6: per-car decision reason prints only when it changes and resets on session reset.
+CarManager.resetSession()
+AccidentManager.resetSession()
+Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = true, -1
+cars[3].splinePosition, cars[3].position = .10, vec(0, 0, 0)
+cars[1].splinePosition, cars[1].position = .30, vec(500, 0, 0)
+cars[2].splinePosition, cars[2].position = .31, vec(501, 0, 0)
+local function decisionDetails(carIndex)
+  local details, records = {}, snapshot()
+  for i = 1, records.count do
+    local record = records.records[i]
+    if record.kind == 'decision-changed' and record.car == carIndex then
+      details[#details + 1] = record.detail
+    end
+  end
+  return details
+end
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 1 and decisionDetails(3)[1] == 'no-incidents',
+  'decision trace reports no-incidents once')
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 1, 'unchanged decision reason prints no new line')
+assert(AccidentManager.registerCollision(1, vec(0, 0, 0), 3))
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 2 and decisionDetails(3)[2] == 'victim-outside-radius',
+  'decision trace reports the changed obstruction reason')
+cars[1].position, cars[2].position = vec(20, 0, 0), vec(21, 0, 0)
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 3 and decisionDetails(3)[3] == 'eligible',
+  'decision trace reports the eligible candidate')
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 3, 'eligible decision does not reprint while unchanged')
+AccidentManager.resetSession()
+AccidentManager.isCarComingUpToAccident(cars[3], 100)
+assert(#decisionDetails(3) == 4 and decisionDetails(3)[4] == 'no-incidents',
+  'decision trace resets with the session')
+
 -- Fixed ring/detail/output/byte caps and bounded scalar storage under many arbitrary IDs.
 -- Detail-limit markers use the normal attempt path and cannot steal the reserved global-truncation slot.
 CarManager.resetSession()
 table.clear(output)
 Logger.OBS1_ENABLED, Logger.OBS1_FOCUS_CAR = true, 7
 for i = 1, 48 do Logger.observe('ordinary-transition', 7, i, nil, nil, 'detail-limit-fill') end
-for i = 1, 110 do Logger.observe('incident-created', nil, nil, 3000 + i, nil, 'essential-limit-fill') end
+for i = 1, 350 do Logger.observe('incident-created', nil, nil, 3000 + i, nil, 'essential-limit-fill') end
 local beforeLastDetail = Logger.getOBS1Stats()
-assert(beforeLastDetail.attempts == 159, 'header plus 48 details plus 110 essentials exactly fill 159 normal attempts')
+assert(beforeLastDetail.attempts == 399, 'header plus 48 details plus 350 essentials exactly fill 399 normal attempts')
 assert(Logger.observe('ordinary-transition', 7, 49, nil, nil, 'detail-limit-trigger'))
 local reservedMarker = Logger.getOBS1Stats()
-assert(reservedMarker.attempts == 160 and reservedMarker.outputSaturated,
+assert(reservedMarker.attempts == 400 and reservedMarker.outputSaturated,
   'detail-limit trigger cannot claim a reserved attempt ahead of global truncation')
 local beforeEssentialAfterCap = #output
 assert(Logger.observe('incident-created', nil, nil, 99999, nil, 'essential-after-final-cap'))
@@ -826,7 +944,7 @@ assert(#output == beforeEssentialAfterCap and not output[#output]:find('essentia
   and output[#output]:find('global output truncated', 1, true),
   'the final attempted line is global truncation; later essentials are charged but not emitted')
 for i = 1, #output do assert(#output[i] <= 384, 'reserved marker scenario full envelope stays within byte cap') end
-assert(reservedMarker.bytesAttempted <= 61440 and reservedMarker.attempts <= 160,
+assert(reservedMarker.bytesAttempted <= 163840 and reservedMarker.attempts <= 400,
   'reserved marker scenario respects complete envelope and total-attempt budgets')
 
 CarManager.resetSession()
@@ -845,7 +963,7 @@ assert(afterDetailQuota.details == 64 and afterDetailQuota.detailLines == 48
 for i = 1, 400 do Logger.observe('incident-created', nil, nil, i, i, 'global') end
 local saturated = snapshot()
 assert(saturated.count == 256 and saturated.overwrites > 0 and saturated.details == 64
-  and saturated.attempts == 160 and saturated.detailLines <= 48 and saturated.bytesAttempted <= 61440,
+  and saturated.attempts == 400 and saturated.detailLines <= 48 and saturated.bytesAttempted <= 163840,
   'ring, independent detail and global attempt/byte budgets remain bounded')
 local observedLineCount, observedByteCount = 0, 0
 local sawGlobalLossMarker = false

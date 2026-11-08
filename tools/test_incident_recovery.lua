@@ -4,7 +4,7 @@ table.clear = table.clear or function(value) for key in pairs(value) do value[ke
 local ffi = require('ffi')
 
 CompletableIndexCollectionManager = dofile(root .. 'DataStructures/CompletableIndexCollectionManager.lua')
-local sim = { trackLengthM = 5000, raceSessionType = 1 }
+local sim = { trackLengthM = 5000, raceSessionType = 1, carsCount = 6 }
 local function vec(x, y, z) return { x = x, y = y, z = z } end
 local cars = {}
 for i = 0, 5 do
@@ -43,7 +43,11 @@ local function eventStamp(culprit, victim, options)
     victimPositionX = b.position.x, victimPositionY = b.position.y, victimPositionZ = b.position.z,
     victimSplinePosition = b.splinePosition,
     culpritIsInPitlane = options.culpritIsInPitlane, victimIsInPitlane = options.victimIsInPitlane,
-    culpritSpeedKmh = options.culpritSpeedKmh, victimSpeedKmh = options.victimSpeedKmh }
+    culpritSpeedKmh = options.culpritSpeedKmh, victimSpeedKmh = options.victimSpeedKmh,
+    culpritVelocityX = options.culpritVelocityX, culpritVelocityY = options.culpritVelocityY,
+    culpritVelocityZ = options.culpritVelocityZ,
+    victimVelocityX = options.victimVelocityX, victimVelocityY = options.victimVelocityY,
+    victimVelocityZ = options.victimVelocityZ }
 end
 local function add(culprit, victim, options)
   return AccidentManager.registerCollision(culprit, vec(0, 0, 0), victim + 1, eventStamp(culprit, victim, options))
@@ -54,6 +58,7 @@ local function reset()
   for i = 0, 5 do
     cars[i].isConnected, cars[i].isActive, cars[i].isInPitlane, cars[i].isInPit = true, true, false, false
     cars[i].speedKmh, cars[i].collisionDepth = 30, 0
+    cars[i].position, cars[i].splinePosition = vec(i * 2, 0, 0), .1 + i * .1
   end
   clock = 0
 end
@@ -89,21 +94,94 @@ end
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = true,
   culpritSpeedKmh = 0, victimSpeedKmh = 15 }, true, 'inclusive 0/15 km/h')
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = true,
-  culpritSpeedKmh = 15.001, victimSpeedKmh = 10 }, false, 'above 15 km/h')
+  culpritSpeedKmh = 15.001, victimSpeedKmh = 60 }, false, 'above 15 km/h')
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = true,
   culpritSpeedKmh = -1, victimSpeedKmh = 10 }, false, 'negative speed')
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = true,
   culpritSpeedKmh = 0/0, victimSpeedKmh = 10 }, false, 'NaN speed')
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = false,
-  culpritSpeedKmh = 10, victimSpeedKmh = 10 }, false, 'mixed pitlane flags')
+  culpritSpeedKmh = 10, victimSpeedKmh = 60 }, false, 'mixed pitlane flags')
 expectPit({ culpritIsInPitlane = true, victimIsInPitlane = nil,
-  culpritSpeedKmh = 10, victimSpeedKmh = 10 }, false, 'unknown pitlane flag')
+  culpritSpeedKmh = 10, victimSpeedKmh = 60 }, false, 'unknown pitlane flag')
 reset()
 cars[1].isInPit = true
 local ownBoxRecord = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = true,
-  culpritSpeedKmh = 10, victimSpeedKmh = 10 }))
+  culpritSpeedKmh = 10, victimSpeedKmh = 60 }))
 assert(AccidentManager.accidents_pitManoeuvre[ownBoxRecord] == false,
   'own pit box is not pitlane evidence')
+
+-- R1 severity gate: low relative speed with both participants moving is not an incident.
+reset()
+local lowSeverityBase = CompletableIndexCollectionManager.getLastIndexCreated(1)
+local lowSeverityResult = add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 60, victimSpeedKmh = 55 })
+assert(lowSeverityResult == nil
+  and CompletableIndexCollectionManager.getLastIndexCreated(1) == lowSeverityBase
+  and #informed == 0, 'low-severity contact creates no incident, zone or S2 admission')
+local lowSeverityObservations = 0
+for i = 1, #observed do
+  if observed[i][1] == 'incident-rejected'
+    and observed[i][6] == 'low-severity-contact-ignored' then
+    lowSeverityObservations = lowSeverityObservations + 1
+  end
+end
+assert(lowSeverityObservations == 1, 'low-severity contact emits exactly one incident-rejected observation')
+
+-- Either participant stopped, or relative speed >= 20 km/h, stays severity-worthy.
+reset()
+local stoppedContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 5, victimSpeedKmh = 40 }))
+assert(stoppedContact and AccidentManager.accidents_yellowFlagZoneIndex[stoppedContact] ~= nil
+  and #informed == 1, 'a stopped participant makes the contact severity-worthy')
+reset()
+local relativeContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 40, victimSpeedKmh = 60 }))
+assert(relativeContact and AccidentManager.accidents_yellowFlagZoneIndex[relativeContact] ~= nil,
+  'relative speed at or above 20 km/h is severity-worthy')
+
+-- Missing speeds stay conservative: an absent measurement never proves a free track.
+reset()
+local unknownSpeedContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false }))
+assert(unknownSpeedContact and AccidentManager.accidents_yellowFlagZoneIndex[unknownSpeedContact] ~= nil,
+  'unknown speeds conservatively create an incident and zone')
+
+-- F1: relative speed uses collision-time velocity vectors, not equal speed magnitudes.
+reset()
+local headOnContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 100, victimSpeedKmh = 100,
+  culpritVelocityX = 27.78, culpritVelocityY = 0, culpritVelocityZ = 0,
+  victimVelocityX = -27.78, victimVelocityY = 0, victimVelocityZ = 0 }))
+assert(headOnContact and AccidentManager.accidents_yellowFlagZoneIndex[headOnContact] ~= nil,
+  'head-on contact with equal speed magnitudes is severity-worthy')
+reset()
+local tBoneContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 100, victimSpeedKmh = 100,
+  culpritVelocityX = 27.78, culpritVelocityY = 0, culpritVelocityZ = 0,
+  victimVelocityX = 0, victimVelocityY = 0, victimVelocityZ = 27.78 }))
+assert(tBoneContact and AccidentManager.accidents_yellowFlagZoneIndex[tBoneContact] ~= nil,
+  'T-bone contact with perpendicular velocity vectors is severity-worthy')
+reset()
+local scalarFallbackLow = add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 60, victimSpeedKmh = 55 })
+assert(scalarFallbackLow == nil,
+  'without velocity data the scalar |delta speed| fallback still ignores a trivial contact')
+reset()
+local scalarFallbackWorthy = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 40, victimSpeedKmh = 60 }))
+assert(scalarFallbackWorthy and AccidentManager.accidents_yellowFlagZoneIndex[scalarFallbackWorthy] ~= nil,
+  'without velocity data the scalar fallback keeps a severity-worthy contact')
+reset()
+local partialSpeedContact = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 40, victimSpeedKmh = 0 / 0 }))
+assert(partialSpeedContact and AccidentManager.accidents_yellowFlagZoneIndex[partialSpeedContact] ~= nil,
+  'one non-finite speed without velocity data stays conservative')
+
+-- F1b: the local player as victim is always severity-worthy.
+reset()
+local playerVictimContact = assert(add(1, 0, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 60, victimSpeedKmh = 55 }))
+assert(playerVictimContact and AccidentManager.accidents_yellowFlagZoneIndex[playerVictimContact] ~= nil
+  and #informed == 1, 'a trivial contact touching the player victim still creates an incident and zone')
 
 -- Classification is pinned to enqueue-time evidence, not mutable current car state.
 reset()
@@ -132,7 +210,7 @@ reset()
 local pitRecord = assert(add(1, 2, { culpritIsInPitlane = true, victimIsInPitlane = true,
   culpritSpeedKmh = 5, victimSpeedKmh = 15 }))
 assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == pitRecord + 1,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == pitRecord + 1,
   'an observation-only pit record does not reserve its culprit for an independent collision')
 
 -- Same validated pair in normal context promotes the old record exactly once.
@@ -164,15 +242,36 @@ assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
 assert(CompletableIndexCollectionManager.getLastIndexCreated(1) == lastIndex and #informed == 1,
   'post-promotion repeats do not allocate IDs or extend notification')
 
+-- F4: the severity rule also governs the pit-record fall-through (promotion above keeps priority).
+reset()
+local fallbackPit = assert(add(1, 2, { culpritIsInPitlane = true, victimIsInPitlane = true,
+  culpritSpeedKmh = 5, victimSpeedKmh = 10 }))
+local fallbackOwner = assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+local fallbackBase = CompletableIndexCollectionManager.getLastIndexCreated(1)
+assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 60, victimSpeedKmh = 55 }) == nil
+  and CompletableIndexCollectionManager.getLastIndexCreated(1) == fallbackBase
+  and AccidentManager.accidents_pitManoeuvre[fallbackPit] == true
+  and AccidentManager.accidents_yellowFlagZoneIndex[fallbackPit] == nil,
+  'trivial contact on a pit-record fall-through creates no record and no zone')
+local fallbackWorthy = assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+assert(fallbackWorthy ~= fallbackPit and AccidentManager.accidents_pitManoeuvre[fallbackPit] == true
+  and AccidentManager.accidents_yellowFlagZoneIndex[fallbackWorthy] ~= nil,
+  'severity-worthy contact on the same fall-through creates the normal record and zone')
+assert(fallbackOwner ~= fallbackWorthy and AccidentManager.cars_culpritInAccidentIndex[1] == fallbackOwner,
+  'the fall-through never overwrites independent culprit ownership')
+
 -- Reversed promotion must not overwrite a participant's independent culprit ownership.
 reset()
 local rolePit = assert(add(1, 2, { culpritIsInPitlane = true, victimIsInPitlane = true,
   culpritSpeedKmh = 5, victimSpeedKmh = 10 }))
 local independent = assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local independentZone = AccidentManager.accidents_yellowFlagZoneIndex[independent]
 local unpromoted = assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 assert(unpromoted ~= rolePit and AccidentManager.accidents_pitManoeuvre[rolePit] == true
   and AccidentManager.accidents_yellowFlagZoneIndex[rolePit] == nil
   and AccidentManager.cars_culpritInAccidentIndex[1] == independent
@@ -182,7 +281,7 @@ assert(unpromoted ~= rolePit and AccidentManager.accidents_pitManoeuvre[rolePit]
   'conflicting promotion falls back to an actionable normal record without overwriting independent ownership')
 local beforePairRepeat = CompletableIndexCollectionManager.getLastIndexCreated(1)
 assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and add(2, 1, { culpritIsInPitlane = true, victimIsInPitlane = true,
     culpritSpeedKmh = 5, victimSpeedKmh = 10 }) == nil
   and CompletableIndexCollectionManager.getLastIndexCreated(1) == beforePairRepeat,
@@ -197,7 +296,7 @@ assert(AccidentManager.accidents_resolved[unpromoted] == true
   'resolving the fallback retains the independent culprit link and its unresolved zone')
 local beforeBlockedIncident = CompletableIndexCollectionManager.getLastIndexCreated(1)
 local thirdPair = assert(add(1, 4, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 assert(thirdPair ~= independent and thirdPair ~= rolePit
   and AccidentManager.cars_culpritInAccidentIndex[1] == thirdPair
   and AccidentManager.cars_victimInAccidentIndex[3] == independent,
@@ -206,26 +305,26 @@ assert(CompletableIndexCollectionManager.getLastIndexCreated(1) > beforeBlockedI
   'independent pair receives a new incident ID')
 local lastAfterThirdPair = CompletableIndexCollectionManager.getLastIndexCreated(1)
 assert(add(4, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and add(1, 4, { culpritIsInPitlane = false, victimIsInPitlane = false,
-    culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+    culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and CompletableIndexCollectionManager.getLastIndexCreated(1) == lastAfterThirdPair,
   'same active pair is deduplicated in either callback order after role-map overwrite')
 
 -- Independent normal pairs survive owner-map overwrite, then resolve independently.
 reset()
 local pairAB = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local pairAC = assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 assert(pairAB ~= pairAC and AccidentManager.cars_culpritInAccidentIndex[1] == pairAC
   and AccidentManager.cars_victimInAccidentIndex[2] == pairAB,
   'A→B and A→C coexist while scalar ownership maps remain compatibility hints')
 local pairCount = CompletableIndexCollectionManager.getLastIndexCreated(1)
 assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-    culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+    culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and CompletableIndexCollectionManager.getLastIndexCreated(1) == pairCount,
   'unordered pair identity deduplicates after role-map overwrite')
 AccidentManager.informAboutCarReset(3)
@@ -236,7 +335,7 @@ assert(AccidentManager.accidents_resolved[pairAC] == true
   and RaceTrackManager.getYellowZoneReadOnly(AccidentManager.accidents_yellowFlagZoneIndex[pairAB]).resolved == false,
   'resolving the newer shared-culprit record clears its map but preserves the older link and zone')
 assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and AccidentManager.accidents_resolved[pairAB] == false,
   'resolving the newer pair never makes an older still-active pair duplicable')
 AccidentManager.informAboutCarReset(2)
@@ -247,9 +346,9 @@ assert(AccidentManager.accidents_resolved[pairAB] == true
 -- The opposite resolution order also retains the other record and its independent zone.
 reset()
 pairAB = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 pairAC = assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local retainedZone = AccidentManager.accidents_yellowFlagZoneIndex[pairAC]
 AccidentManager.informAboutCarReset(2)
 assert(AccidentManager.accidents_resolved[pairAB] == true
@@ -261,13 +360,13 @@ assert(AccidentManager.accidents_resolved[pairAB] == true
 -- Valid duplicate contact resets LC1 even when the culprit role map points at another pair.
 reset()
 pairAB = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 pairAC = assert(add(1, 3, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local zoneAB, zoneAC = AccidentManager.accidents_yellowFlagZoneIndex[pairAB], AccidentManager.accidents_yellowFlagZoneIndex[pairAC]
 tick(8, .25)
 assert(add(2, 1, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }) == nil
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }) == nil
   and AccidentManager.cars_culpritInAccidentIndex[1] == pairAC,
   'validated duplicate contact is rejected by pair records despite the culprit map naming A→C')
 tick(12, .25)
@@ -283,40 +382,207 @@ assert(AccidentManager.accidents_resolved[pairAB] == true
 
 reset()
 local oldGenerationPair = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 CarManager.carGeneration[1] = CarManager.getCarGeneration(1) + 1
 local currentGenerationPair = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 assert(currentGenerationPair ~= oldGenerationPair
   and AccidentManager.accidents_resolved[oldGenerationPair] == false,
   'a pair from an obsolete participant generation cannot deduplicate current identity')
 
 reset()
 local oldSessionPair = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 CarManager.sessionGeneration = CarManager.sessionGeneration + 1
 local currentSessionPair = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 assert(currentSessionPair ~= oldSessionPair
   and AccidentManager.accidents_resolved[oldSessionPair] == false,
   'a pair from an obsolete session cannot deduplicate a current-session contact')
 CarManager.sessionGeneration = CarManager.sessionGeneration - 1
 
--- Normal recovery requires complete, connected, current, quiet physical observations.
+-- Recovery resolves on absence of obstruction inside the incident's own zone band.
 reset()
 local incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+local incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+assert(incidentZone ~= nil, 'severity-worthy contact owns a yellow zone')
 cars[1].speedKmh, cars[2].speedKmh = 19.99, 20
 tick(13, .25)
-assert(AccidentManager.accidents_resolved[incident] == false, 'normal recovery requires both speeds >=20')
-cars[1].speedKmh = 20
-tick(4, .25)
-cars[2].collisionDepth = .01
-tick(1, .25)
-cars[2].collisionDepth = 0
-tick(12, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'moving participants resolve after 3 continuous valid seconds regardless of absolute speed')
+
+-- A participant stopped inside its own zone band keeps the incident and zone beyond 3 seconds.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[1].speedKmh = 5
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'stopped participant inside the zone keeps the incident and zone')
+cars[1].speedKmh = 6
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a participant that starts moving removes the zone after 3 valid seconds')
+
+-- Leaving the zone band is absence even while stopped.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[1].speedKmh, cars[1].splinePosition = 0, .9
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a stopped participant outside the zone band does not obstruct resolution')
+
+-- Disconnecting a stopped participant is valid absence, not a permanent obstruction.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[1].speedKmh = 5
+tick(8, .25)
+cars[1].isConnected = false
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a disconnected stopped participant is absence, not an obstruction')
+
+-- Unreadable participant data keeps the zone.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[1].speedKmh = 5
+cars[2].speedKmh = 0 / 0
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'unreadable participant speed keeps the zone')
+cars[2].speedKmh = 60
+cars[2].splinePosition = 0 / 0
+tick(20, .25)
 assert(AccidentManager.accidents_resolved[incident] == false,
-  'positive collision depth breaks continuity instead of resolving')
+  'unreadable participant spline keeps the zone')
+cars[2].splinePosition = .3
+cars[1].speedKmh = 60
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'readable absence after unreadable data resolves on a fresh full window')
+
+-- Positive collision depth is an obstruction.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[2].collisionDepth = .01
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'participant still in contact keeps the zone')
+cars[2].collisionDepth = 0
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'contact release permits resolution after a full valid window')
+
+-- F3: any stopped non-pit car inside the band obstructs, not only the incident participants.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[4].splinePosition, cars[4].speedKmh = .25, 0
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'a third stopped car inside the band keeps the zone')
+cars[4].speedKmh = 30
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a moving third car allows resolution after a full valid window')
+
+-- Pit cars are isolated from track obstruction.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[4].splinePosition, cars[4].speedKmh, cars[4].isInPitlane = .25, 0, true
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a stopped car in the pitlane is not a track obstruction')
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[4].splinePosition, cars[4].speedKmh, cars[4].isInPit = .25, 0, true
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'a stopped car in its own pit box is not a track obstruction')
+
+-- An unavailable car count is invalid data, never proof of a free track.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+sim.carsCount = nil
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'unavailable carsCount keeps the zone')
+sim.carsCount = 6
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'readable carsCount permits resolution after a full valid window')
+
+-- F2: a wreck that rolled just past the band end stays an obstruction inside the forward tolerance.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[2].speedKmh, cars[2].splinePosition = 0, .303
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'stopped participant within the 25 m forward tolerance keeps the zone')
+cars[2].splinePosition = .31
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'stopped participant beyond the 25 m forward tolerance resolves')
+
+-- Independent incidents resolve independently; one stopped participant freezes only its own zone.
+reset()
+local firstIndependent = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+local secondIndependent = assert(add(4, 5, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+local firstIndependentZone = AccidentManager.accidents_yellowFlagZoneIndex[firstIndependent]
+local secondIndependentZone = AccidentManager.accidents_yellowFlagZoneIndex[secondIndependent]
+assert(firstIndependentZone ~= secondIndependentZone, 'independent incidents own independent zones')
+cars[4].speedKmh = 5
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[firstIndependent] == true
+  and AccidentManager.accidents_resolved[secondIndependent] == false
+  and RaceTrackManager.getYellowZoneReadOnly(firstIndependentZone).resolved == true
+  and RaceTrackManager.getYellowZoneReadOnly(secondIndependentZone).resolved == false,
+  'a stopped participant freezes only its own incident zone')
+cars[4].speedKmh = 60
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[secondIndependent] == true
+  and RaceTrackManager.getYellowZoneReadOnly(secondIndependentZone).resolved == true,
+  'the second independent incident resolves once its participant moves')
+
+-- An unreadable participant position is invalid data, never proof of absence.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+tick(8, .25)
 cars[2].position = nil
 tick(1, .25)
 cars[2].position = vec(4, 0, 0)
@@ -327,9 +593,57 @@ local notificationsBeforeRepeat = #observed
 AccidentManager.informAboutCarReset(1)
 assert(#observed == notificationsBeforeRepeat, 'repeated resolution/reset is idempotent')
 
+-- Unknown participant state is invalid data, never proof of absence.
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[2].isConnected = nil
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'unknown isConnected is invalid data and keeps the zone')
+cars[2].isConnected = true
+cars[2].isActive = nil
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false,
+  'unknown isActive is invalid data and keeps the zone')
+cars[2].isActive = true
+cars[2].position = nil
+tick(20, .25)
+assert(AccidentManager.accidents_resolved[incident] == false
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == false,
+  'a present participant without a readable position keeps the zone')
+cars[2].position = vec(4, 0, 0)
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'readable state after unknown data resolves on a fresh full window')
+
+-- Explicit absence (disconnected or missing car) remains a valid observation.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+cars[2].isConnected = false
+tick(13, .25)
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'an explicitly disconnected participant is valid absence')
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+incidentZone = AccidentManager.accidents_yellowFlagZoneIndex[incident]
+local absentVictim = cars[2]
+cars[2] = nil
+tick(13, .25)
+cars[2] = absentVictim
+assert(AccidentManager.accidents_resolved[incident] == true
+  and RaceTrackManager.getYellowZoneReadOnly(incidentZone).resolved == true,
+  'a missing participant car is valid absence')
+
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(8, .25)
 holdClock(20, .25)
 assert(AccidentManager.accidents_resolved[incident] == false,
@@ -341,7 +655,7 @@ assert(AccidentManager.accidents_resolved[incident] == true,
 -- Active stop, identity/session staleness, duplicate fresh contact and bad dt all reset continuity.
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(10, .25)
 activeStops[1] = true
 tick(1, .25)
@@ -351,7 +665,7 @@ assert(AccidentManager.accidents_resolved[incident] == false,
   'active S2 episode interrupts recovery including pending-handoff guard')
 local registeredBeforeDuplicate = CompletableIndexCollectionManager.getLastIndexCreated(1)
 local duplicateResult = add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 })
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 })
 assert(duplicateResult == nil and CompletableIndexCollectionManager.getLastIndexCreated(1) == registeredBeforeDuplicate,
   'a validated duplicate contact is rejected after resetting recovery continuity: result='
     .. tostring(duplicateResult) .. ' last=' .. tostring(CompletableIndexCollectionManager.getLastIndexCreated(1)))
@@ -363,10 +677,10 @@ assert(AccidentManager.accidents_resolved[incident] == true, 'recovery resumes o
 -- An invalid identity must not clear an otherwise continuous recovery window.
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(8, .25)
 local staleContact = eventStamp(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 })
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 })
 staleContact.victimGeneration = staleContact.victimGeneration + 1
 assert(AccidentManager.registerCollision(1, vec(0, 0, 0), 3, staleContact) == nil,
   'stale contact is rejected before resetting recovery')
@@ -376,7 +690,7 @@ assert(AccidentManager.accidents_resolved[incident] == true,
 
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 holdClock(1, .25) -- establishes the initial valid sample without credit
 clock = clock + .2
 AccidentManager.updateRecovery(.1) -- clock advanced farther than supplied dt: reset
@@ -396,7 +710,7 @@ assert(AccidentManager.accidents_resolved[incident] == true,
 
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(10, .25)
 AccidentManager.updateRecovery(.251)
 tick(12, .25)
@@ -407,7 +721,7 @@ assert(AccidentManager.accidents_resolved[incident] == true, 'bounded dt continu
 
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(10, .25)
 clock = clock - 1
 AccidentManager.updateRecovery(.25)
@@ -419,7 +733,7 @@ assert(AccidentManager.accidents_resolved[incident] == true, 'clock resumes with
 local function assertInvalidRecoveryBreaksContinuity(change, restore, label)
   reset()
   local index = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-    culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+    culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
   tick(8, .25)
   change()
   tick(1, .25)
@@ -434,14 +748,28 @@ assertInvalidRecoveryBreaksContinuity(function() cars[1].speedKmh = 0/0 end,
   function() cars[1].speedKmh = 30 end, 'NaN speed')
 assertInvalidRecoveryBreaksContinuity(function() cars[2].collisionDepth = 0/0 end,
   function() cars[2].collisionDepth = 0 end, 'NaN collision depth')
-assertInvalidRecoveryBreaksContinuity(function() cars[2].isConnected = false end,
-  function() cars[2].isConnected = true end, 'disconnected participant')
-assertInvalidRecoveryBreaksContinuity(function() cars[2].isActive = false end,
-  function() cars[2].isActive = true end, 'inactive participant')
+
+-- Disconnection and inactivity are valid absence observations under the new criterion.
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+tick(8, .25)
+cars[2].isConnected = false
+tick(5, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'disconnected participant counts as absence and permits resolution')
+reset()
+incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
+tick(8, .25)
+cars[2].isActive = false
+tick(5, .25)
+assert(AccidentManager.accidents_resolved[incident] == true,
+  'inactive participant counts as absence and permits resolution')
 
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(8, .25)
 CarManager.carGeneration[2] = 1
 tick(13, .25)
@@ -449,7 +777,7 @@ assert(AccidentManager.accidents_resolved[incident] == false, 'stale participant
 
 reset()
 incident = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 tick(8, .25)
 CarManager.sessionGeneration = CarManager.sessionGeneration + 1
 tick(13, .25)
@@ -467,9 +795,9 @@ assert(AccidentManager.accidents_resolved[pitRecovery] == true,
 -- Shared-victim independent incidents resolve independently and remove each owned zone once.
 reset()
 local first = assert(add(1, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local second = assert(add(3, 2, { culpritIsInPitlane = false, victimIsInPitlane = false,
-  culpritSpeedKmh = 30, victimSpeedKmh = 30 }))
+  culpritSpeedKmh = 30, victimSpeedKmh = 60 }))
 local firstZone, secondZone = AccidentManager.accidents_yellowFlagZoneIndex[first], AccidentManager.accidents_yellowFlagZoneIndex[second]
 assert(firstZone ~= secondZone, 'shared-victim incidents retain independent zone IDs')
 cars[3].speedKmh = 5

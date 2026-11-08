@@ -436,6 +436,39 @@ function CarOperations.clearOwnedControlsForCar(carIndex)
   if throttleApplied then throttleApplied.active = false end
 end
 
+-- A referenced car can disappear without changing this owner's identity. Cancel only
+-- maneuver bookkeeping; incident-stop leases and their applied handback evidence belong
+-- to the unchanged owner and must survive until the original episode completes.
+function CarOperations.clearDependentReferenceControlsForCar(carIndex)
+  trafficPedalOwnership[carIndex], trafficLateralOwnership[carIndex] = nil, nil
+  CarOperations._currentAntiDragRaceTopSpeeds[carIndex] = nil
+  local preserveIncident = incidentEpisodes[carIndex] ~= nil
+  local function clearNonIncidentRequests(slots, resource)
+    local slot = slots[carIndex]
+    if not slot then return end
+    for i = 1, #OWNER_ORDER do
+      local item = slot.byOwner[OWNER_ORDER[i]]
+      if item.active and item.owner ~= 'INCIDENT_STOP' then
+        observeControl('control-request-cleared', carIndex, item.owner, item.value, resource)
+        item.active = false
+        slot.activeCount = slot.activeCount - 1
+      elseif item.active then
+        preserveIncident = true
+      end
+    end
+  end
+  clearNonIncidentRequests(CarOperations._topSpeedRequests, 'setAITopSpeed')
+  clearNonIncidentRequests(CarOperations._throttleRequests, 'setAIThrottleLimit')
+  if not preserveIncident then
+    local topWinner, throttleWinner = CarOperations._topSpeedWinner[carIndex], CarOperations._throttleWinner[carIndex]
+    local topApplied, throttleApplied = CarOperations._topSpeedApplied[carIndex], CarOperations._throttleApplied[carIndex]
+    if topWinner then topWinner.active = false end
+    if throttleWinner then throttleWinner.active = false end
+    if topApplied then topApplied.active = false end
+    if throttleApplied then throttleApplied.active = false end
+  end
+end
+
 function CarOperations.clearAllOwnedControls()
   for carIndex in pairs(incidentEpisodes) do CarOperations.clearIncidentStopForCar(carIndex) end
   for carIndex in pairs(trafficPedalOwnership) do trafficPedalOwnership[carIndex] = nil end

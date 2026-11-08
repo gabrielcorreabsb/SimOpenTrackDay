@@ -32,6 +32,7 @@ local yellowZones_startSplinePosition = {}
 local yellowZones_endSplinePosition = {}
 local yellowZones_accidentIndex = {}
 local yellowZones_resolved = {}
+local yellowZones_fullCircle = {}
 local getYellowZoneBucketIndex
 local yellowZoneEpoch, yellowZoneRevision = 1, 0
 local yellowDecisionBuffer = { candidates = {} }
@@ -84,6 +85,19 @@ local function validCarIndex(carIndex)
     return type(carIndex) == 'number' and carIndex == carIndex and carIndex >= 0
       and carIndex < math.huge and carIndex % 1 == 0
 end
+local function finiteNumber(value)
+    return type(value) == 'number' and value == value and value ~= math.huge and value ~= -math.huge
+end
+local function normalizeSpline(value)
+    if not finiteNumber(value) or value < 0 or value > 1 then return nil end
+    if value == 1 then return 0 end
+    return value
+end
+local function zoneContains(start, finish, fullCircle, spline)
+    if fullCircle then return true end
+    if start <= finish then return spline >= start and spline <= finish end
+    return spline >= start or spline <= finish
+end
 
 function RaceTrackManager.getYellowZoneInventoryReadOnly(cursor, epoch, revision)
     local ok, result = pcall(function()
@@ -118,8 +132,8 @@ end
 
 function RaceTrackManager.getYellowZoneCoverageReadOnly(splinePosition)
     local ok, result = pcall(function()
-        if type(splinePosition) ~= 'number' or splinePosition ~= splinePosition
-          or splinePosition == math.huge or splinePosition == -math.huge then return nil end
+        splinePosition = normalizeSpline(splinePosition)
+        if splinePosition == nil then return nil end
         local bucket = RaceTrackManager.yellowFlagsZones_bucket[getYellowZoneBucketIndex(splinePosition)]
         local zones, candidates, count, candidateCount, scanned = {}, {}, 0, 0, 0
         local total = bucket and #bucket or 0
@@ -131,8 +145,7 @@ function RaceTrackManager.getYellowZoneCoverageReadOnly(splinePosition)
             local resolved = yellowZones_resolved[id]
             local match = false
             if resolved == false and start ~= nil and finish ~= nil then
-                if start < finish then match = splinePosition >= start and splinePosition <= finish
-                else match = (splinePosition >= start and splinePosition <= 1.0) or (splinePosition >= 0.0 and splinePosition <= finish) end
+                match = zoneContains(start, finish, yellowZones_fullCircle[id], splinePosition)
             end
             if start ~= nil or resolved == true then
                 count = count + 1
@@ -325,42 +338,39 @@ end
     -- return yellowZoneStartSplinePosition
 -- end
 
-local getYellowZoneSizeNormalized = function()
+local function readYellowZoneSizeMeters()
     local storage = StorageManager.getStorage()
-    local yellowZoneSizeMeters = storage.distanceFromAccidentToSeeYellowFlag_meters
+    return storage and storage.distanceFromAccidentToSeeYellowFlag_meters
+end
+local getYellowZoneSizeNormalized = function()
+    local storageOK, yellowZoneSizeMeters = pcall(readYellowZoneSizeMeters)
+    if not storageOK then return nil end
+    if not finiteNumber(yellowZoneSizeMeters) or yellowZoneSizeMeters < 0
+      or not finiteNumber(TRACK_LENGTH_METERS) or TRACK_LENGTH_METERS <= 0 then return nil end
     local yellowZoneSizeNormalized = yellowZoneSizeMeters / TRACK_LENGTH_METERS
+    if not finiteNumber(yellowZoneSizeNormalized) then return nil end
     return yellowZoneSizeNormalized
 end
 
 local calculateYellowFlagZoneStartEndPositions = function(accidentIndex, yellowZoneSizeNormalized)
-    local closestSplinePosition
-    local furthestSplinePosition
-
-    -- Use the event-time culprit observation first; it is immutable across dequeue.
-    closestSplinePosition = AccidentManager.accidents_splinePosition[accidentIndex]
-    furthestSplinePosition = closestSplinePosition
-
-    -- if there's a collided-with car, check its spline position too and use the furthest one of the two
+    local culprit = normalizeSpline(AccidentManager.accidents_splinePosition[accidentIndex])
+    if culprit == nil or not finiteNumber(yellowZoneSizeNormalized) or yellowZoneSizeNormalized < 0 then return nil end
+    local eventStart, eventEnd, arc
     local collidedWithCarIndex = AccidentManager.accidents_collidedWithCarIndex[accidentIndex]
     if collidedWithCarIndex then
-        local collidedWithCarSplinePosition = AccidentManager.accidents_victimSplinePosition[accidentIndex]
-        if collidedWithCarSplinePosition ~= nil then
-            if collidedWithCarSplinePosition > furthestSplinePosition then
-                furthestSplinePosition = collidedWithCarSplinePosition
-            else 
-                closestSplinePosition = collidedWithCarSplinePosition
-            end
-        end
+        local victim = normalizeSpline(AccidentManager.accidents_victimSplinePosition[accidentIndex])
+        if victim == nil then return nil end
+        local forward = (victim - culprit) % 1
+        local reverse = (culprit - victim) % 1
+        if forward == 0 and reverse == 0 then eventStart, eventEnd, arc = culprit, culprit, 0
+        elseif forward < reverse then eventStart, eventEnd, arc = culprit, victim, forward
+        elseif reverse < forward then eventStart, eventEnd, arc = victim, culprit, reverse
+        else eventStart, eventEnd, arc = math.min(culprit, victim), math.max(culprit, victim), 0.5 end
+    else
+        eventStart, eventEnd, arc = culprit, culprit, 0
     end
-
-    local yellowZoneStartSplinePosition = closestSplinePosition - yellowZoneSizeNormalized
-    local yellowZoneEndSplinePosition = furthestSplinePosition
-
-    if yellowZoneStartSplinePosition < 0 then
-        yellowZoneStartSplinePosition = yellowZoneStartSplinePosition + 1.0
-    end
-
-    return yellowZoneStartSplinePosition, yellowZoneEndSplinePosition
+    if arc + yellowZoneSizeNormalized >= 1 then return 0, 1, true end
+    return (eventStart - yellowZoneSizeNormalized) % 1, eventEnd, false
 end
 
 ---Returns the bucket index for the given (cyclic 0.0..1.0) spline position
@@ -386,7 +396,9 @@ local forEachYellowZoneBucketIndex = function(yellowZoneStartSplinePosition, yel
     local startBucketIndex = getYellowZoneBucketIndex(yellowZoneStartSplinePosition)
     local endBucketIndex = getYellowZoneBucketIndex(yellowZoneEndSplinePosition)
 
-    if yellowZoneStartSplinePosition <= yellowZoneEndSplinePosition then
+    if yellowZoneStartSplinePosition == 0 and yellowZoneEndSplinePosition == 1 then
+        for bucketIndex = 0, YELLOW_ZONE_BUCKET_COUNT - 1 do callback(bucketIndex) end
+    elseif yellowZoneStartSplinePosition <= yellowZoneEndSplinePosition then
         -- normal case, zone does not wrap around the 0.0/1.0 point
         for bucketIndex = startBucketIndex, endBucketIndex do
             callback(bucketIndex)
@@ -412,6 +424,10 @@ local addYellowFlagZoneToBuckets = function(yellowFlagZoneIndex, yellowZoneStart
         if bucket == nil then
             bucket = {}
             RaceTrackManager.yellowFlagsZones_bucket[bucketIndex] = bucket
+        end
+        -- Keep bucket membership idempotent: a zone re-added to the same span must not duplicate its id.
+        for i = 1, #bucket do
+            if bucket[i] == yellowFlagZoneIndex then return end
         end
         bucket[#bucket + 1] = yellowFlagZoneIndex
     end)
@@ -445,13 +461,16 @@ RaceTrackManager.declareYellowFlagZone = function(accidentIndex)
 
     -- Calculate the start and end spline positions based on the accident's cars' positions
     local yellowZoneSizeNormalized = getYellowZoneSizeNormalized()
-    local yellowZoneStartSplinePosition, yellowZoneEndSplinePosition = calculateYellowFlagZoneStartEndPositions(accidentIndex, yellowZoneSizeNormalized)
+    if yellowZoneSizeNormalized == nil then return nil end
+    local yellowZoneStartSplinePosition, yellowZoneEndSplinePosition, fullCircle = calculateYellowFlagZoneStartEndPositions(accidentIndex, yellowZoneSizeNormalized)
+    if yellowZoneStartSplinePosition == nil or yellowZoneEndSplinePosition == nil then return nil end
 
     local yellowFlagZoneIndex = CompletableIndexCollectionManager.incrementLastIndexCreated(yellowZonesCompletableIndex)
     yellowZones_startSplinePosition[yellowFlagZoneIndex] = yellowZoneStartSplinePosition
     yellowZones_endSplinePosition[yellowFlagZoneIndex] = yellowZoneEndSplinePosition
     yellowZones_accidentIndex[yellowFlagZoneIndex] = accidentIndex
     yellowZones_resolved[yellowFlagZoneIndex] = false
+    yellowZones_fullCircle[yellowFlagZoneIndex] = fullCircle == true
     bumpZoneRevision()
 
     addYellowFlagZoneToBuckets(yellowFlagZoneIndex, yellowZoneStartSplinePosition, yellowZoneEndSplinePosition)
@@ -481,8 +500,9 @@ RaceTrackManager.updateYellowFlagZones = function()
     end
 
     local yellowZoneSizeNormalized = getYellowZoneSizeNormalized()
+    if yellowZoneSizeNormalized == nil then return false end
 
-    -- go through all non-resolved yellow zones and update their end spline position based on the furthest spline position of the accident cars
+    -- Re-evaluate each active zone from the immutable participant positions captured with its incident.
     local firstNonResolvedYellowZoneIndex = CompletableIndexCollectionManager.getFirstNonResolvedIndex(yellowZonesCompletableIndex)
     for yellowZoneIndex = firstNonResolvedYellowZoneIndex, lastYellowZoneIndexCreated do
         local yellowZoneResolved = yellowZones_resolved[yellowZoneIndex]
@@ -492,17 +512,21 @@ RaceTrackManager.updateYellowFlagZones = function()
             local previousStartSplinePosition = yellowZones_startSplinePosition[yellowZoneIndex]
             local previousEndSplinePosition = yellowZones_endSplinePosition[yellowZoneIndex]
 
-            -- recalculate start and end spline positions
-            local yellowZoneStartSplinePosition, yellowZoneEndSplinePosition = calculateYellowFlagZoneStartEndPositions(accidentIndex, yellowZoneSizeNormalized)
-
-            -- re-index the zone's buckets since its span changed
-            removeYellowFlagZoneFromBuckets(yellowZoneIndex, previousStartSplinePosition, previousEndSplinePosition)
-            addYellowFlagZoneToBuckets(yellowZoneIndex, yellowZoneStartSplinePosition, yellowZoneEndSplinePosition)
-
-            yellowZones_startSplinePosition[yellowZoneIndex] = yellowZoneStartSplinePosition
-            yellowZones_endSplinePosition[yellowZoneIndex] = yellowZoneEndSplinePosition
-            if previousStartSplinePosition ~= yellowZoneStartSplinePosition
-              or previousEndSplinePosition ~= yellowZoneEndSplinePosition then bumpZoneRevision() end
+            -- Bounds use immutable event-time positions; invalid new data cannot erase a prior protection.
+            local yellowZoneStartSplinePosition, yellowZoneEndSplinePosition, fullCircle = calculateYellowFlagZoneStartEndPositions(accidentIndex, yellowZoneSizeNormalized)
+            if yellowZoneStartSplinePosition ~= nil and yellowZoneEndSplinePosition ~= nil then
+                local changed = previousStartSplinePosition ~= yellowZoneStartSplinePosition
+                  or previousEndSplinePosition ~= yellowZoneEndSplinePosition
+                  or yellowZones_fullCircle[yellowZoneIndex] ~= (fullCircle == true)
+                if changed then
+                    removeYellowFlagZoneFromBuckets(yellowZoneIndex, previousStartSplinePosition, previousEndSplinePosition)
+                    addYellowFlagZoneToBuckets(yellowZoneIndex, yellowZoneStartSplinePosition, yellowZoneEndSplinePosition)
+                    yellowZones_startSplinePosition[yellowZoneIndex] = yellowZoneStartSplinePosition
+                    yellowZones_endSplinePosition[yellowZoneIndex] = yellowZoneEndSplinePosition
+                    yellowZones_fullCircle[yellowZoneIndex] = fullCircle == true
+                    bumpZoneRevision()
+                end
+            end
         end
     end
 end
@@ -517,6 +541,7 @@ RaceTrackManager.removeYellowFlagZone = function(yellowFlagZoneIndex)
     yellowZones_startSplinePosition[yellowFlagZoneIndex] = nil
     yellowZones_endSplinePosition[yellowFlagZoneIndex] = nil
     yellowZones_accidentIndex[yellowFlagZoneIndex] = nil
+    yellowZones_fullCircle[yellowFlagZoneIndex] = nil
 
     yellowZones_resolved[yellowFlagZoneIndex] = true
     bumpZoneRevision()
@@ -541,6 +566,8 @@ end
 ---@return boolean
 RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition, optionalCarIndex)
     yellowDecisionBuffer.queryValid = false
+    splinePosition = normalizeSpline(splinePosition)
+    if splinePosition == nil then yellowDecisionBuffer.snapshotValid = false; return false end
     local bucket = RaceTrackManager.yellowFlagsZones_bucket[getYellowZoneBucketIndex(splinePosition)]
     local capture = false
     local lookupOK, logger = pcall(rawget, _G, 'Logger')
@@ -566,20 +593,11 @@ RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition, optiona
             local yellowZoneStartSplinePosition = yellowZones_startSplinePosition[yellowFlagZoneIndex]
             local yellowZoneEndSplinePosition = yellowZones_endSplinePosition[yellowFlagZoneIndex]
 
-            if yellowZoneStartSplinePosition < yellowZoneEndSplinePosition then
-                -- normal case, zone does not wrap around the 0.0/1.0 point
-                if splinePosition >= yellowZoneStartSplinePosition and splinePosition <= yellowZoneEndSplinePosition then
-                    chosen = yellowFlagZoneIndex
-                    if capture then break end
-                    return true
-                end
-            else
-                -- zone wraps around the 0.0/1.0 point
-                if (splinePosition >= yellowZoneStartSplinePosition and splinePosition <= 1.0) or (splinePosition >= 0.0 and splinePosition <= yellowZoneEndSplinePosition) then
-                    chosen = yellowFlagZoneIndex
-                    if capture then break end
-                    return true
-                end
+            if zoneContains(yellowZoneStartSplinePosition, yellowZoneEndSplinePosition,
+              yellowZones_fullCircle[yellowFlagZoneIndex], splinePosition) then
+                chosen = yellowFlagZoneIndex
+                if capture then break end
+                return true
             end
         end
     end
@@ -587,6 +605,39 @@ RaceTrackManager.isSplinePositionInYellowZone = function(splinePosition, optiona
         pcall(recordYellowDecisionProtected, optionalCarIndex, splinePosition, examined, capturedCount, chosen)
     end
     return chosen ~= nil
+end
+
+---Returns whether the given spline position lies inside the specific yellow flag zone.
+---Read-only: never mutates zone storage, buckets, buffers or observations.
+---@param zoneIndex number
+---@param splinePosition number
+---@param forwardToleranceMeters number? optional forward extension of the zone END (default 0)
+---@return boolean
+function RaceTrackManager.isSplinePositionInZone(zoneIndex, splinePosition, forwardToleranceMeters)
+    if type(zoneIndex) ~= 'number' or zoneIndex ~= zoneIndex or zoneIndex < 1
+      or zoneIndex == math.huge or zoneIndex % 1 ~= 0 then return false end
+    splinePosition = normalizeSpline(splinePosition)
+    if splinePosition == nil then return false end
+    if yellowZones_resolved[zoneIndex] ~= false then return false end
+    local startSplinePosition = yellowZones_startSplinePosition[zoneIndex]
+    local endSplinePosition = yellowZones_endSplinePosition[zoneIndex]
+    if startSplinePosition == nil or endSplinePosition == nil then return false end
+    local fullCircle = yellowZones_fullCircle[zoneIndex]
+    local toleranceSplineSpan = 0
+    if finiteNumber(forwardToleranceMeters) and forwardToleranceMeters > 0 then
+        local trackLengthMeters = RaceTrackManager.getTrackLengthMeters()
+        if finiteNumber(trackLengthMeters) and trackLengthMeters > 0 then
+            toleranceSplineSpan = RaceTrackManager.metersToSplineSpan(forwardToleranceMeters)
+            if not finiteNumber(toleranceSplineSpan) or toleranceSplineSpan < 0 then toleranceSplineSpan = 0 end
+        end
+    end
+    if toleranceSplineSpan > 0 and not fullCircle then
+        local extendedEndSplinePosition = (endSplinePosition + toleranceSplineSpan) % 1
+        -- Extending exactly onto the start closes the circle.
+        if extendedEndSplinePosition == startSplinePosition then return true end
+        return zoneContains(startSplinePosition, extendedEndSplinePosition, false, splinePosition)
+    end
+    return zoneContains(startSplinePosition, endSplinePosition, fullCircle, splinePosition)
 end
 
 return RaceTrackManager

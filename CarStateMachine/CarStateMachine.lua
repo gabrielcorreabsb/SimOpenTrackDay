@@ -317,8 +317,29 @@ function CarStateMachine.invalidateReferencesToCar(targetCarIndex)
     CarManager.cars_currentlyYieldingCarToIndex[ownerIndex] = nil
     CarManager.cars_navigatingAroundCarIndex[ownerIndex] = nil
     CarManager.cars_navigatingAroundAccidentIndex[ownerIndex] = nil
-    CarManager.bumpCarGeneration(ownerIndex)
-    CarStateMachine.initializeCarInStateMachine(ownerIndex)
+    CarOperations.clearDependentReferenceControlsForCar(ownerIndex)
+    local stateTypes = CarStateMachine.CarStateType
+    local currentState = cars_state[ownerIndex]
+    local pendingState = queuedStatesToTransitionInto[ownerIndex]
+    local currentIncident = currentState == stateTypes.COLLIDED_WITH_CAR
+      or currentState == stateTypes.ANOTHER_CAR_COLLIDED_INTO_ME
+    local pendingIncident = pendingState == stateTypes.COLLIDED_WITH_CAR
+      or pendingState == stateTypes.ANOTHER_CAR_COLLIDED_INTO_ME
+    local hasIncidentEpisode = CarOperations.hasActiveIncidentStop(ownerIndex)
+    if currentIncident and hasIncidentEpisode then
+      if pendingState ~= nil and (not pendingIncident or pendingState == currentState) then
+        queuedStatesToTransitionInto[ownerIndex], queuedStateGenerations[ownerIndex] = nil, nil
+      end
+      -- Keep the current incident state bound to the unchanged owner identity without
+      -- dispatching a redundant same-state entry (which would readmit/restart S2).
+    elseif pendingIncident and queuedStateGenerations[ownerIndex] == CarManager.getCarGeneration(ownerIndex) then
+      -- Keep a valid pending incident dispatch bound to the unchanged owner identity.
+    elseif hasIncidentEpisode then
+      queuedStatesToTransitionInto[ownerIndex], queuedStateGenerations[ownerIndex] = nil, nil
+      CarStateMachine.queueStateTransition(ownerIndex, stateTypes.DRIVING_NORMALLY)
+    else
+      CarStateMachine.initializeCarInStateMachine(ownerIndex)
+    end
   end
   for ownerIndex, targetIndex in pairs(CarManager.cars_currentlyOvertakingCarIndex) do
     if ownerIndex ~= targetCarIndex and targetIndex == targetCarIndex then
