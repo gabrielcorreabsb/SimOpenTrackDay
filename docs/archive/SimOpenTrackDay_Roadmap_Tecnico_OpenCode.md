@@ -113,7 +113,6 @@ Reavaliar no checkout atual; itens abaixo foram observados em fontes e documenta
 | Referência | Técnica/ideia aplicável | Limite / licença consultada | Links |
 |---|---|---|---|
 | **Realistic Trackday**, Andreas Grech | Origem da lógica de yield/overtake, FSM, compatibilidade CSP | **MIT**; origem do projeto; preservar notices/autoria | [Repo](https://github.com/dreasgrech/AssettoCorsaRealisticTrackday) |
-| **Verve AI** | Personalidades, variação de ritmo, pneus frios, recuperação, telemetria diagnóstica, prevenção de conflitos | **Licença própria restritiva**: inspiração, **não** copiar, redistribuir fork ou incorporar módulos sem permissão | [Repo](https://github.com/ververacing/verve), [LICENSE](https://github.com/ververacing/verve/blob/main/LICENSE.txt) |
 | **Full Send AI** | Aprendizado por microsetor, observação de slip e frenagem, ajuste contextual de hints | **GPL-3.0**; estudar ideia, evitar incorporar código no projeto MIT sem decisão explícita | [Repo](https://github.com/Eddlm/Full-Send-AI) |
 | **ApexFlow** | Motoristas por estilo, gap/closing speed, pit strategy, indicadores e memória por pista | **MIT** verificada; não assumir compatibilidade de qualquer parâmetro em Track Day | [Repo](https://github.com/Silxyst/ApexFlow), [AI controller](https://github.com/Silxyst/ApexFlow/blob/master/src/ai_controller.lua), [estratégia](https://github.com/Silxyst/ApexFlow/blob/master/src/race_strategy.lua) |
 | **RARE — Rules and Race Enhancements** | `setAIPitStopRequest`, pit stops de IA, pneus, `OutLap/FlyingLap/InLap` | **AGPL-3.0**; código para estudo, **não** copiar para MIT sem avaliação de licença | [Repo](https://github.com/ac-sim-improvement-mods/ac-rules-and-race-enhancements), [AI.lua](https://github.com/ac-sim-improvement-mods/ac-rules-and-race-enhancements/blob/main/RARE/src/controllers/ai.lua) |
@@ -131,7 +130,7 @@ Reavaliar no checkout atual; itens abaixo foram observados em fontes e documenta
 
 1. **Engenheiro de pista local (read-only):** avisar sobre temperatura, desgaste, autonomia de combustível, provável número de voltas restantes, entrada/saída de box e fase da sessão; inspiração AC ConditionReports/Pro Engineer.
 2. **Livro de bordo automático:** registrar eventos do grid inteiro (incidentes, paradas, manobras, tempos de pista, aquecimento, condições); inspiração Race Logger.
-3. **Sistema de observabilidade de mod conflitante:** detectar valores da IA sobrescritos por outro mod e oferecer modo somente leitura ou controle seletivo; inspiração Verve.
+3. **Sistema de observabilidade de mod conflitante:** detectar valores da IA sobrescritos por outro mod e oferecer modo somente leitura ou controle seletivo.
 4. **Previsão de manutenção:** separar advertência, sugestão de pit, pit solicitado, serviço efetuado e confirmação do retorno; inspiração RARE/ApexFlow.
 5. **Memória de setores difíceis:** detectar curvas onde há aproximações perigosas e atrasar mudanças laterais; inspiração Full Send/AC Tracer, sem otimização de pace agressivo.
 6. **Pits como ciclo do participante, não penalidade de corrida:** sessões individuais de duração desigual, intervalos de descanso, abastecimento e retorno.
@@ -629,7 +628,6 @@ INCIDENT_DETECTED
 - Não habilitar “colisões desativadas” permanentemente após um incidente.
 - Não reiniciar combustível, pneus ou temperatura como efeito colateral de repositionamento; se a API os reseta, preservar somente dados confiáveis **se autorizado e tecnicamente possível**.
 - Aplicar limite de tentativas e cooldown; desistir com segurança.
-- O módulo de recuperação do Verve é excelente referência conceitual, porém sua licença restringe cópia/reutilização de código.
 
 ### 11.3 Bandeiras e sinais
 
@@ -723,7 +721,7 @@ Session
 
 ### 13.1 Problema
 
-Verve e Full Send AI relatam conflitos com outros mods que ajustam os mesmos parâmetros da IA. Se SimOpenTrackDay e outro mod escrevem `setExtraAIGrip`, `setAILevel`, `setAICaution`, `setAITopSpeed` ou offset constantemente, o resultado depende da ordem de execução e pode oscilar.
+Full Send AI relata conflitos com outros mods que ajustam os mesmos parâmetros da IA. Se SimOpenTrackDay e outro mod escrevem `setExtraAIGrip`, `setAILevel`, `setAICaution`, `setAITopSpeed` ou offset constantemente, o resultado depende da ordem de execução e pode oscilar.
 
 ### 13.2 Solução de produto
 
@@ -732,7 +730,7 @@ Verve e Full Send AI relatam conflitos com outros mods que ajustam os mesmos par
 | Domínio | Default futuro sugerido | Motivo |
 |---|---|---|
 | Tráfego lateral/yield | Control (como atual, após validação) | Função central do mod |
-| Personalidade de pace | MonitorOnly até testes | Pode colidir com Verve/Full Send/ApexFlow |
+| Personalidade de pace | MonitorOnly até testes | Pode colidir com Full Send/ApexFlow |
 | Grip extra | Disabled | Alto risco de duplo ajuste |
 | Pit request | Disabled até capability comprovada | A IA nativa pode ignorar |
 | Clima | MonitorOnly | Weather controller pertence a outro contexto |
@@ -744,7 +742,7 @@ Nunca prometer detecção universal de outro mod: observar divergências em leit
 
 ### 13.3 Testes de coexistência
 
-- SimOpenTrackDay isolado; +Verve; +ApexFlow; +Full Send AI; +RARE, **somente se ambiente suportar**.
+- SimOpenTrackDay isolado; +ApexFlow; +Full Send AI; +RARE, **somente se ambiente suportar**.
 - Nunca ativar dois módulos de grip com controle simultâneo por padrão.
 - Caso de conflito, a solução é permitir desligar controle de um domínio, não competir agressivamente por prioridade.
 - Ao desabilitar o app, retirar seus writes e confirmar que não ficou limitador/offset ativo por responsabilidade própria.
@@ -877,7 +875,7 @@ Nunca prometer detecção universal de outro mod: observar divergências em leit
 - [ ] Compatibilidade explicitada na UI: CSP build/track/pit/weather/mechanics, com statuses `supported`, `observed`, `experimental`, `unsupported`.
 - [ ] Guia de instalação/rollback, changelog, CI de sintaxe/tests e pacote correto.
 - [ ] Benchmark de 20–30 carros com custos aceitáveis definidos contra baseline.
-- [ ] Documentar incompatibilidade/convivência com Verve, Full Send, ApexFlow e RARE sem afirmações universais.
+- [ ] Documentar incompatibilidade/convivência com Full Send, ApexFlow e RARE sem afirmações universais.
 
 **Aceite:** pacote testado em CSP real, funcionalidades ativáveis de maneira independente, sem regressão de yield/overtake nem bugs de instalação conhecidos.
 
@@ -954,7 +952,7 @@ luajit tools/test_native_controls.lua
 | S11 | Carro parado legítimo no box | Não ser classificado como acidente |
 | S12 | Fim de stint individual | Cooldown e eventual pit seguro |
 | S13 | Habilitar/desabilitar recursos 10 vezes | Sem parâmetro preso/resíduo de writer |
-| S14 | Modo MonitorOnly com Verve/ApexFlow | Não disputar knobs da IA |
+| S14 | Modo MonitorOnly com outros mods de IA (ex.: ApexFlow) | Não disputar knobs da IA |
 | S15 | 30 IAs, gravação de sessão longa | Tempo de frame, GC, vazamentos de estado |
 
 **Registrar cada sessão com:** versão exata do CSP, commit SimOpenTrackDay, GPU/CPU apenas como metadado de teste, pista/layout, condições, carros/AI count, outras extensões ativas, modo, seed quando possível, vídeo/logs, resultados e falhas. Não afirmar que uma pista ou carro passou sem executar.
@@ -1063,7 +1061,6 @@ Cada ticket deve ter: **objetivo, escopo de arquivos, requisitos, não-objetivos
 ### 18.1 Não copiar por inércia
 
 - Preservar crédito a Andreas Grech e licença MIT do projeto de origem. Verificar `LICENSE` e histórico reais antes de redistribuir.
-- **Verve:** licença restritiva específica; usar somente inspiração conceitual, salvo permissão expressa para outra finalidade.
 - **RARE:** licença AGPL-3.0; **Full Send AI:** GPL-3.0. Adaptação direta/cópia de código pode criar obrigações incompatíveis com uma estratégia de manter o SimOpenTrackDay MIT; obter avaliação/decisão explícita primeiro.
 - **ApexFlow, MRF, AC ConditionReports, Race Logger:** licenças MIT verificadas; ainda assim preservar copyright, notices e rastrear proveniência de cada trecho incorporado. Preferir implementação própria baseada no design.
 - **AC Tracer:** não confirmar licença no levantamento; código público não é automaticamente reutilizável.
@@ -1150,7 +1147,6 @@ Próximo ticket sugerido:
 
 ### Quando for trabalhar com comportamento e conflitos
 
-- [Verve README](https://github.com/ververacing/verve) — conceitos de personalidade, recuperação e conflito de AI grip, **sem reutilização de código**.
 - [Full Send AI](https://github.com/Eddlm/Full-Send-AI) — conceitos de curva/microsetor e percepção de aderência.
 - [CSP Lua SDK](https://github.com/ac-custom-shaders-patch/acc-lua-sdk) — documentação de contexto e funções.
 

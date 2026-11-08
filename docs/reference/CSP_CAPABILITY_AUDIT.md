@@ -30,6 +30,15 @@ The [official Lua Apps entry point](https://github.com/ac-custom-shaders-patch/a
 
 When `physics.allowed()` returns false, only `raycastTrack` is available, as documented. Permissions and behavior must be checked in the installed context; the existence of a symbol is not enough. The unrestricted module's notes about track opt-in **do not prove** that every AI call from the app needs `ALLOW_DISPLAY`, and they do not authorize modifying tracks.
 
+## Target build update (2026-11-08)
+
+The project now targets the latest CSP. The reference build is **0.3.2-preview2 (build 4305)**, read from the user's installed `extension/config/data_manifest.ini`. Its SDK (`extension/internal/lua-sdk/ac_apps/lib.lua`) is newer than the repo copy in `sdk/ac_apps/`.
+
+- **Present only in the installed SDK:** `physics.overrideAIRequestedFuel`, `ac.onCarAIToggle`, `physics.setSuspensionDamage`, `physics.exportRacingLineAsync` / `importRacingLineAsync`, `physics.Collider`, `physics.offsetFinalFFB`.
+- **AI APIs in both SDKs that the app does not use yet:** `setAIPitStopRequest` (since 0.3.0-preview147, `false` also blocks pitting for a short time), `setAITimeToStart`, `setAILapsToComplete`, `setAIRainTyres`, `setAILookaheadBase`, `setAILookaheadGasBrake`, `setAISteerMultiplier`, `setAIDriverName`, `setAISplineAbsoluteOffset`, `setAITyresHint`.
+
+Evidence class: **S only** (source: SDK of build 4305). **R pending** for all of them. The baseline tables below are unchanged.
+
 ## Capability inventory
 
 `lib.lua:<line>` references locate code in the baseline; they are not calls executed by this audit. For every row: **installed build unknown, R pending**.
@@ -86,7 +95,6 @@ These sources were read, **not executed in CSP**. No code was incorporated. A bu
 | [Base weather controller, 3cfd56f](https://github.com/ac-custom-shaders-patch/acc-extension-config/blob/3cfd56f97cb60075594aca8b19653ddb197478fd/weather-controllers/base/controller.lua) | Shows conditions being set in the weather-controller context, which is separate from the Lua App. |
 
 Keep the project's [MIT licence](../../LICENSE) and Andreas Grech's copyright.
-- Verve remains a restrictive conceptual reference only.
 - Full Send (GPL) and RARE (AGPL) need a compatibility decision before any reuse.
 - Public sources, or licences claimed in the roadmap, do not automatically authorize copying.
 

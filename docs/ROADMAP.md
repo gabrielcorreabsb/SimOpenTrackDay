@@ -2,11 +2,17 @@
 
 This file is the single source for **where the project stands and what comes next**. It is a plan, not a description of shipped behavior. Anything not marked done here is not implemented or not accepted.
 
-**Product goal:** an offline track day with organic AI traffic. AI cars should yield, overtake and show context-aware caution, built on the CSP API, while the native AI keeps its own decisions. Non-goals:
+**Vision:** a living, offline track day. AI drivers behave like people sharing a track: each has a personality, they warm up, push and cool down, yield and overtake with intent, slow for incidents and recover from their own mistakes, and come in and out of the pits in stints. It is built on the CSP Lua API, and the native AI keeps its own driving decisions. We take the best ideas from current AC AI projects (see [prior art](reference/PRIOR_ART.md)), re-implement them clean-room and adapt them to a track day rather than a race.
+
+**Non-goals:**
+- races, sporting penalties or blame systems;
 - mandatory point-by;
 - a universal ban on overtaking;
 - pit service on every track;
-- universal physical mechanical failures.
+- universal physical mechanical failures;
+- teleporting cars by default.
+
+**CSP target:** the latest Custom Shaders Patch. The reference build today is **0.3.2-preview2 (build 4305)**. Older builds are not a design constraint. A minimum-build gate (F0) keeps the app inert on builds that lack the required APIs. The repo copy of the SDK in `sdk/ac_apps/` predates this build, and refreshing it is an F0 ticket.
 
 **Status vocabulary**
 - **Done:** delivered, reviewed and accepted in CSP.
@@ -14,45 +20,47 @@ This file is the single source for **where the project stands and what comes nex
 - **Lane:** work in progress on a branch/worktree, not yet on `main`.
 - **Open:** not started.
 
-Last reconciled: 2026-11-08, from `main` after merging the incident lane (`04b2bd7`).
+Last reconciled: 2026-11-08. This replaces the M0–M9 / S1–S9 plan with vision-first phases. The old IDs are mapped below so that the history and evidence stay traceable.
 
-## Milestones
+## Cross-cutting rules
 
-| Milestone | Scope | Status | Evidence |
-| --- | --- | --- | --- |
-| **M0** CSP capability audit | Compare SDK, external examples and current code; inventory risks | **Local:** sources done, runtime checks pending | `a45ab3b`, [audit](reference/CSP_CAPABILITY_AUDIT.md) |
-| **M1a** Player isolation and lifecycle | No per-car writes to player/autopilot/human/invalid indices; no actuation while paused, in replay, disabled or without physics permission; generation-based identity and stale-event rejection | **Local**, partial CSP evidence (states restored after the `physics.allowed` cdata fix) | `ef2562c` |
-| **M1b** Narrow control ownership | Arbitration for top speed and throttle: requests, priorities, expiry, requested vs applied; read-only dev inspector (`ENABLE_DEVELOPMENT_DEBUG_PANEL = false`) | **Local**, limited CSP evidence | `9ce6f47` |
-| **S1** Stale incident cleanup | A reset or identity change resolves *every* active incident that mentions the car, plus its zones | **Local** | `6a9fd6e` |
-| **S2** Bounded incident stop | One stop episode per car/generation, 10 s of active time, then release only the app's own controls | **Local** on `main`; later revised on the lane (no automatic stop after contact) | `6a9fd6e`, lane |
-| **S2-D, S3-A/B/C, OBS1–3, S4 (partial), S5-A, S6-A, S7-1, S7-2, S7-1F** | <ul><li>Diagnostics</li><li>No automatic collision disabling for passers, navigation or participants</li><li>Bounded opt-in observability log and inspector panel</li><li>Pair deduplication and queue overload</li><li>Cyclic geometry</li><li>Invalid references</li><li>Severity gate and zone resolution when no obstruction remains</li><li>Log readability</li><li>Release of the global Caution flag (+ S7-1G residue check)</li></ul> | **Local**, merged into `main`. Last local run before the tests were removed: 22/23 headless tests PASS (UI fixture missing). Partial CSP evidence for S5-A and S7-1F | `04b2bd7` (merged); [archive/DEVELOPMENT_PLAN.md](archive/DEVELOPMENT_PLAN.md) |
-| **S7-1H, S7-3, S7-4, S8, S9** | <ul><li>Exit effects of the yellow state</li><li>Obstruction detection before contact</li><li>Real lateral avoidance (none exists today; that code is commented out)</li><li>Yellow-flag separation</li><li>Integration and final validation</li></ul> | **Open** | — |
-| **M2** Per-car driving phases | Observational phases (sighting / warm-up / free running / cool-down); no physical writes at first | **Open** | — |
-| **M3** Driver personalities | Seeded per session/identity, slow bounded variation; give `BehaviorPolish` real consumers | **Open** | — |
-| **M4** Traffic and smoothing | Gap/TTC, history, hysteresis, abort/cooldown | **Open** | — |
-| **M5** Pit observer and probe | Separate pit events (request/entry/box/service/exit); probe off by default | **Open** | — |
-| **M6** Opt-in pit service | Only after M5 is proven in game for explicit combinations | **Open** | — |
-| **M7** Conditions and sensors | Weather/track/tyre reading; neutral on nil/NaN; no double grip penalty | **Open** | — |
-| **M8** Advanced observability / opt-in recovery | Full logbook; no default teleport | **Open** | — |
-| **M9** Consolidation (v1.0) | Real support matrix, benchmark, packaging | **Open** | — |
+- Observe before you actuate. Fail closed when an API or data is missing.
+- Every new behavior is off by default until it is accepted in CSP.
+- Never invent physics: no grip added to fake weather or tyres, no fuel drain, no teleport by default.
+- No allocations in per-frame paths. Car state stays in indexed DoD tables.
+- Each domain has a coexistence mode (`Disabled` / `MonitorOnly` / `Control`) so the app can run alongside other AI mods without fighting over the same parameters.
+- No code is copied from projects whose licence does not allow it (see [prior art](reference/PRIOR_ART.md)).
 
-Incident & Safety (S1–S9) comes **before** M2. New flags and sporting penalties are out of scope for that phase. The longer-term feature ideas are in [BACKLOG.md](BACKLOG.md).
+## Phases
 
-## v0.2 — "Safe track day foundation"
+| Phase | Vision (what the player sees) | Main scope | Absorbs | Status |
+| --- | --- | --- | --- | --- |
+| **F0** Validate the base | The current app is safe, observable and runs cleanly on the target CSP | Refresh the SDK to build 4305; minimum-build gate; close the pending in-game checks; read-back watchdog for values another mod overwrites; evaluate `ac.onCarAIToggle` for player/autopilot isolation; v0.2 release | M0, M1a, M1b, S1–S7 (Local), S2-D, S3, OBS1–3, S4, S5-A, S6-A, S7-1/2/1F/1G | **Local**, CSP acceptance pending |
+| **F1** Safe incident | A crash slows the cars behind locally, they go around it, and the crashed car gets going again on its own | Obstruction detection before contact; real lateral avoidance (`setAISplineAbsoluteOffset`); local yellow only (zones + speed cap, no global flag); spin and wrong-way detection; contact grouping; self-recovery without teleport (back off walls, wait for a gap to rejoin); learned per-track incident hotspots that feed caution only | S7-1H, S7-3, S7-4, S8, S9 | **Open** |
+| **F2** Traffic and pace | Traffic feels organic: out lap, warm-up, push laps and cool-down; faster classes come through cleanly | Gap/TTC with history and hysteresis; per-car driving phases; car class detection for mixed grids; cold-tyre and dirty-air behavior through existing AI parameters only; slow lap-to-lap pace drift | M2, M4 | **Open** |
+| **F3** Personalities | Every driver is different: the careful novice, the consistent regular, the impatient hotshot | Seeded per session and identity; attributes (skill, consistency, awareness, patience, aggression); mistakes scaled to pace on top of `HumanErrorManager`; presets such as Mixed Trackday; optional driver names (`setAIDriverName`); real consumers for `BehaviorPolish` | M3 | **Open** |
+| **F4** Pit and session | Cars run stints, come in, sit in the box and leave at staggered times | Pit observer with separate request / entry / box / service / exit events; stints via `setAILapsToComplete` / `overrideAIRequestedFuel`; staggered pit exits via `setAITimeToStart`; `setAIPitStopRequest` as an opt-in probe; a "Session" view | M5, M6 | **Open** |
+| **F5** Conditions and logbook | Rain makes drivers more careful; the session ends with a debrief | Rain adapter (`rainWetness`) with hysteresis that adjusts caution and `setAIRainTyres` only, never grip twice; tyre reading that stays neutral on nil/NaN; session logbook; hotspot map view; v1.0 consolidation (support matrix, benchmark, packaging) | M7, M8, M9 | **Open** |
 
-v0.2 is complete when the existing AI behavior is safe and observable in CSP. New realism systems are not part of it. Proposed scope:
+The global Caution flag stays disabled (`ENABLE_GLOBAL_CAUTION_FLAG = false`). In CSP, `physics.overrideRacingFlag(Caution)` left `sim.raceFlagType` stuck on Caution. It is not retried without a new approach and an in-game test.
 
-1. ~~Integrate the incident lane~~ — done (`04b2bd7`).
-2. **Finish Incident & Safety:** S7-1H → S7-3 → S7-4 → S8 → S9, each with its own approved ticket.
-3. **Close the pending in-game checks** for M1a, M1b, S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
-4. **Repository layout (done):** runtime moved into `SimOpenTrackDay/` (copy-paste install), dormant modules into `experimental/`, SDK into `sdk/`; `tools/` (installer, payload list, syntax checker, headless tests) removed. The copied folder was smoke-tested in game by the user on 2026-11-08 (app loads and works).
-5. **Release:** bump `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
+Feature ideas behind each phase are in [BACKLOG.md](BACKLOG.md).
 
-M2 (driving phases) is the first candidate for v0.3.
+## v0.2 = closing F0
 
-## Rules for every milestone
+v0.2 is complete when the existing AI behavior is safe and observable on the target CSP. New realism systems are not part of it.
 
-Each milestone or slice gets a short ticket that the user approves before any edit. The ticket states:
+1. ~~Integrate the incident lane~~: done (`04b2bd7`).
+2. ~~Repository layout~~: done. The copied folder was smoke-tested in game on 2026-11-08 (app loads and works).
+3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK (a vendor update with its own ticket) and add the minimum-build gate.
+4. **Close the pending in-game checks** for M1a, M1b and S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
+5. **Release:** bump the `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
+
+F1 is the first phase for v0.3.
+
+## Rules for every phase slice
+
+Each slice gets a short ticket that the user approves before any edit. The ticket states:
 
 1. The objective and the observable behavior, the relevant baseline, and the risks it reduces.
 2. The **exact list of files** it may touch, including new files, tests and docs.
@@ -61,8 +69,10 @@ Each milestone or slice gets a short ticket that the user approves before any ed
 5. A proportional validation plan and the known failures.
 6. The branch/worktree and which Git operations are allowed. A commit or push for one step does not authorize the next.
 
-Report every result with these labels: **executed**, **observed in CSP**, **limited**, **pending**. A milestone is done only when its required CSP evidence is recorded. Until then the status is "implemented and verified locally; runtime pending".
+Report every result with these labels: **executed**, **observed in CSP**, **limited**, **pending**. A phase is done only when its required CSP evidence is recorded. Until then the status is "implemented and verified locally; runtime pending".
 
 ## History
+
+Before 2026-11-08 the plan used milestones M0–M9 and the Incident & Safety slices S1–S9. The mapping is in the table above. The last state of that plan: M0, M1a, M1b, S1, S2 and the S2-D…S7-1F slices were **Local** and merged into `main` (`04b2bd7`, then S7-1G `3bdf7bc`); S7-1H, S7-3, S7-4, S8, S9 and M2–M9 were **Open**.
 
 The detailed Portuguese decision log through S7-1F (2026-10-29), including the per-ticket allowlists, evidence and CSP log excerpts, is kept in [archive/DEVELOPMENT_PLAN.md](archive/DEVELOPMENT_PLAN.md), with the observability plan in [archive/AI_OBSERVABILITY_PLAN.md](archive/AI_OBSERVABILITY_PLAN.md). File paths and `tools/` tests mentioned there predate the v0.2 layout. The original long-form roadmap is in [archive/SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md](archive/SimOpenTrackDay_Roadmap_Tecnico_OpenCode.md).
