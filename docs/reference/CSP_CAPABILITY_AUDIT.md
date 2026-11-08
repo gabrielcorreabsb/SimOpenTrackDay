@@ -119,7 +119,7 @@ These priorities are for planning; they do not authorize fixes. Locators refer t
 
 - **Lateral avoidance is not integrated.** Steering via `CollisionAvoidanceManager`/`driveSafelyToSide` in `CarState_NavigatingAroundAccident.lua:123–144` is **commented out**. There is no basis for reporting an active nil crash in that code, or for claiming lateral avoidance is integrated.
 - **Pathfinding is loaded but unused.** It has no effective caller, and the `PATHFINDING_DEBUGGING` flag described in the architecture doc does not exist at baseline. Do not re-enable experimental modules to match documentation.
-- **Diagnostics divergence.** `AGENTS.md` says to preserve nine `[RTD-DIAG-*]` records, while the implementation, `test_no_diagnostics` and `TESTING.md` record their removal. This divergence must be resolved in its own scope; **do not reintroduce diagnostics**. `ShowErrorModalDialog = false` remains intact.
+- **Diagnostics.** The startup `[RTD-DIAG-*]` records were removed (`fb96a16`); `AGENTS.md` was aligned on 2026-11-08. **Do not reintroduce diagnostics**. `ShowErrorModalDialog = false` remains intact.
 - **Profiles.** BehaviorPolish fields and manual profile application do not mean every parameter is consumed. Partial profile inference does not guarantee equivalent settings.
 - **Target car.** `ac.setTargetCar` changes the implicit target and may not be restored in its own context. Global interference between scripts was not demonstrated.
 
