@@ -2,13 +2,13 @@
 
 This page lists every check that has been implemented and verified locally (syntax and headless/mock tests) but **not yet accepted in CSP**. A box is ticked only after the scenario was actually run in game, with its evidence recorded. Mocks, logs of queued transitions or a setter returning without error do not count.
 
-Install, rollback and every in-game action are manual and are done by the user. Follow [INSTALL.md](INSTALL.md) and [TESTING.md §3–7](TESTING.md).
+Install, rollback and every in-game action are manual and are done by the user. Follow [INSTALL.md](INSTALL.md) and [TESTING.md §3–7](TESTING.md). There is no automated test suite since v0.2, so this checklist is the main evidence of behavior.
 
 ## Record for every session
 
 Before testing, write down:
 - the installed revision, plus any relevant local diff;
-- the hashes of the installed payload;
+- the hashes of the installed files;
 - the exact CSP build;
 - the track/layout;
 - the cars and grid size;
@@ -63,13 +63,13 @@ Partial evidence: the per-car state came back after the `physics.allowed` cdata 
 
 ## S2 — bounded incident stop
 
-> On the lane, the automatic stop after contact was later removed (policy change on 2026-10-25). Re-scope these checks when the lane is integrated.
+> The automatic stop after contact was later removed (policy change on 2026-10-25); these checks apply only to episodes that are still admitted.
 
 - [ ] A real AI pair: the deadline counts active time; both cars leave the terminal state; the app's orders are released; the cars actually move again without a reset.
 - [ ] Repeat with overlapping incidents, pause and return, a reset of one participant, and an independent incident.
 - [ ] Record damage/obstruction, remaining yellow zones and intangibility separately.
 
-## Lane work — S3 to S7 (on `omos/incident-s2-validation`)
+## S3 to S7 (merged from the incident lane)
 
 - [ ] **S3:** no collision disabling for cars passing through a yellow zone, navigating, or participating. Car #24 was observed intangible at the pit exit, cause not established.
 - [ ] **S5-A:** cyclic geometry and zone selection at the 0/1 wrap. A positive basic smoke test exists; geometric acceptance is only partial.

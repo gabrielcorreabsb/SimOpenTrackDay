@@ -4,6 +4,8 @@
 > Use the project instructions for onboarding as needed; this document explains how the pieces fit together.
 
 Scope: **LuaJIT 2.1 / Lua 5.1** app loaded by **CSP** as `apps/lua/SimOpenTrackDay/manifest.ini`. API compatibility is checked by the entry point; runtime behavior and in-game appearance are not validated by this map.
+**Paths:** module paths in this document are relative to the repository's `SimOpenTrackDay/` app folder (the folder that is copied into `apps/lua/`), unless they start with `experimental/` or `sdk/`.
+
 Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
 
 | Callback | Location | Role |
@@ -82,14 +84,14 @@ Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
 - `RaceFlagManager.lua` — `setRaceFlag`/`removeRaceFlag` (caution flag via `physics.overrideRacingFlag`).
 - `AccidentManager.lua` — accident registration + yellow zones + navigation around them; `simulateAccident*()`.
 
-**Experimental / disabled:**
+**Experimental / disabled** (everything except `Pathfinding` lives in `experimental/` at the repo root and is not installed):
 
 - `Pathfinding.lua` — lateral paths in blocked situations. **Required by the entry point**, but runs only with `Constants.PATHFINDING_DEBUGGING`. Does not affect production.
-- `FrenetAvoid.lua` — minimal Frenet planner. `require` is **commented out**. Disabled.
-- `CollisionAvoidanceManager.lua` — `computeDesiredLateralOffset` around an accident. `require` is **commented out**. Disabled.
-- `CarSpeedLimiter.lua` — pedal-slew limiter (works around the `setAITopSpeed` limitation). `require` is commented out.
-- `CustomAIFloodManager.lua` — AI Flood teleport/cycle. `require` is commented out.
-- `Profiler.lua` — hierarchical profiler (begin/end, sampling). `require` is commented out; **never used in production**.
+- `experimental/FrenetAvoid.lua` — minimal Frenet planner. `require` is **commented out**. Disabled.
+- `experimental/CollisionAvoidanceManager.lua` — `computeDesiredLateralOffset` around an accident. `require` is **commented out**. Disabled.
+- `experimental/CarSpeedLimiter.lua` — pedal-slew limiter (works around the `setAITopSpeed` limitation). `require` is commented out.
+- `experimental/CustomAIFloodManager.lua` — AI Flood teleport/cycle. `require` is commented out.
+- `experimental/Profiler.lua` — hierarchical profiler (begin/end, sampling). `require` is commented out; **never used in production**.
 
 **Support (rarely the focus of AI changes):**
 
@@ -102,8 +104,8 @@ Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
 - `VecPool.lua` — temporary `vec3` singleton (`getTempVec3`).
 - `MathHelpers.lua` — allocation-free vector/scalar helpers.
 - `ColorManager.lua`, `AppIconRenderer.lua`, `UIOperations.lua`, `UILateralOffsetsImageWidget.lua`, `UIAppNameVersionWidget.lua` — UI.
-- `Constants.lua`, `Logger.lua`, `Enum.lua` — constants, logging, and bit-flag helpers.
-- `lib/ac_apps/` — CSP SDK (vendor; do not edit as app code). `lib/AssettoCorsaCSPLuaCompatibilityManager/` is the compatibility submodule and should be updated deliberately. `lib/uilib/` is a project-owned library and should not be confused with vendor code.
+- `Constants.lua`, `Logger.lua` — constants and logging. `experimental/Enum.lua` holds unused bit-flag helpers.
+- `sdk/ac_apps/` (repository root, outside the app) — CSP SDK definitions for editor autocomplete (vendor; do not edit as app code; not loaded at runtime). `lib/AssettoCorsaCSPLuaCompatibilityManager/` is the compatibility submodule and should be updated deliberately. `lib/uilib/` is a project-owned library and should not be confused with vendor code.
 
 ### 1.3 `require` order (important!)
 
@@ -392,7 +394,6 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 ├─ CarOperations.lua                physics wrappers + yield/overtake; anchors; raycasts
 ├─ CarStateMachine/
 │  ├─ CarStateMachine.lua           central FSM (`updateCar`)
-│  ├─ CarState_TEMPLATE.lua         new-state contract
 │  └─ States/*.lua                  states (see STATE_MACHINE.md)
 ├─ StorageManager.lua               enum→collection→DoD→storage→getters
 ├─ MainWindow.lua                   single window: header + tabs
@@ -406,12 +407,16 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 ├─ OnCarEventManager.lua            Collision/Jumped queue
 ├─ GameTimeManager.lua              game time (cooldowns)
 ├─ SessionDetails.lua               time since session start
-├─ (disabled) Pathfinding / FrenetAvoid / CollisionAvoidanceManager /
-│              CarSpeedLimiter / CustomAIFloodManager / Profiler
-├─ Strings/  DataStructures/  VecPool / MathHelpers / ColorManager / Logger / Enum
-├─ lib/ac_apps/                     CSP SDK (vendor)
+├─ Pathfinding.lua                  loaded, gated, no effective caller
+├─ Strings/  DataStructures/  VecPool / MathHelpers / ColorManager / Logger
 ├─ lib/AssettoCorsaCSPLuaCompatibilityManager/ compatibility submodule
+├─ lib/i18n/                        translation catalogs
 └─ lib/uilib/                       project-owned library
+
+experimental/ (repo root, NOT installed, requires commented out)
+   FrenetAvoid / CollisionAvoidanceManager / CarSpeedLimiter / CustomAIFloodManager /
+   Profiler / Enum / lib/easing / CarStateMachine/CarState_TEMPLATE /
+   CarStateMachine/States/CarState_DefendingPosition (no incoming transition)
 ```
 
 ---
@@ -438,9 +443,9 @@ SimOpenTrackDay.lua   entry point / MANIFEST__UPDATE
 
 1. **New option:** add an ID to the relevant enum (e.g. `StorageManager.Options_Behavior`), an entry to the `optionsCollection_*_beforeDoD` collection and a field to the matching `storageTable_*`. Defaults/min/max flow through `fillInDoDTables`. If it affects AI behavior, consider `StorageManager.BehaviorProfiles`.
 2. **UI control:** add it to the relevant tab section in `SettingsWindow.lua`; UI text goes through localization ([LOCALIZATION.md](../guides/LOCALIZATION.md)).
-3. **AI logic:** for a new state follow [STATE_MACHINE.md §5](STATE_MACHINE.md) using `CarStateMachine/CarState_TEMPLATE.lua`; otherwise extend the relevant manager (`CarOperations`, `AccidentManager`, ...).
+3. **AI logic:** for a new state follow [STATE_MACHINE.md §5](STATE_MACHINE.md) using `experimental/CarStateMachine/CarState_TEMPLATE.lua` (copy it into `SimOpenTrackDay/CarStateMachine/States/`); otherwise extend the relevant manager (`CarOperations`, `AccidentManager`, ...).
 4. **Wiring:** per-frame work from `MANIFEST__UPDATE`; car events via the `ac.onCarJumped` / `ac.onCarCollision` handlers registered in the entry point.
 5. **New CSP API:** register it with `CSPCompatibilityManager.addFunction(...)` in the entry point (§8) and record it in [CSP_CAPABILITY_AUDIT.md](CSP_CAPABILITY_AUDIT.md).
-6. **Validate:** run the relevant checks in [TESTING.md](../guides/TESTING.md) and add any in-game check to [IN_GAME_VALIDATION.md](../guides/IN_GAME_VALIDATION.md).
+6. **Validate:** run the compile check in [TESTING.md](../guides/TESTING.md) and add any in-game check to [IN_GAME_VALIDATION.md](../guides/IN_GAME_VALIDATION.md).
 
 Related documents: [STATE_MACHINE.md](STATE_MACHINE.md) (FSM), [TESTING.md](../guides/TESTING.md) (validation), [README](../../README.md) (product).

@@ -32,83 +32,56 @@ Results depend on the track, session, and APIs available in the installed CSP ve
 
 The entry point registers required CSP functions and checks compatibility. This README does not specify a minimum CSP version; consult app/CSP warnings and runtime results.
 
-## Manual installation
+## Installation
 
-See the [installation guide](docs/guides/INSTALL.md) for `tools/install.bat` and manual backup/restore. The current installer replaces the contents of the app directory and has no automatic backup or rollback. Supply the **AC installation root**, not `apps/lua`, when prompted; the script appends the app path. Installation remains a manual user action.
+Copy the repository's **`SimOpenTrackDay/`** folder into `<Assetto Corsa>\apps\lua\`. The result must be `<Assetto Corsa>\apps\lua\SimOpenTrackDay\SimOpenTrackDay.lua`. Back up an existing installation first; settings are kept. Full steps, rollback and troubleshooting: [installation guide](docs/guides/INSTALL.md).
 
-The source repository keeps runtime payload at its root; the app installation path is `apps/lua/SimOpenTrackDay/`. Manually copy the runtime payload:
-
-- Runtime `.lua` files at the root, including `SimOpenTrackDay.lua`;
-- `manifest.ini` and `LICENSE`;
-- `CarStateMachine/`, `DataStructures/`, `Strings/`, and `lib/` directories.
-
-The installation must contain `apps/lua/SimOpenTrackDay/SimOpenTrackDay.lua`; the directory and entry-point names must match. Do not copy Git metadata (`.git/` directories or `.git` files), `tools/`, `docs/`, `artifacts/`, or `*.bak` files. The compatibility submodule at `lib/AssettoCorsaCSPLuaCompatibilityManager/` is part of runtime; do not copy the submodule's Git metadata.
-
-**Never copy the modules directly into the Assetto Corsa root.** Old files there can shadow the installed app's modules and leave its tabs blank. The source bootstrap now prioritizes its own directory via `__dirname`, but CSP validation of that change is pending; it does not replace already cached modules. See the [resolved incident, implemented bootstrap and remaining proposal](docs/archive/MODULE_LOADING_HARDENING.md). The installer is unchanged.
-
-Preserve existing installations and settings. Use a separate app directory for testing; do not remove or replace old directories or reset user data during installation or rollback.
+**Never copy the modules directly into the Assetto Corsa root.** Old files there can shadow the app's modules and leave its tabs blank ([incident record](docs/archive/MODULE_LOADING_HARDENING.md)).
 
 ### Clone for development
 
 ```sh
 git clone --recurse-submodules https://github.com/gabrielcorreabsb/SimOpenTrackDay.git
-cd SimOpenTrackDay
-git submodule update --init --recursive
 ```
 
-The recursive clone obtains the compatibility submodule. The CSP SDK is in `lib/ac_apps/`; it is vendor code and must not be edited as app code.
+The submodule `SimOpenTrackDay/lib/AssettoCorsaCSPLuaCompatibilityManager/` is part of the runtime; without it the app does not load (`git submodule update --init` fixes an existing clone).
 
 ## Basic usage
 
-1. Manually install the runtime files and enable SimOpenTrackDay among CSP Lua Apps.
+1. Install the app folder and enable SimOpenTrackDay among CSP Lua Apps.
 2. Start an offline session with AI cars on a track with a compatible AI spline. The app does not run online/multiplayer.
 3. Open the single app window from the Assetto Corsa sidebar. Overview contains the operational car list; Behavior groups lateral offsets first, then behavior profile/mode and general caution, aggression, and difficulty controls. Yielding and Overtaking contain maneuver-specific options, while Advanced is for technical settings such as accidents, pathfinding, and Other. Use the global enable control as needed.
 
-The operational car list is part of the app UI; diagnostic options are not available. Interaction and simulation results must be confirmed in CSP; the reported UI recovery is not general visual or behavioral validation.
+The operational car list is part of the app UI; diagnostic options are not available. Interaction and simulation results must be confirmed in CSP.
 
 ## Project structure
 
 ```text
-SimOpenTrackDay.lua       entry point and manifest callbacks
-SettingsWindow.lua        settings interface
-MainWindow.lua            single-window tabs and shared header
-SettingsModel.lua         settings queries and actions
-UIState.lua               transient UI selections/expansions
-UIStorage.lua             shared UI preference schema
-StorageManager.lua        options, profiles, track/session storage
-CarManager.lua            AI car state/cache
-CarOperations.lua         yield/overtake operations and physics calls
-CarStateMachine/          car behavior states
-UIManager.lua              operational car list
-lib/uilib/                 project-owned UI components
-lib/ac_apps/               distributed CSP SDK
-lib/AssettoCorsaCSPLuaCompatibilityManager/
-                            compatibility submodule
-Strings/ DataStructures/  text support and data structures
-tools/                     installer, payload list, syntax checker, headless tests
-docs/                      guides/, reference/, ROADMAP.md, BACKLOG.md, archive/
-AGENTS.md, CLAUDE.md       shared agent rules (OpenCode / Claude Code)
+SimOpenTrackDay/            THE APP: copy this folder into apps\lua\
+  SimOpenTrackDay.lua       entry point and manifest callbacks
+  manifest.ini, LICENSE
+  MainWindow.lua            single-window tabs and shared header
+  SettingsWindow.lua        tab content; SettingsModel.lua, UIState.lua, UIStorage.lua
+  StorageManager.lua        options, profiles, track/session storage
+  CarManager.lua            AI car state/cache
+  CarOperations.lua         yield/overtake operations and physics calls
+  AccidentManager.lua       incidents and yellow zones
+  UIManager.lua             operational car list
+  CarStateMachine/          car behavior states
+  Strings/ DataStructures/  reason codes and data structures
+  lib/uilib/  lib/i18n/     project UI components and translations
+  lib/AssettoCorsaCSPLuaCompatibilityManager/   compatibility submodule
+experimental/               dormant modules not loaded by the app (kept for reference)
+sdk/ac_apps/                CSP Lua SDK definitions, for editor autocomplete only (vendor)
+docs/                       guides/, reference/, ROADMAP.md, BACKLOG.md, archive/
+AGENTS.md, CLAUDE.md        shared agent rules (OpenCode / Claude Code)
 ```
-
-Runtime modules intentionally stay at the repository root: CSP loads `SimOpenTrackDay.lua` next to `manifest.ini`, and the installer copies the explicit list in `tools/payload.manifest`.
 
 See [Architecture](docs/reference/ARCHITECTURE.md) for module flow and [State machine](docs/reference/STATE_MACHINE.md) for documented states.
 
 ## Local checks
 
-From the repository root, with LuaJIT on `PATH`:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools/check_lua_syntax.ps1"
-luajit tools/test_ui_smoke.lua
-luajit tools/test_logo_smoke.lua
-luajit tools/test_localization.lua
-luajit tools/test_version.lua
-```
-
-The checker accepts optional `-LuaJitPath` and `-Root` arguments. Smoke tests use mocks and cover only exercised paths; they do not load Assetto Corsa/CSP or validate real rendering. An original-baseline comparison is optional: set `SOTD_BASELINE_SETTINGS` to a locally available baseline source file before running `test_ui_smoke.lua`. By default, the versioned fixture remains unchanged. `SOTD_DUMP_BASELINE_FIXTURE=1` only emits a candidate Lua fixture to stdout for inspection; it does not save or regenerate the versioned fixture. Updating that fixture requires a separate deliberate, reviewed change.
-
-The localization command is included above. See [Testing](docs/guides/TESTING.md) for command scope and limitations. Broader CSP runtime and visual validation remain pending beyond the limited UI recovery reported there.
+There is no automated test suite. Before installing, compile every file with LuaJIT 2.1 ([Testing §2](docs/guides/TESTING.md)); behavior is validated manually in game ([in-game checklist](docs/guides/IN_GAME_VALIDATION.md)).
 
 ## Credits and license
 

@@ -7,9 +7,7 @@ Entries describe source changes. Unless an entry says otherwise, in-game (CSP) a
 Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### Added
-- Windows installer (`tools/install.bat` + `tools/installer.ps1`) with an explicit payload list (`tools/payload.manifest`) and log files under `%LOCALAPPDATA%\SimOpenTrackDay\InstallerLogs`.
 - Read-only development inspector for gates, lifecycle and control ownership in the Overview tab. It is off by default (`ENABLE_DEVELOPMENT_DEBUG_PANEL = false`).
-- Focused headless tests: player guard, session lifecycle, control ownership, incident cleanup and incident release.
 
 ### Changed
 - UI: a responsive borderless window, a compact car list, native control wrappers, a shared lane-target design, and a polished header and close button.
@@ -19,13 +17,18 @@ Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](do
 - **S2:** the incident stop is bounded to 10 s of active time, then only the app's own controls are released.
 - Module bootstrap: the app directory (`__dirname`) is placed first in `package.path`, which prevents stale modules in the AC root from shadowing the app's own.
 
+### Repository layout
+- **Copy-paste install:** all runtime files now live in `SimOpenTrackDay/`; installing is copying that folder into `apps\lua\`. Module names are unchanged.
+- Dormant modules (`CarSpeedLimiter`, `CollisionAvoidanceManager`, `CustomAIFloodManager`, `FrenetAvoid`, `Profiler`, `Enum`, `lib/easing`, the state template and the unloaded `DefendingPosition` state) moved to `experimental/`; the CSP SDK moved to `sdk/ac_apps/`.
+- Removed `tools/`: the installer, payload list, syntax-check script and all headless tests. Last run before removal: 22/23 tests PASS (`test_ui_smoke` blocked by a missing fixture).
+
+### Incident lane (merged)
+- S2-D, S3-A/B/C (no automatic collision disabling), OBS1–3 bounded observability, S4 pair deduplication, S5-A cyclic zone geometry, S6-A invalid references, S7-1 severity gate and zone resolution by absence of obstruction, S7-2 log budget, S7-1F global Caution flag release. CSP acceptance partial/pending.
+
 ### Docs and repository
 - Documentation reorganized into `docs/guides`, `docs/reference` and `docs/archive`, with a single index, roadmap and backlog, all in English.
 - `CLAUDE.md` added; it imports the shared `AGENTS.md`.
 - `.gitignore` trimmed to project entries; local agent state (`.slim/`, generated `codemap.md`) is ignored.
-
-### Known issues
-- `tools/test_ui_smoke.lua` fails because the fixture `tools/fixtures/settings_baseline.lua` is missing.
 
 ## 0.1 — 2026-10-18
 

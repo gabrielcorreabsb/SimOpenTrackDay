@@ -4,7 +4,7 @@ This document describes the **Finite State Machine (FSM)** that governs each AI 
 
 - **Central file:** `CarStateMachine/CarStateMachine.lua`
 - **States:** `CarStateMachine/States/CarState_<Name>.lua`
-- **Template:** `CarStateMachine/CarState_TEMPLATE.lua`
+- **Template:** `experimental/CarStateMachine/CarState_TEMPLATE.lua` (outside the app folder; not loaded)
 - **Enum:** `CarStateMachine.CarStateType` in `CarStateMachine/CarStateMachine.lua`
 
 ---
@@ -179,7 +179,7 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 
 ### 3.8 DEFENDING_POSITION
 - **Active implementation:** inline in `CarStateMachine/CarStateMachine.lua` — **min:** `0`.
-  `CarStateMachine/States/CarState_DefendingPosition.lua` also exists, but is not required by the current entry point.
+  `experimental/CarStateMachine/States/CarState_DefendingPosition.lua` exists outside the app folder; it is not required by the current entry point and is not installed.
 - **Entry:** randomly selects `defenseDuration_s` in `[defenseDurationMin_s, defenseDurationMax_s]` (default `1.0`–`3.0` s from `getStorage_Behavior`); `StateExitReason.YieldingToCar`.
 - **Update:** decrements the timer and calls `driveSafelyToSide(car, storage.defaultLateralOffset, 1000, true, false, false)`.
 - **Transitions:** timer `<= 0` -> `EASING_IN_YIELD`; if the car behind no longer applies pressure -> `DRIVING_NORMALLY`. Pressure = distance `<= 30 m` **and** relative speed `carBehind - our >= 5 km/h`.
@@ -223,7 +223,7 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 - **Transition:** empty (conditions commented out) — remains. **Exit:** `setAICaution(1)`, reset gas, `cars_doNoResetAfterNextCarJump = false`.
 
 ### 3.15 TEMPLATE
-- **File:** `CarStateMachine/CarState_TEMPLATE.lua`
+- **File:** `experimental/CarStateMachine/CarState_TEMPLATE.lua`
 - Model for new states: defines `STATE`, string, minimum time, and the 4 empty functions. Do not register it in the enum — it is only a starting point.
 
 ---
@@ -271,7 +271,7 @@ Otherwise, records a `ReasonWhyCantOvertake` (e.g. `YieldingCarIsFaster`, `Yield
 2. Add a **string** in `CarStateTypeStrings[MY_STATE] = "MyState"`.
 3. **Minimum time:** `states_minimumTimeInState[MY_STATE] = 0` (use `0` unless there is a strong reason not to).
 4. **Register the 4 functions:** `states_entryFunctions`, `states_updateFunctions`, `states_transitionFunctions`, and `states_exitFunctions`.
-5. **Create** `CarStateMachine/States/CarState_<Name>.lua` based on `CarStateMachine/CarState_TEMPLATE.lua` and add it to the entry-point load sequence.
+5. **Create** `CarStateMachine/States/CarState_<Name>.lua` based on `experimental/CarStateMachine/CarState_TEMPLATE.lua` and add it to the entry-point load sequence.
 6. Keep one active implementation per state; `DEFENDING_POSITION` is currently implemented inline in the central module, and its separate file is not loaded.
 7. **Add transitions to/from** this state in the `transition` functions of relevant states.
 8. **Expose it in debug/UI** if needed (a readable name is already provided by step 2).

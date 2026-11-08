@@ -1,4 +1,4 @@
 [submodule "lib/AssettoCorsaCSPLuaCompatibilityManager"]
-	path = lib/AssettoCorsaCSPLuaCompatibilityManager
+	path = SimOpenTrackDay/lib/AssettoCorsaCSPLuaCompatibilityManager
 	url = https://github.com/dreasgrech/AssettoCorsaCSPLuaCompatibilityManager.git
 	branch = main

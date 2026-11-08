@@ -1,6 +1,6 @@
 # M0 audit: CSP capabilities available to the Lua App
 
-> English translation of the original M0 audit (Portuguese, 2026-10-21). Every fact, line locator and evidence reference is kept. The locators point to the **audit baseline**, not to current `main`; line numbers have since moved.
+> English translation of the original M0 audit (Portuguese, 2026-10-21). Every fact, line locator and evidence reference is kept. The locators point to the **audit baseline**, not to current `main`; line numbers have since moved, and since v0.2 runtime files live under `SimOpenTrackDay/` and the `tools/` scripts mentioned below no longer exist.
 
 ## Status, scope and provenance
 
@@ -24,7 +24,7 @@ Internal sources were consulted as needed and checked against the implementation
 
 ### SDK and context
 
-The bundled aggregate [lib/ac_apps/lib.lua](../../lib/ac_apps/lib.lua) came from local commit `d87be0d2de7280109bda25a5daeaa711bea4d468` (2026-04-26), labelled `v0.3.0-preview361`. This **does not identify the user's installed SDK or CSP build**. The compatibility submodule was at `7007085f48ad12a0bcf35eaed028691111a83697`.
+The bundled aggregate [sdk/ac_apps/lib.lua](../../sdk/ac_apps/lib.lua) (at audit time `lib/ac_apps/lib.lua`) came from local commit `d87be0d2de7280109bda25a5daeaa711bea4d468` (2026-04-26), labelled `v0.3.0-preview361`. This **does not identify the user's installed SDK or CSP build**. The compatibility submodule was at `7007085f48ad12a0bcf35eaed028691111a83697`.
 
 The [official Lua Apps entry point](https://github.com/ac-custom-shaders-patch/acc-lua-sdk/blob/7cf60f5a406820ee4e39f3a62ed121fa36274001/ac_apps.lua) imports the physics/AI modules with `withPhysics=true` and the `luatools` permission. It does not import the unrestricted module automatically. The native C++ implementations are not part of these Lua declarations. The local aggregate also loses part of the original per-context split, so a lone section marker does not prove whether a function belongs to car scripts or apps.
 
@@ -92,7 +92,7 @@ Keep the project's [MIT licence](../../LICENSE) and Andreas Grech's copyright.
 
 ## Findings in the code (at baseline)
 
-These priorities are for planning; they do not authorize fixes. Locators refer to the baseline, and **residual physical effects were not measured in game**. Short state names refer to the `CarState_*.lua` files in [CarStateMachine/States](../../CarStateMachine/States/). Findings A01–A05 were later addressed in M1a/M1b/S1/S2 (see [ROADMAP.md](../ROADMAP.md)), with CSP acceptance pending.
+These priorities are for planning; they do not authorize fixes. Locators refer to the baseline, and **residual physical effects were not measured in game**. Short state names refer to the `CarState_*.lua` files in [CarStateMachine/States](../../SimOpenTrackDay/CarStateMachine/States/). Findings A01–A05 were later addressed in M1a/M1b/S1/S2 (see [ROADMAP.md](../ROADMAP.md)), with CSP acceptance pending.
 
 | ID / priority | Evidence in code | Risk / next step |
 | --- | --- | --- |

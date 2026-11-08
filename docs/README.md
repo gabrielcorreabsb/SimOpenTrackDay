@@ -11,7 +11,7 @@ This is the only index. Documents describe source code and plans; they do not pr
 
 ## Guides (how to)
 
-- [Install](guides/INSTALL.md): installer, manual install, update, rollback.
+- [Install](guides/INSTALL.md): copy the app folder, update, rollback.
 - [Testing](guides/TESTING.md): local checks, smoke tests, troubleshooting, rollback.
 - [In-game validation](guides/IN_GAME_VALIDATION.md): every check still pending in CSP.
 - [Localization](guides/LOCALIZATION.md): msgids, locales, IDs.

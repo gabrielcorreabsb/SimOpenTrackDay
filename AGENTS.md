@@ -11,8 +11,8 @@
 
 ## Runtime boundaries
 
-- Runtime payload stays at repository root; do not move modules.
-- Do not incidentally edit `lib/ac_apps/` (vendor SDK) or `lib/AssettoCorsaCSPLuaCompatibilityManager/` (submodule). `lib/uilib/` is project-owned.
+- Everything that ships lives in `SimOpenTrackDay/`, which is copied as-is into `apps/lua/`. Keep its internal layout (module names resolve relative to it via `__dirname`); never put dev-only files there. Dormant modules go in `experimental/`.
+- Do not incidentally edit `sdk/ac_apps/` (vendor SDK, autocomplete only) or `SimOpenTrackDay/lib/AssettoCorsaCSPLuaCompatibilityManager/` (submodule). `SimOpenTrackDay/lib/uilib/` is project-owned.
 - Runtime uses LuaJIT 2.1 / Lua 5.1. Use `bit.*`, never Lua 5.3 bitwise operators.
 - Preserve top-level local bindings and avoid allocations in hot paths/per-frame work.
 - Car state follows DoD in indexed tables; preserve indices and reusable structures.
@@ -31,9 +31,9 @@
 
 - Preserve the nine `[RTD-DIAG-*]` records and `CSPCompatibilityManager.ShowErrorModalDialog = false` unless a separately authorized and validated change requires otherwise.
 - Preserve manifest, callback IDs, and credits/licenses; do not change these contracts as incidental cleanup.
-- Validation commands and limits are in [`docs/guides/TESTING.md`](docs/guides/TESTING.md). Documentation-only changes require link/diff review, not Lua tests.
+- Validation commands and limits are in [`docs/guides/TESTING.md`](docs/guides/TESTING.md). There is no automated test suite: runtime changes need the LuaJIT compile check plus in-game checks in [`docs/guides/IN_GAME_VALIDATION.md`](docs/guides/IN_GAME_VALIDATION.md). Documentation-only changes require link/diff review only.
 - Report only checks actually run; mocks/headless checks do not establish CSP runtime or rendering.
-- Use syntax/UI/logo/localization checks as described in `docs/guides/TESTING.md` when relevant; do not treat them as in-game evidence.
+- A passing compile check is not in-game evidence.
 - Runtime installation and rollback are manual; preserve existing installations and user settings.
 
 ## Changes to tooling or configuration
