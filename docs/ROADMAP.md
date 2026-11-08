@@ -52,7 +52,7 @@ v0.2 is complete when the existing AI behavior is safe and observable on the tar
 
 1. ~~Integrate the incident lane~~: done (`04b2bd7`).
 2. ~~Repository layout~~: done. The copied folder was smoke-tested in game on 2026-11-08 (app loads and works).
-3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK and add the minimum-build gate ([issue #1](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/1)): **Local** on `chore/f0-csp-4305-sdk-gate`, in-game check pending.
+3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK and add the minimum-build gate ([issue #1](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/1)): **observed in CSP** on 2026-11-08 (build 4305: `[F0-CSP-GATE] build=4305 min=4305 gate passed`, then `mode=live`). The forced-failure check (`MIN_CSP_BUILD` above the installed build) is still **pending**.
 4. **Close the pending in-game checks** for M1a, M1b and S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
 5. **Release:** bump the `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
 

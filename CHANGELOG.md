@@ -7,7 +7,7 @@ Entries describe source changes. Unless an entry says otherwise, in-game (CSP) a
 Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### Added
-- **F0 minimum CSP build gate:** below `Constants.MIN_CSP_BUILD` (4305, CSP 0.3.2-preview2), or when `ac.getPatchVersionCode` cannot be read, the app stays inert and logs one `[F0-CSP-GATE]` line; the reason is also shown through the existing CSP-compatibility message in the main window. On 4305 or newer the gate logs `gate passed` and behavior is unchanged.
+- **F0 minimum CSP build gate:** below `Constants.MIN_CSP_BUILD` (4305, CSP 0.3.2-preview2), or when `ac.getPatchVersionCode` cannot be read, the app stays inert and logs one `[F0-CSP-GATE]` line; the reason is also shown through the existing CSP-compatibility message in the main window. On 4305 or newer the gate logs `gate passed` and behavior is unchanged. `ac.getPatchVersionCode` is accepted as a function or a callable `cdata`. Observed in CSP 4305 (gate passed, app live); the forced-failure path is pending.
 - `sdk/ac_apps/` refreshed from the CSP build 4305 SDK (autocomplete only).
 - Read-only development inspector for gates, lifecycle and control ownership in the Overview tab. It is off by default (`ENABLE_DEVELOPMENT_DEBUG_PANEL = false`).
 
