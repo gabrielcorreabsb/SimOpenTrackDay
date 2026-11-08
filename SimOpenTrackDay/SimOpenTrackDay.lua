@@ -427,6 +427,10 @@ local flagResidueActive = false
 local flagResidueElapsed = 0
 local flagResidueRetries = 0
 local engineCautionUnownedLogged = false
+-- S7-1G diagnostic A/B switch: false = the app never writes the global flag, so any yellow seen
+-- on the HUD afterwards cannot come from physics.overrideRacingFlag. Normal builds keep true.
+local ENABLE_GLOBAL_CAUTION_FLAG = true
+local lastLoggedEngineFlag = nil
 
 local function releaseOwnedGlobalFlag(reason)
   if ownedGlobalFlag == nil then return false end
@@ -657,7 +661,7 @@ function script.MANIFEST__UPDATE(dt)
   if focusedCarValid then
     focusedCarInZone = RaceTrackManager_isSplinePositionInYellowZone(cameraFocusedCar.splinePosition) == true
   end
-  local wantCaution = focusedCarValid and focusedCarInZone
+  local wantCaution = ENABLE_GLOBAL_CAUTION_FLAG and focusedCarValid and focusedCarInZone
   if wantCaution then
     if canWriteGlobalFlag() then
       if ownedGlobalFlag ~= ac.FlagType.Caution then
@@ -683,6 +687,12 @@ function script.MANIFEST__UPDATE(dt)
 
   -- S7-1G: verify the engine really dropped our Caution override after the release.
   local engineFlag = sim.raceFlagType
+  if engineFlag ~= lastLoggedEngineFlag then
+    Logger.log(string_format('[S7-1G] engine raceFlagType %s -> %s (owned=%s focusedInZone=%s overrideEnabled=%s)',
+      tostring(lastLoggedEngineFlag), tostring(engineFlag), tostring(ownedGlobalFlag),
+      tostring(focusedCarInZone), tostring(ENABLE_GLOBAL_CAUTION_FLAG)))
+    lastLoggedEngineFlag = engineFlag
+  end
   if flagResidueActive then
     if ownedGlobalFlag ~= nil then
       flagResidueActive = false
