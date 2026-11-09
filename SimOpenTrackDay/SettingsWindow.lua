@@ -435,7 +435,6 @@ local drawOperationalContent = function(tab)
 
         if ui_checkbox('Handle accidents (WORK IN PROGRESS - BEST NOT USED FOR NOW)', storage.handleAccidents) then storage.handleAccidents = not storage.handleAccidents end
         if ui_itemHovered() then ui_setTooltip('If enabled, AI will stop and remain stopped after an accident until the other cars pass.') end
-        ui.sameLine(0, 12)
         if ui_checkbox('Incident perception (log only)', storage.incidentPerceptionEnabled) then storage.incidentPerceptionEnabled = not storage.incidentPerceptionEnabled end
 
         local handleAccidents = storage.handleAccidents
