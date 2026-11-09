@@ -242,4 +242,7 @@ Partial evidence: the per-car state came back after the `physics.allowed` cdata 
 
 Compare: the visible line through corners, lap times, the number of F1-1 contacts, and `[LINE]` with `x` following `ai` in B and staying near 0 in A. Yield and overtake must still work in both.
 
-- [ ] A/B observed in CSP.
+- [x] A/B observed in CSP (2026-11-09, Interlagos).
+  - A, fixed lane: correlation of x with the AI line −0.55, mean |x − ai| 0.65 (held near the middle).
+  - B, racing line: correlation +0.38, mean |x − ai| 0.43.
+  - The maintainer accepted the visual result. F1-3 run 9 in the same session: the offset follows the request in most checks; 2 of 11 ended on the opposite side. Accepted as limited.
