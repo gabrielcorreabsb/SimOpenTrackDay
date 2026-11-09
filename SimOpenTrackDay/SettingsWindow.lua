@@ -437,6 +437,10 @@ local drawOperationalContent = function(tab)
         if ui_itemHovered() then ui_setTooltip('If enabled, AI will stop and remain stopped after an accident until the other cars pass.') end
         if ui_checkbox('Incident perception (log only)', storage.incidentPerceptionEnabled) then storage.incidentPerceptionEnabled = not storage.incidentPerceptionEnabled end
 
+        ui_newLine(1)
+        if ui_checkbox('Local zones for stopped or spun cars (experimental)', storage.singleCarZonesEnabled) then storage.singleCarZonesEnabled = not storage.singleCarZonesEnabled end
+        if ui_itemHovered() then ui_setTooltip('If enabled, creates a local yellow zone only for a car that is stopped or spun on the racing line. Cars that are off track or in the gravel do not create a zone. Requires incident perception.') end
+
         local handleAccidents = storage.handleAccidents
         UIOperations_createDisabledSection(not handleAccidents, function()
             storage.distanceFromAccidentToSeeYellowFlag_meters =  UIOperations_renderSlider('Distance from accident to see yellow flag (m)', 'Distance from accident at which AI will see the yellow flag and start slowing down.', storage.distanceFromAccidentToSeeYellowFlag_meters, 50, 500, DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_default[StorageManager_Options.DistanceFromAccidentToSeeYellowFlag_meters])

@@ -34,7 +34,7 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
 
     --CarOperations.setAICaution(carIndex, 6)
     --CarOperations.setAICaution(carIndex, 1)
-    CarOperations.setAICaution(carIndex, 0)
+    CarOperations.requestAICaution(carIndex, 0, 'ACCIDENT_NAVIGATION')
 
     -- CarOperations.setAITopSpeed(carIndex, 10)
     CarOperations.requestAITopSpeed(carIndex, 30, 'ACCIDENT_NAVIGATION')
@@ -275,7 +275,7 @@ end
 ---@param sortedCarsListIndex integer
 ---@param storage StorageTable
 CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
-    CarOperations.removeAICaution(carIndex)
+    CarOperations.releaseAICaution(carIndex, 'ACCIDENT_NAVIGATION')
     CarOperations.releaseAITopSpeed(carIndex, 'ACCIDENT_NAVIGATION')
     CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Gas)
     CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)

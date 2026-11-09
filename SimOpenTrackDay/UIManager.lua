@@ -80,8 +80,8 @@ end
 setStateColors(Theme.colors.success, 'DRIVING_NORMALLY')
 setStateColors(Theme.colors.warning, 'EASING_IN_YIELD', 'STAYING_ON_YIELDING_LANE', 'EASING_OUT_YIELD', 'DEFENDING_POSITION')
 setStateColors(Theme.colors.accent, 'EASING_IN_OVERTAKE', 'STAYING_ON_OVERTAKING_LANE', 'EASING_OUT_OVERTAKE')
-setStateColors(Theme.colors.danger, 'WAITING_AFTER_ACCIDENT', 'COLLIDED_WITH_TRACK', 'COLLIDED_WITH_CAR',
-  'ANOTHER_CAR_COLLIDED_INTO_ME', 'NAVIGATING_AROUND_ACCIDENT', 'DRIVING_IN_YELLOW_FLAG_ZONE')
+setStateColors(Theme.colors.danger, 'WAITING_AFTER_ACCIDENT',
+  'NAVIGATING_AROUND_ACCIDENT', 'DRIVING_IN_YELLOW_FLAG_ZONE')
 
 local FILTERS = { 'All', 'Yielding', 'Overtaking', 'Incidents' }
 local FILTER_IDS = { 'cars.filter.all', 'cars.filter.yielding', 'cars.filter.overtaking', 'cars.filter.incidents' }
@@ -100,8 +100,8 @@ local function setStateFilter(filterIndex, ...)
 end
 setStateFilter(2, 'EASING_IN_YIELD', 'STAYING_ON_YIELDING_LANE', 'EASING_OUT_YIELD', 'DEFENDING_POSITION')
 setStateFilter(3, 'EASING_IN_OVERTAKE', 'STAYING_ON_OVERTAKING_LANE', 'EASING_OUT_OVERTAKE')
-setStateFilter(4, 'WAITING_AFTER_ACCIDENT', 'COLLIDED_WITH_TRACK', 'COLLIDED_WITH_CAR',
-  'ANOTHER_CAR_COLLIDED_INTO_ME', 'NAVIGATING_AROUND_ACCIDENT', 'DRIVING_IN_YELLOW_FLAG_ZONE')
+setStateFilter(4, 'WAITING_AFTER_ACCIDENT',
+  'NAVIGATING_AROUND_ACCIDENT', 'DRIVING_IN_YELLOW_FLAG_ZONE')
 
 ---Draws the quick-filter chips and returns the selected filter index (1 = all cars).
 local function drawCarFilterChips()

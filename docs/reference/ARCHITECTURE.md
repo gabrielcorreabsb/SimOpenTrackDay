@@ -48,7 +48,8 @@ Entry point: `SimOpenTrackDay.lua`. `manifest.ini` registers these callbacks:
         │        └─ incremental insertion sort (see §2)
         │
         ├─ OnCarEventManager.processQueuedEvents()
-        ├─ CarStateMachine.handleQueuedAccidents()
+        ├─ AccidentManager.updateSingleCarZones(dt)
+        ├─ AccidentManager.updateRecovery(dt)
         ├─ HumanErrorManager.update(dt, sortedCars, storage_Behavior, t)
         │
         ├─ for i = 1, #sortedCars do
@@ -216,7 +217,7 @@ table.clear(carList)
         ├─→ CarManager.saveCarSpeed
         ├─→ CarManager.sortCarListByTrackPosition
         ├─→ OnCarEventManager.processQueuedEvents ──► OnCarEventExecutions[Collision|Jumped]
-        ├─→ CarStateMachine.handleQueuedAccidents
+        ├─→ AccidentManager.updateSingleCarZones / updateRecovery
         ├─→ HumanErrorManager.update ──► physics.setAIBrakeMistake / setAITractionMistake
         │
         └─(per car)─→ CarStateMachine.updateCar

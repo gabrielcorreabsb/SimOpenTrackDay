@@ -30,9 +30,7 @@ Each state is a **power of 2** (bitmask), but the FSM uses one value at a time.
 | 8 | `STAYING_ON_YIELDING_LANE` | 4096 | `EASING_OUT_OVERTAKE` |
 | 32 | `EASING_OUT_YIELD` | 8192 | `NAVIGATING_AROUND_ACCIDENT` |
 | 64 | `WAITING_AFTER_ACCIDENT` (enum only) | 16384 | `DRIVING_IN_YELLOW_FLAG_ZONE` |
-| 128 | `COLLIDED_WITH_TRACK` | 32768 | `AFTER_CUSTOMAIFLOOD_TELEPORT` |
-| 256 | `COLLIDED_WITH_CAR` | 65536 | `DEFENDING_POSITION` |
-| 512 | `ANOTHER_CAR_COLLIDED_INTO_ME` | | |
+| 32768 | `AFTER_CUSTOMAIFLOOD_TELEPORT` | 65536 | `DEFENDING_POSITION` |
 
 > `WAITING_AFTER_ACCIDENT` exists only in the enum; it has no file or functions (legacy).
 
@@ -106,16 +104,13 @@ In other words: `entry` runs in the frame after `transition`; `exit` is immediat
 | DEFENDING_POSITION  | holds the racing line for defenseDuration_s under   |
 |                     | pressure; when it expires -> EASING_IN_YIELD.       |
 +---------------------+------------------------------------------------------+
-| DRIVING_IN_YELLOW_  | inside an accident zone: caution 3, top speed 50    |
-| FLAG_ZONE           | (owner YELLOW_FLAG), hazards on. No collision change.|
+| DRIVING_IN_YELLOW_  | inside an accident zone: caution 3 through arbitration  |
+| FLAG_ZONE           | (owner YELLOW_FLAG), top speed 50 (same owner), hazards.|
+|                     | No collision change.                                    |
 +---------------------+------------------------------------------------------+
-| NAVIGATING_AROUND_  | close to an accident: caution 0, top speed 30       |
-| ACCIDENT            | (owner ACCIDENT_NAVIGATION). No lateral avoidance.  |
-+---------------------+------------------------------------------------------+
-| COLLIDED_WITH_TRACK | registered but never entered today (no caller      |
-| COLLIDED_WITH_CAR   | queues them). The two COLLIDED_WITH_CAR /           |
-| ANOTHER_CAR_COLLIDED| ANOTHER_CAR states exit when the incident stop      |
-| _INTO_ME            | completes; the stop itself is never admitted.       |
+| NAVIGATING_AROUND_  | close to an accident: caution 0 through arbitration    |
+| ACCIDENT            | (owner ACCIDENT_NAVIGATION), top speed 30 (same owner). |
+|                     | No lateral avoidance, no collision change.              |
 +---------------------+------------------------------------------------------+
 | AFTER_CUSTOMAIFLOOD | after AI Flood respawn: resets fuel/RPM/gear and    |
 | _TELEPORT           | reactivates the car. Empty transition (commented).  |
@@ -189,34 +184,22 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 ### 3.9 DRIVING_IN_YELLOW_FLAG_ZONE
 - **File:** `CarStateMachine/States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
 - **Entry:** empty.
-- **Update:** `CarOperations.setAICaution(3)` (direct write, not arbitrated), `requestAITopSpeed(50, 'YELLOW_FLAG')` renewed every frame (1 s lease), hazard lights. Collisions are **not** changed.
+- **Update:** `CarOperations.requestAICaution(carIndex, 3, 'YELLOW_FLAG')` (arbitrated, 1 s lease renewed every frame), `requestAITopSpeed(50, 'YELLOW_FLAG')` renewed every frame (1 s lease), hazard lights. Collisions are **not** changed.
 - **Transitions:** `isCarComingUpToAccident` within `distanceToStartNavigatingAroundCarInAccident_meters` -> `NAVIGATING_AROUND_ACCIDENT`; left the zone -> `DRIVING_NORMALLY`.
-- **Exit:** releases the `YELLOW_FLAG` top speed and turns the lights off.
+- **Exit:** releases the `YELLOW_FLAG` caution and top-speed requests and turns the lights off.
 
 ### 3.10 NAVIGATING_AROUND_ACCIDENT
 - **File:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
 - **Entry:** empty.
-- **Update:** `CarOperations.setAICaution(0)` (direct write, not arbitrated), `requestAITopSpeed(30, 'ACCIDENT_NAVIGATION')`, recalculates the nearest accident, `preventAIFromRetiring`. **There is no lateral avoidance:** the `CollisionAvoidanceManager` call and `driveSafelyToSide` are commented out, so the last offset from normal driving stays in force. Collisions are **not** changed.
+- **Update:** `CarOperations.requestAICaution(carIndex, 0, 'ACCIDENT_NAVIGATION')` (arbitrated), `requestAITopSpeed(30, 'ACCIDENT_NAVIGATION')`, recalculates the nearest accident, `preventAIFromRetiring`. **There is no lateral avoidance:** the `CollisionAvoidanceManager` call and `driveSafelyToSide` are commented out, so the last offset from normal driving stays in force. Collisions are **not** changed.
 - **Transitions:** no accident index, accident resolved, car not found, or we have passed it and are `> 10 m` away -> `DRIVING_NORMALLY`; nearest accident detected -> remain.
-- **Exit:** `removeAICaution`, releases the `ACCIDENT_NAVIGATION` top speed, resets gas and brake, and `cars_navigatingAroundAccidentIndex = 0`.
+- **Exit:** releases the `ACCIDENT_NAVIGATION` caution and top-speed requests, resets gas and brake, and `cars_navigatingAroundAccidentIndex = 0`.
 
-### 3.11 COLLIDED_WITH_TRACK
-- **File:** `CarStateMachine/States/CarState_CollidedWithTrack.lua` — **min:** `0`
-- **Update:** `stopCarAfterAccident(carIndex)`. **Transition:** empty.
-- **Never entered today:** the track-collision branch in `CarStateMachine.lua` is commented out.
+Single-car local zones: `AccidentManager` can also declare a zone when incident perception reports a car that is stopped or spun, still on track, within 3 m of the AI line and not in the pit lane. Such a car uses the same zone declaration, buckets and 3 s clear rule as a contact incident. A car in gravel/run-off, or a track-limit excursion with only one or two wheels beyond the edge, never creates a zone. The feature is behind its own storage flag, off by default.
 
-### 3.12 COLLIDED_WITH_CAR
-- **File:** `CarStateMachine/States/CarState_CollidedWithCar.lua` — **min:** `0`
-- **Entry/Update/Exit:** empty.
-- **Transition:** -> `DRIVING_NORMALLY` once the incident stop is no longer active and has completed.
-- **Never entered today:** `handleQueuedAccidents` only logs `registered-contact-no-s2-admission`, and `CarOperations.admitIncidentStop` has no callers.
+### 3.11 Removed COLLIDED states (F1-2)
 
-### 3.13 ANOTHER_CAR_COLLIDED_INTO_ME
-- **File:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `0`
-- **Entry:** calls `ac.overrideCarControls(carIndex)` and does nothing with it. **Update/Exit:** empty.
-- **Transition:** same as 3.12. **Never entered today**, for the same reason.
-
-The fate of 3.11–3.13 and of the dormant incident stop is decided in roadmap slice F1-2.
+`COLLIDED_WITH_TRACK` (128), `COLLIDED_WITH_CAR` (256) and `ANOTHER_CAR_COLLIDED_INTO_ME` (512) were removed in F1-2: their state files, enum values, string entries, queues, `handleQueuedAccidents` dispatch and references are gone. No code ever transitioned into them. Contact records are still observed through `AccidentManager` and `CarStateMachine.informAboutAccident`; the dormant incident-stop machinery in `CarOperations` is kept for F1-4.
 
 ### 3.14 AFTER_CUSTOMAIFLOOD_TELEPORT
 - **File:** `CarStateMachine/States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
@@ -284,11 +267,25 @@ Otherwise, records a `ReasonWhyCantOvertake` (e.g. `YieldingCarIsFaster`, `Yield
 
 - **A long minimum time can trap the AI.** Use `minimumTimeInState = 0` in most cases.
 - **Circular dependencies need an escape.** If A transitions to B and B to A, ensure an exit timer/condition (e.g. the `DEFENDING_POSITION` timer).
-- **`COLLIDED_*` states are dormant** (never entered). `COLLIDED_WITH_TRACK` has an empty transition and would keep the car stopped; do not wire it up without reviewing `AccidentManager` (see slice F1-2).
+- **`COLLIDED_*` states were removed in F1-2** (see 3.11). Do not reintroduce them without reviewing `AccidentManager` and the incident-stop lifecycle.
 - **References saved by the previous state.** `EASING_IN_YIELD` and `EASING_IN_OVERTAKE` depend on `cars_currentlyYieldingCarToIndex` / `cars_currentlyOvertakingCarIndex` being set before entry.
 - **`changeState` resets `cars_timeInCurrentState`** — do not rely on the previous time after a transition.
 - **Transitions are queued:** `entry` runs at the start of the next `updateCar`, not in the frame that made the decision.
 - **Without a registered `entry`**, `updateCar` logs an error and aborts that car's update (`CarStateMachine/CarStateMachine.lua`).
+
+### Caution ownership
+
+Caution is arbitrated in `CarOperations` like top speed and throttle: an owner requests a value for a 1 s lease, the highest priority wins (ties by lexical owner name), and the winner is written once per frame. CSP exposes no caution read-back, so “applied” means the value the app last sent. When no owner remains, the app hands the car back to `defaultAICaution` (3), the same value `removeAICaution` used.
+
+| Owner | Priority | Requested value |
+| --- | --- | --- |
+| `INCIDENT_STOP` | 100 | 16 (`AFTER_ACCIDENT`) |
+| `ACCIDENT_NAVIGATION` | 90 | 0 |
+| `YELLOW_FLAG` | 80 | 3 |
+| `TRAFFIC_YIELD` | 50 | no current caution request |
+| `COMPAT` | 10 | no current caution request |
+
+The global Caution flag stays off; caution ownership is local to the app.
 
 ---
 

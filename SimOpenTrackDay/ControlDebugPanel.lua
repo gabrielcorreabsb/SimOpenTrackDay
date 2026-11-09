@@ -483,11 +483,14 @@ function ControlDebugPanel.draw()
     cache.error = true
     pcall(text, 'Diagnostic data unavailable; existing control view remains available.')
   end
-  local topRequests, topWinner, topApplied, throttleRequests, throttleWinner, throttleApplied = CarOperations.getOwnedControlState(selectedCarIndex)
+  local topRequests, topWinner, topApplied, throttleRequests, throttleWinner, throttleApplied,
+    cautionRequests, cautionWinner, cautionApplied = CarOperations.getOwnedControlState(selectedCarIndex)
   drawRequestList('Top-speed requests', topRequests, gameTime, carGeneration, sessionGeneration)
   drawApplied('Top-speed control', topWinner, topApplied, topRequests, carGeneration, sessionGeneration)
   drawRequestList('Throttle requests', throttleRequests, gameTime, carGeneration, sessionGeneration)
   drawApplied('Throttle control', throttleWinner, throttleApplied, throttleRequests, carGeneration, sessionGeneration)
+  drawRequestList('Caution requests', cautionRequests, gameTime, carGeneration, sessionGeneration)
+  drawApplied('Caution control', cautionWinner, cautionApplied, cautionRequests, carGeneration, sessionGeneration)
   text('A recorded applied value is the last successful setter call, not a physics readback.')
   text('No applied record does not prove that the car is physically released.')
 end

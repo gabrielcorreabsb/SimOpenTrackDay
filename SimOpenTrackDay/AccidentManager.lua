@@ -157,6 +157,18 @@ AccidentManager.accidents_victimSpeedKmh = {}
 local accidentsRecoveryElapsed, accidentsRecoveryPreviousValid = {}, {}
 local recoveryLastClock
 
+-- F1-2 synthetic single-car incidents (spin/stopped). Module-local on purpose: the records reuse the
+-- shared accident arrays so recovery, zones and navigation see them, while these markers stay private.
+local accidents_singleCar = {}
+local accidents_singleCarKind = {}
+local cars_singleCarIncidentIndex = {}
+local cars_singleCarZoneArmed = {}
+-- Reused output for zone-bucket incident enumeration; never allocated per frame.
+local candidateIncidentIndexes = {}
+-- Resolved lazily: IncidentPerception loads after this module.
+local singleCarZoneCandidateFn
+local singleCarZonesWasEnabled = false
+
 local function resetRecoveryContinuity()
     for accidentIndex = 1, CompletableIndexCollectionManager.getLastIndexCreated(accidentCompletableIndex) do
         if AccidentManager.accidents_resolved[accidentIndex] == false then
@@ -338,6 +350,10 @@ local setAccidentAsResolved = function(accidentIndex)
         local generationOK, culpritGeneration = pcall(readCulpritGenerationProtected, accidentIndex)
         if not generationOK then culpritGeneration = nil end
         local yellowFlagZoneIndex = AccidentManager.accidents_yellowFlagZoneIndex[accidentIndex]
+        local isSingleCar = accidents_singleCar[accidentIndex] == true
+        local singleCarKind = isSingleCar and accidents_singleCarKind[accidentIndex] or nil
+        accidents_singleCar[accidentIndex] = nil
+        accidents_singleCarKind[accidentIndex] = nil
         AccidentManager.accidents_carIndex[accidentIndex] = nil
         AccidentManager.accidents_worldPosition[accidentIndex] = nil
         AccidentManager.accidents_victimWorldPosition[accidentIndex] = nil
@@ -370,6 +386,17 @@ local setAccidentAsResolved = function(accidentIndex)
                 yellowFlagZoneIndex, removedZoneStartSplinePosition or -1, removedZoneEndSplinePosition or -1, accidentIndex))
         end
         AccidentManager.accidents_yellowFlagZoneIndex[accidentIndex] = nil
+
+        if isSingleCar then
+            if culpritCarIndex ~= nil and cars_singleCarIncidentIndex[culpritCarIndex] == accidentIndex then
+                cars_singleCarIncidentIndex[culpritCarIndex] = nil
+            end
+            if culpritCarIndex ~= nil then
+                Logger.observe('f1-2-single-car-zone-cleared', culpritCarIndex, culpritGeneration, accidentIndex, yellowFlagZoneIndex,
+                    string.format('[F1-2] cleared %s zone incident=%d car=%d', singleCarKind or 'single-car', accidentIndex, culpritCarIndex),
+                    nil, CarManager.sessionGeneration, nil, nil)
+            end
+        end
 
         if culpritCarIndex ~= nil and AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] == accidentIndex then
             AccidentManager.cars_culpritInAccidentIndex[culpritCarIndex] = nil
@@ -589,6 +616,161 @@ function AccidentManager.updateRecovery(dt)
                 if accidentsRecoveryElapsed[accidentIndex] >= 3 then setAccidentAsResolved(accidentIndex) end
             else
                 clearAccidentRecovery(accidentIndex)
+            end
+        end
+    end
+end
+
+---Creates a synthetic single-car incident from validated perception facts and owns its zone.
+---Allocation happens once per incident; the rollback path never leaves a single-car marker behind.
+---@param carIndex integer
+---@param kind string 'spin' or 'stopped'
+---@param spline number
+---@param lateral number
+---@param generation number
+---@return boolean created
+local function createSingleCarIncident(carIndex, kind, spline, lateral, generation)
+    if not isFiniteNumber(carIndex) or carIndex < 1 or carIndex % 1 ~= 0 then return false end
+    if kind ~= 'spin' and kind ~= 'stopped' then return false end
+    if not isFiniteNumber(spline) or spline < 0 or spline > 1 then return false end
+    if not isFiniteNumber(lateral) then return false end
+    if CarManager.getCarGeneration(carIndex) ~= generation then return false end
+    if CarManager.isWritableAICar(carIndex) ~= true then return false end
+    local carOK, car = pcall(ac_getCar, carIndex)
+    if not carOK or car == nil or car.index ~= carIndex then return false end
+    local positionOK, carX, carY, carZ = pcall(readWorldPositionComponents, car.position)
+    if not positionOK or not isFiniteNumber(carX) or not isFiniteNumber(carY) or not isFiniteNumber(carZ) then
+        return false
+    end
+    local worldPosition = vec3(carX, carY, carZ)
+
+    local accidentIndex = CompletableIndexCollectionManager.incrementLastIndexCreated(accidentCompletableIndex)
+
+    AccidentManager.accidents_carIndex[accidentIndex] = carIndex
+    AccidentManager.accidents_worldPosition[accidentIndex] = worldPosition
+    AccidentManager.accidents_victimWorldPosition[accidentIndex] = worldPosition
+    AccidentManager.accidents_victimSplinePosition[accidentIndex] = spline
+    AccidentManager.accidents_splinePosition[accidentIndex] = spline
+    AccidentManager.accidents_collidedWithTrack[accidentIndex] = false
+    AccidentManager.accidents_collidedWithCarIndex[accidentIndex] = carIndex
+    AccidentManager.accidents_resolved[accidentIndex] = false
+    AccidentManager.accidents_pitManoeuvre[accidentIndex] = false
+    AccidentManager.accidents_sessionGeneration[accidentIndex] = CarManager.sessionGeneration
+    AccidentManager.accidents_culpritIsInPitlane[accidentIndex] = false
+    AccidentManager.accidents_victimIsInPitlane[accidentIndex] = false
+    AccidentManager.accidents_culpritSpeedKmh[accidentIndex] = nil
+    AccidentManager.accidents_victimSpeedKmh[accidentIndex] = nil
+    accidentsRecoveryElapsed[accidentIndex] = 0
+    accidentsRecoveryPreviousValid[accidentIndex] = false
+    accidentCulpritGeneration[accidentIndex] = generation
+    accidentVictimGeneration[accidentIndex] = generation
+
+    local zoneIndex = RaceTrackManager.declareYellowFlagZone(accidentIndex)
+    if zoneIndex == nil then
+        -- Roll back the record without ever marking it as a single-car incident.
+        setAccidentAsResolved(accidentIndex)
+        cars_singleCarZoneArmed[carIndex] = false
+        Logger.observe('f1-2-single-car-zone-declined', carIndex, generation, accidentIndex, nil,
+            string.format('[F1-2] zone declined incident=%d car=%d', accidentIndex, carIndex),
+            nil, CarManager.sessionGeneration, nil, nil)
+        return false
+    end
+
+    AccidentManager.accidents_yellowFlagZoneIndex[accidentIndex] = zoneIndex
+    accidents_singleCar[accidentIndex] = true
+    accidents_singleCarKind[accidentIndex] = kind
+    AccidentManager.cars_culpritInAccidentIndex[carIndex] = accidentIndex
+    AccidentManager.cars_victimInAccidentIndex[carIndex] = accidentIndex
+    cars_singleCarIncidentIndex[carIndex] = accidentIndex
+    cars_singleCarZoneArmed[carIndex] = false
+
+    Logger.observe('f1-2-single-car-zone-declared', carIndex, generation, accidentIndex, zoneIndex,
+        string.format('[F1-2] declared %s zone incident=%d car=%d spline=%.4f lateral=%.2f',
+            kind, accidentIndex, carIndex, spline, lateral),
+        nil, CarManager.sessionGeneration, nil, nil)
+    return true
+end
+
+---Reads the F1-2 storage flag. A missing accessor means disabled, never an error.
+local function isSingleCarZonesStorageEnabled()
+    local storage = rawget(_G, 'StorageManager')
+    local getter = type(storage) == 'table' and rawget(storage, 'getSingleCarZonesEnabled') or nil
+    if type(getter) ~= 'function' then return false end
+    local ok, enabled = pcall(getter)
+    return ok and enabled == true
+end
+
+---Resolves the perception accessor lazily: IncidentPerception loads after this module.
+local function getSingleCarZoneCandidateFn()
+    if type(singleCarZoneCandidateFn) == 'function' then return singleCarZoneCandidateFn end
+    local perception = rawget(_G, 'IncidentPerception')
+    local fn = type(perception) == 'table' and rawget(perception, 'getSingleCarZoneCandidate') or nil
+    if type(fn) ~= 'function' then return nil end
+    singleCarZoneCandidateFn = fn
+    return fn
+end
+
+---True when another unresolved non-synthetic accident already owns this car as culprit or victim.
+local function isInOtherUnresolvedIncident(carIndex)
+    local culpritOwner = AccidentManager.cars_culpritInAccidentIndex[carIndex]
+    if culpritOwner ~= nil and AccidentManager.accidents_resolved[culpritOwner] == false
+      and accidents_singleCar[culpritOwner] ~= true then return true end
+    local victimOwner = AccidentManager.cars_victimInAccidentIndex[carIndex]
+    if victimOwner ~= nil and AccidentManager.accidents_resolved[victimOwner] == false
+      and accidents_singleCar[victimOwner] ~= true then return true end
+    return false
+end
+
+---Polling entry point for synthetic single-car zone incidents. Declares/clears zones only on state
+---transitions, so it never logs per frame and never allocates per car.
+---@param dt number
+function AccidentManager.updateSingleCarZones(dt)
+    if not isSingleCarZonesStorageEnabled() then
+        Logger.setF1_2Enabled(false)
+        if singleCarZonesWasEnabled then
+            local lastIncidentIndex = CompletableIndexCollectionManager.getLastIndexCreated(accidentCompletableIndex)
+            for accidentIndex = 1, lastIncidentIndex do
+                if accidents_singleCar[accidentIndex] == true then
+                    local carIndex = AccidentManager.accidents_carIndex[accidentIndex]
+                    setAccidentAsResolved(accidentIndex)
+                    if carIndex ~= nil then cars_singleCarZoneArmed[carIndex] = nil end
+                end
+            end
+        end
+        singleCarZonesWasEnabled = false
+        return
+    end
+    Logger.setF1_2Enabled(true)
+    singleCarZonesWasEnabled = true
+    if not isFiniteNumber(dt) or dt <= 0 or dt > 0.25 then return end
+    local candidateFn = getSingleCarZoneCandidateFn()
+    if candidateFn == nil then return end
+    local cars = CarManager.currentSortedCarsList
+    if type(cars) ~= 'table' then return end
+
+    for i = 1, #cars do
+        local car = cars[i]
+        if car ~= nil then
+            local carIndex = car.index
+            if isFiniteNumber(carIndex) and carIndex >= 1 and carIndex % 1 == 0
+              and CarManager.isWritableAICar(carIndex) == true then
+                local existing = cars_singleCarIncidentIndex[carIndex]
+                if existing ~= nil and AccidentManager.accidents_resolved[existing] == true then
+                    cars_singleCarIncidentIndex[carIndex] = nil
+                    cars_singleCarZoneArmed[carIndex] = true
+                    existing = nil
+                end
+                if existing == nil and not isInOtherUnresolvedIncident(carIndex) then
+                    local kind, spline, lateral, generation = candidateFn(carIndex)
+                    if kind ~= nil then
+                        if cars_singleCarZoneArmed[carIndex] ~= false then
+                            createSingleCarIncident(carIndex, kind, spline, lateral, generation)
+                        end
+                    else
+                        -- Re-arm only after perception stops reporting a candidate for this car.
+                        cars_singleCarZoneArmed[carIndex] = true
+                    end
+                end
             end
         end
     end
@@ -859,11 +1041,17 @@ function AccidentManager.resetSession()
     end
     for index in pairs(AccidentManager.cars_culpritInAccidentIndex) do AccidentManager.cars_culpritInAccidentIndex[index] = nil end
     for index in pairs(AccidentManager.cars_victimInAccidentIndex) do AccidentManager.cars_victimInAccidentIndex[index] = nil end
+    for accidentIndex in pairs(accidents_singleCar) do accidents_singleCar[accidentIndex] = nil end
+    for accidentIndex in pairs(accidents_singleCarKind) do accidents_singleCarKind[accidentIndex] = nil end
+    for carIndex in pairs(cars_singleCarIncidentIndex) do cars_singleCarIncidentIndex[carIndex] = nil end
+    for carIndex in pairs(cars_singleCarZoneArmed) do cars_singleCarZoneArmed[carIndex] = nil end
+    singleCarZonesWasEnabled = false
     CompletableIndexCollectionManager.reset(accidentCompletableIndex)
     RaceTrackManager.resetOwnedYellowFlagZones()
 end
 
----Andreas: this function is O(n) where n is the total number of accidents
+---Andreas: this function is O(c) where c is the number of candidate incidents in the yellow-zone
+---buckets ahead of the car, not the total number of accidents.
 ---@param car ac.StateCar?
 ---@return integer? accidentIndex, integer closestCarIndex
 AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident)
@@ -935,8 +1123,11 @@ AccidentManager.isCarComingUpToAccident = function(car, distanceToDetectAccident
     local currentClosestAccidentReason, lastExaminedReason
 
      -- for i = 1, lastAccidentIndexCreated do
-    local firstNonResolvedAccidentIndex = CompletableIndexCollectionManager.getFirstNonResolvedIndex(accidentCompletableIndex)
-    for accidentIndex = firstNonResolvedAccidentIndex, lastAccidentIndexCreated do
+    -- Candidates come from the yellow flag zone buckets covering the look-ahead window, so incidents
+    -- behind or outside the window are never visited.
+    local candidateCount = RaceTrackManager.getIncidentIndexesAhead(carSplinePosition, distanceToDetectAccident, candidateIncidentIndexes)
+    for candidate = 1, candidateCount do
+        local accidentIndex = candidateIncidentIndexes[candidate]
         if not AccidentManager.accidents_resolved[accidentIndex]
           and AccidentManager.accidents_pitManoeuvre[accidentIndex] ~= true then
             examined = examined + 1

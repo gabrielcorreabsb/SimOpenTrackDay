@@ -35,6 +35,9 @@ local yellowZones_resolved = {}
 local yellowZones_fullCircle = {}
 local getYellowZoneBucketIndex
 local yellowZoneEpoch, yellowZoneRevision = 1, 0
+-- Reusable dedupe stamps for incident lookups: a new epoch per call avoids allocations.
+local incidentLookupStamp = {}
+local incidentLookupEpoch = 0
 local yellowDecisionBuffer = { candidates = {} }
 -- Numeric sequence is correlation-only (integer precision ends at 2^53); freshness uses validity, identity and zone revision/epoch.
 local zoneDecisionSequence = 0
@@ -638,6 +641,55 @@ function RaceTrackManager.isSplinePositionInZone(zoneIndex, splinePosition, forw
         return zoneContains(startSplinePosition, extendedEndSplinePosition, false, splinePosition)
     end
     return zoneContains(startSplinePosition, endSplinePosition, fullCircle, splinePosition)
+end
+
+---Enumerates the incident indices registered in the yellow flag zone buckets reachable from
+---splinePosition within forwardDistanceMeters. The result is a superset of the incidents the
+---caller cares about: it only filters by bucket window and deduplicates, so the caller still
+---applies its own forward/world-distance filters.
+---Read-only: never mutates zones, buckets or incidents, and does not allocate after warm-up.
+---@param splinePosition number cyclic spline position in [0,1]
+---@param forwardDistanceMeters number forward look-ahead distance in meters, >= 0
+---@param outIncidentIndexes table reused output array filled from index 1
+---@return integer count number of unique incident indices written to outIncidentIndexes
+function RaceTrackManager.getIncidentIndexesAhead(splinePosition, forwardDistanceMeters, outIncidentIndexes)
+    splinePosition = normalizeSpline(splinePosition)
+    if splinePosition == nil then return 0 end
+    if not finiteNumber(forwardDistanceMeters) or forwardDistanceMeters < 0 then return 0 end
+    if type(outIncidentIndexes) ~= 'table' then return 0 end
+    local trackLengthMeters = RaceTrackManager.getTrackLengthMeters()
+    if not finiteNumber(trackLengthMeters) or trackLengthMeters <= 0 then return 0 end
+
+    local startBucketIndex = getYellowZoneBucketIndex(splinePosition)
+    local windowSpan = forwardDistanceMeters / trackLengthMeters
+    -- Include both the car's bucket and the bucket holding the window end, then clamp to
+    -- the full bucket count so an oversized window never loops over the circle twice.
+    local bucketSpan = math.floor(windowSpan / YELLOW_ZONE_BUCKET_SIZE) + 1
+    if bucketSpan > YELLOW_ZONE_BUCKET_COUNT then bucketSpan = YELLOW_ZONE_BUCKET_COUNT end
+    if bucketSpan < 1 then bucketSpan = 1 end
+
+    incidentLookupEpoch = incidentLookupEpoch + 1
+    local epoch = incidentLookupEpoch
+    local count = 0
+    for offset = 0, bucketSpan - 1 do
+        local bucketIndex = startBucketIndex + offset
+        if bucketIndex >= YELLOW_ZONE_BUCKET_COUNT then bucketIndex = bucketIndex - YELLOW_ZONE_BUCKET_COUNT end
+        local bucket = RaceTrackManager.yellowFlagsZones_bucket[bucketIndex]
+        if bucket ~= nil then
+            for i = 1, #bucket do
+                local zoneIndex = bucket[i]
+                local incidentIndex = yellowZones_accidentIndex[zoneIndex]
+                if incidentIndex ~= nil and not yellowZones_resolved[zoneIndex] then
+                    if incidentLookupStamp[incidentIndex] ~= epoch then
+                        incidentLookupStamp[incidentIndex] = epoch
+                        count = count + 1
+                        outIncidentIndexes[count] = incidentIndex
+                    end
+                end
+            end
+        end
+    end
+    return count
 end
 
 return RaceTrackManager
