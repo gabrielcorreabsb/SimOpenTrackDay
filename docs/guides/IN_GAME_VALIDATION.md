@@ -229,3 +229,17 @@ Partial evidence: the per-car state came back after the `physics.allowed` cdata 
 ## Integration (S9, still to do)
 
 - [ ] A session with 20–30 AI cars. Record the scenario, its duration and any observable overhead. Do not claim a performance budget from a functional test.
+
+## Defaults D1+D3 — racing line in normal driving (#9, branch lane, pending)
+
+- **D1:** normal driving now targets the AI racing line, computed as `(L - R) / (L + R)` from `ac.getTrackAISplineSides` 15 m ahead. It no longer targets `defaultLateralOffset` (0 = the track middle). **Advanced → Other → "Keep a fixed lane in normal driving"** restores the old behavior.
+- **D3:** `overrideAiAwareness` now defaults to `false`. Settings already saved per track keep their value, so untick "Override AI awareness" for the test.
+- **Dev log:** set `Constants.ENABLE_LINE_LOG = true` in the installed copy to log `[LINE] car mode x ai target` every 2 s for the camera-focused AI.
+
+**A/B session (5 min each, same track and grid):**
+- **A:** "Keep a fixed lane" ON.
+- **B:** OFF.
+
+Compare: the visible line through corners, lap times, the number of F1-1 contacts, and `[LINE]` with `x` following `ai` in B and staying near 0 in A. Yield and overtake must still work in both.
+
+- [ ] A/B observed in CSP.

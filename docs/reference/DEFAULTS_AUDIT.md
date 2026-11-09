@@ -24,6 +24,8 @@ This audit reviews the default values in `SimOpenTrackDay/StorageManager.lua` ag
 
 #9 (D1+D3), #10 (D5+D2), #11 (D4+D6+D7+D8).
 
+- **#9 lane (branch `fix/defaults-d1-d3`):** normal driving targets the AI racing line, `(L - R) / (L + R)` from the spline sides, because CSP has no documented way to clear an offset and 0 is the track middle. `overrideAiAwareness` defaults to `false`. The A/B session in game is pending.
+
 ## Proposed order
 
 1. **D1** (racing line) and **D3** (awareness): biggest realism and safety gain. Change behind an A/B test in game.

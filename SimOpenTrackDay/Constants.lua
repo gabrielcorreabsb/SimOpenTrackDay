@@ -31,6 +31,8 @@ Constants.ENABLE_DEVELOPMENT_DEBUG_PANEL = false
 -- Development only (F1-3 calibration): holds the camera-focused AI car at fixed lateral offsets and
 -- logs where it actually drives, tag [CAL]. Keep false in releases.
 Constants.ENABLE_OFFSET_CALIBRATION = false
+-- Development only (D1): logs the focused AI's actual x, AI line x and normal-driving target, tag [LINE].
+Constants.ENABLE_LINE_LOG = false
 
 Constants.ENABLE_ACCIDENT_HANDLING_IN_APP = true -- disable accident handling for now since it's still WIP
 

@@ -1908,6 +1908,35 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
 end
 
 
+-- D1 (defaults audit): normalized track x of the AI racing line at a spline position. The spline
+-- sides are distances from the AI line to each edge, so the line sits at (L - R) / (L + R) on the
+-- track-middle scale that setAISplineOffset uses. Returns nil when the sides are unavailable.
+local AI_LINE_LOOKAHEAD_M = 15
+function CarOperations.getAILineNormalized(splinePosition)
+  if not finiteNumber(splinePosition) then return nil end
+  local trackLength = RaceTrackManager_getTrackLengthMeters()
+  local lookAhead = (finiteNumber(trackLength) and trackLength > 0) and (AI_LINE_LOOKAHEAD_M / trackLength) or 0
+  local left, right = readSplineSides((splinePosition + lookAhead) % 1)
+  if not left then return nil end
+  return (left - right) / (left + right)
+end
+
+-- Development-only line log (Constants.ENABLE_LINE_LOG): every 2 s for the camera-focused AI car,
+-- the actual track x, the AI line x and the requested target, tag [LINE].
+local lineLogLast = -1
+function CarOperations.logNormalDrivingLine(carIndex, car, target, mode)
+  local sim = ac.getSim()
+  if sim == nil or sim.focusedCar ~= carIndex then return end
+  local now = getActiveGameTime()
+  if now == nil or now - lineLogLast < 2 then return end
+  lineLogLast = now
+  local x = CarManager_getActualTrackLateralOffset(carIndex, car.position)
+  local aiLine = CarOperations.getAILineNormalized(car.splinePosition)
+  Logger.log(string_format('[LINE] car=%d mode=%s x=%s ai=%s target=%s s=%.4f v=%.0f', carIndex, mode,
+    finiteNumber(x) and string_format('%.3f', x) or 'na', aiLine and string_format('%.3f', aiLine) or 'na',
+    finiteNumber(target) and string_format('%.3f', target) or 'na', car.splinePosition or -1, car.speedKmh or -1))
+end
+
 -- Development-only offset calibration (Constants.ENABLE_OFFSET_CALIBRATION). Holds ONE AI car (the
 -- camera-focused AI, or the first writable AI) at a fixed sequence of requests, 6 s each, and logs
 -- the requested value next to the measured track x and metres from the AI line every 2 s. Used to

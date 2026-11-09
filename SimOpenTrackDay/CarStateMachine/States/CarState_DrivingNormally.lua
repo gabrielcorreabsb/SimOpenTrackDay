@@ -99,6 +99,17 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
 
       car = sortedCarsList[sortedCarsListIndex]
 
+      -- D1 (defaults audit): 0 is the track middle, not "no offset", and CSP has no way to clear an
+      -- offset. Unless the player opts into a fixed lane, follow the AI racing line itself.
+      local lineMode = 'lane'
+      if storage.keepLaneInNormalDriving ~= true and car ~= nil then
+        local aiLine = CarOperations.getAILineNormalized(car.splinePosition)
+        if aiLine ~= nil then targetOffset, lineMode = aiLine, 'racing-line' end
+      end
+      if Constants.ENABLE_LINE_LOG == true and car ~= nil then
+        CarOperations.logNormalDrivingLine(carIndex, car, targetOffset, lineMode)
+      end
+
       -- local driveToDefaultLateralOffset = true
       -- if carIndex == 0 and Constants.FRENET_DEBUGGING then
         -- driveToDefaultLateralOffset = false
