@@ -1583,6 +1583,12 @@ local function lateralMeters(lateral, leftDistance, rightDistance)
   return (lateral + 1) * 0.5 * (leftDistance + rightDistance) - leftDistance
 end
 
+---Inverse of lateralMeters: metres from the AI line back to CSP's normalized track coordinate,
+---the scale setAISplineOffset uses (the same one the yield/overtake lanes use successfully).
+local function metersToNormalized(meters, leftDistance, rightDistance)
+  return 2 * (meters + leftDistance) / (leftDistance + rightDistance) - 1
+end
+
 local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstacle, trackLength)
   if obstacle == nil or obstacle.index == carIndex then return false end
   if obstacle.isInPit == true or obstacle.isInPitlane == true then return false end
@@ -1646,7 +1652,7 @@ end
 ---Chooses the passing side and target offset in metres from the AI line.
 ---Returns target metres, edge distance, side sign (-1 left, +1 right), left and right edge
 ---distances, and the no-room flag.
-local function computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now)
+local function computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
   local leftDistance, rightDistance = readSplineSides(obstacle.splinePosition)
   if not leftDistance then return nil, nil, 0, nil, nil, true end
   local obstacleMeters = lateralMeters(obstacleLateral, leftDistance, rightDistance)
@@ -1663,7 +1669,14 @@ local function computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, 
   elseif holding and record.side == 1 then
     side = rightOK and 1 or (leftOK and -1 or 0)
   elseif leftOK and rightOK then
-    side = roomLeft >= roomRight and -1 or 1
+    -- Pass on the side the follower is already on; never cut across in front of the obstacle.
+    -- Run 7 picked the roomier side and asked cars already clear on the left to cross over.
+    local myMeters = finiteNumber(myLat) and lateralMeters(myLat, leftDistance, rightDistance) or nil
+    if myMeters ~= nil then
+      side = myMeters <= obstacleMeters and -1 or 1
+    else
+      side = roomLeft >= roomRight and -1 or 1
+    end
   elseif leftOK then
     side = -1
   elseif rightOK then
@@ -1788,7 +1801,8 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
       return false
     end
     local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
-    local targetMeters, edgeMeters, side = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now)
+    local targetMeters, edgeMeters, side, keepLeft, keepRight = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
+    if keepLeft then record.sideLeft, record.sideRight = keepLeft, keepRight end
     if not targetMeters then
       CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
       Logger_observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex),
@@ -1819,8 +1833,10 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
           nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
       end
     end
-    CarOperations.requestLateralOffset(carIndex, currentMeters, 'ACCIDENT_NAVIGATION', 'absolute',
-      currentMeters / edgeMeters, edgeMeters, false, currentMeters / edgeMeters)
+    local currentNormalized = metersToNormalized(currentMeters, record.sideLeft, record.sideRight)
+    local targetNormalized = metersToNormalized(targetMeters, record.sideLeft, record.sideRight)
+    CarOperations.requestLateralOffset(carIndex, currentNormalized, 'ACCIDENT_NAVIGATION', 'normalized',
+      currentNormalized, edgeMeters, false, targetNormalized)
     return true
   end
 
@@ -1848,7 +1864,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   end
   if record.confirmTime < LATERAL_ENGAGE_SECONDS then return false end
 
-  local targetMeters, edgeMeters, side, leftDistance, rightDistance = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now)
+  local targetMeters, edgeMeters, side, leftDistance, rightDistance = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
   if not targetMeters then
     if record.noRoomLogged ~= obstacle.index then
       record.noRoomLogged = obstacle.index
@@ -1866,6 +1882,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   record.side = side
   record.sideHoldUntil = now + LATERAL_SIDE_HOLD_SECONDS
   record.engagedAt, record.progressLogged = now, false
+  record.sideLeft, record.sideRight = leftDistance, rightDistance
   record.noRoomLogged = nil
   record.confirmTime, record.slowTime, record.slowCandidate, record.candidateIndex = 0, 0, nil, nil
   local startMeters = lateralMeters(myLat, leftDistance, rightDistance)
@@ -1876,8 +1893,10 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
       obstacle.index, side < 0 and 'L' or 'R', targetMeters, distance or -1, edgeMeters or -1),
     nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
   local currentMeters = record.lastMeters
-  CarOperations.requestLateralOffset(carIndex, currentMeters, 'ACCIDENT_NAVIGATION', 'absolute',
-    currentMeters / edgeMeters, edgeMeters, false, currentMeters / edgeMeters)
+  local currentNormalized = metersToNormalized(currentMeters, leftDistance, rightDistance)
+  local targetNormalized = metersToNormalized(targetMeters, leftDistance, rightDistance)
+  CarOperations.requestLateralOffset(carIndex, currentNormalized, 'ACCIDENT_NAVIGATION', 'normalized',
+    currentNormalized, edgeMeters, false, targetNormalized)
   return true
 end
 
