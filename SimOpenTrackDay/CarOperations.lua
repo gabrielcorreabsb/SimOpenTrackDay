@@ -127,7 +127,7 @@ local OWNER_ORDER = {
 -- F1-3 lateral avoidance tuning. All distances are metres unless stated otherwise.
 local CAR_WIDTH_M = 1.8
 local CAR_HALF_WIDTH_M = CAR_WIDTH_M * 0.5
-local LATERAL_OBSTACLE_AHEAD_M = 80
+local LATERAL_OBSTACLE_AHEAD_M = 120
 local LATERAL_OBSTACLE_BAND = 0.6
 local LATERAL_OBSTACLE_ON_TRACK = 1.0
 local LATERAL_STOPPED_KMH = 24
@@ -136,7 +136,9 @@ local LATERAL_ENGAGE_SECONDS = 0.3
 local LATERAL_SIDE_HOLD_SECONDS = 1.5
 local LATERAL_RELEASE_BEHIND_M = 10
 local LATERAL_CLEARANCE_M = CAR_WIDTH_M + 1.0
-local LATERAL_RAMP_FACTOR = 0.8
+-- Lateral speed of the avoidance move in metres per second (independent of the edge distance;
+-- run 5 used 0.8 x edge distance, about 1.2 m/s near an edge, far too slow).
+local LATERAL_RAMP_MPS = 3.0
 CarOperations._lateralAvoidance = CarOperations._lateralAvoidance or {}
 CarOperations._topSpeedRequests = CarOperations._topSpeedRequests or {}
 CarOperations._throttleRequests = CarOperations._throttleRequests or {}
@@ -1599,19 +1601,29 @@ local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstac
   return true, obstacleLateral, distance
 end
 
--- Per-obstacle slow timer, advanced at most once per frame and reset after any frame gap so a stale
--- value can never overcount.
-local obstacleSlowTime, obstacleSlowFrame = {}, {}
-local function updateObstacleSlowTime(obstacle, dt)
-  local obstacleIndex = obstacle.index
+-- Per-car slow timer for every car on track (player included), advanced once per frame for the
+-- whole list. Run 5 timed obstacles only while a follower was within range, so the 2 s started
+-- when a follower arrived and avoidance engaged 1-17 m before the obstacle.
+local obstacleSlowTime = {}
+local obstacleTimersFrame = nil
+local function refreshObstacleSlowTimers(sortedCarsList, dt)
   local frame = CarManager._currentFrameId or 0
-  local lastFrame = obstacleSlowFrame[obstacleIndex]
-  if lastFrame == frame then return obstacleSlowTime[obstacleIndex] or 0 end
-  local elapsed = (lastFrame == frame - 1) and (obstacleSlowTime[obstacleIndex] or 0) or 0
-  local speed = obstacle.speedKmh
-  if finiteNumber(speed) and speed < LATERAL_STOPPED_KMH then elapsed = elapsed + dt else elapsed = 0 end
-  obstacleSlowFrame[obstacleIndex], obstacleSlowTime[obstacleIndex] = frame, elapsed
-  return elapsed
+  if obstacleTimersFrame == frame then return end
+  local gap = obstacleTimersFrame ~= frame - 1
+  obstacleTimersFrame = frame
+  local count = sortedCarsList and #sortedCarsList or 0
+  for i = 1, count do
+    local other = sortedCarsList[i]
+    local otherIndex = other and other.index
+    if otherIndex ~= nil then
+      local speed = other.speedKmh
+      if finiteNumber(speed) and speed < LATERAL_STOPPED_KMH then
+        obstacleSlowTime[otherIndex] = (gap and 0 or (obstacleSlowTime[otherIndex] or 0)) + dt
+      else
+        obstacleSlowTime[otherIndex] = 0
+      end
+    end
+  end
 end
 
 ---Finds the nearest valid obstacle ahead, preferring the car the caller is already tracking.
@@ -1786,7 +1798,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
       return false
     end
     if side ~= record.side then
-      startLateralQuintic(record, now, record.lastMeters or 0, targetMeters, LATERAL_RAMP_FACTOR * edgeMeters)
+      startLateralQuintic(record, now, record.lastMeters or 0, targetMeters, LATERAL_RAMP_MPS)
       record.side = side
     end
     local currentMeters = evaluateLateralQuintic(record, now)
@@ -1800,6 +1812,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
     return true
   end
 
+  refreshObstacleSlowTimers(sortedCarsList, dt)
   local obstacle, obstacleLateral, distance = findLateralObstacle(carIndex, car, myLat, mySpline,
     sortedCarsList, trackLength, preferredObstacleIndex)
   if not obstacle then
@@ -1811,7 +1824,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   -- belongs to the obstacle (shared by all followers), not to the follower: a fast follower crosses
   -- the 80 m window in about 1.5 s. The closing-speed rule was removed after run 3: it fired in
   -- every braking zone and pushed AI into the walls.
-  local closeEnough = updateObstacleSlowTime(obstacle, dt) >= LATERAL_STOPPED_SECONDS
+  local closeEnough = (obstacleSlowTime[obstacle.index] or 0) >= LATERAL_STOPPED_SECONDS
   if not closeEnough then
     record.confirmTime, record.candidateIndex = 0, nil
     return false
@@ -1843,7 +1856,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   record.noRoomLogged = nil
   record.confirmTime, record.slowTime, record.slowCandidate, record.candidateIndex = 0, 0, nil, nil
   local startMeters = lateralMeters(myLat, leftDistance, rightDistance)
-  startLateralQuintic(record, now, startMeters, targetMeters, LATERAL_RAMP_FACTOR * edgeMeters)
+  startLateralQuintic(record, now, startMeters, targetMeters, LATERAL_RAMP_MPS)
   Logger_observe('f1-3-avoid-engaged', carIndex, CarManager.getCarGeneration(carIndex),
     nil, nil, -- Logger keeps 48 characters per field: keep the numbers inside that budget.
     string_format('[F1-3] eng o=%d %s %.1fm d=%.0f e=%.1f',
