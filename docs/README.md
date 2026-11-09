@@ -21,6 +21,7 @@ This is the only index. Documents describe source code and plans; they do not pr
 - [Architecture](reference/ARCHITECTURE.md): callbacks, per-frame flow, hot paths, coupling, DoD, storage, conventions.
 - [State machine](reference/STATE_MACHINE.md): AI car states and transitions.
 - [CSP capability audit](reference/CSP_CAPABILITY_AUDIT.md): which CSP APIs exist, how they are used, risks.
+- [Defaults audit](reference/DEFAULTS_AUDIT.md): default settings checked against the SDK and the offset calibration (2026-11-09).
 - [Prior art](reference/PRIOR_ART.md): other open AC AI projects, their licences and the ideas we take.
 
 ## Planning
