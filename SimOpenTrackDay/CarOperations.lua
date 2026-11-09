@@ -1807,6 +1807,18 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
     if currentMeters > previousMeters + maxStep then currentMeters = previousMeters + maxStep end
     if currentMeters < previousMeters - maxStep then currentMeters = previousMeters - maxStep end
     record.lastMeters = currentMeters
+    -- Diagnostic: once, about 1.5 s after engaging, compare the requested offset with where the car
+    -- actually is (metres from the AI line), to tell a late/too-small request from an ignored one.
+    if record.progressLogged ~= true and record.engagedAt ~= nil and now - record.engagedAt >= 1.5 then
+      record.progressLogged = true
+      local myLeft, myRight = readSplineSides(mySpline)
+      if myLeft then
+        Logger_observe('f1-3-avoid-progress', carIndex, CarManager.getCarGeneration(carIndex), nil, nil,
+          string_format('[F1-3] chk req=%.1f act=%.1f o=%d', currentMeters,
+            lateralMeters(myLat, myLeft, myRight), obstacle.index),
+          nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      end
+    end
     CarOperations.requestLateralOffset(carIndex, currentMeters, 'ACCIDENT_NAVIGATION', 'absolute',
       currentMeters / edgeMeters, edgeMeters, false, currentMeters / edgeMeters)
     return true
@@ -1853,6 +1865,7 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   record.obstacleIndex = obstacle.index
   record.side = side
   record.sideHoldUntil = now + LATERAL_SIDE_HOLD_SECONDS
+  record.engagedAt, record.progressLogged = now, false
   record.noRoomLogged = nil
   record.confirmTime, record.slowTime, record.slowCandidate, record.candidateIndex = 0, 0, nil, nil
   local startMeters = lateralMeters(myLat, leftDistance, rightDistance)
