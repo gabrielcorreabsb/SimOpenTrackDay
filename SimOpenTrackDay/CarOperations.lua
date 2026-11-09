@@ -1738,10 +1738,9 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
           end
         elseif aheadFraction >= 0 and aheadFraction <= 0.5 then
           if aheadFraction * trackLength <= LATERAL_OBSTACLE_AHEAD_M then
-            local obstacleLook = obstacle.look
-            local dot = obstacleLook ~= nil and MathHelpers_dot(obstacleLook, car.look) or 0
+            -- No heading test: a spun car facing backwards is still the obstacle.
             local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
-            if finiteNumber(dot) and dot > 0 and finiteNumber(obstacleLateral)
+            if finiteNumber(obstacleLateral)
               and math_abs(obstacleLateral) <= LATERAL_OBSTACLE_ON_TRACK then
               keep = true
             else

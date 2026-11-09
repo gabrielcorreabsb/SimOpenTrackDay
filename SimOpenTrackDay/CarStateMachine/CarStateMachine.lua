@@ -423,6 +423,13 @@ CarStateMachine.updateCar = function(carIndex, dt, sortedCarList, sortedCarListI
     --]====]
     CarStateMachine.states_updateFunctions[state](carIndex, dt, sortedCarList, sortedCarListIndex, storage)
 
+    -- F1-3: lateral avoidance must also run while yielding/overtaking; a stopped car ahead usually
+    -- puts the follower into an overtake state, not DRIVING_NORMALLY. Normal driving and accident
+    -- navigation already call it themselves (navigation with a preferred obstacle).
+    if state ~= stateTypes.DRIVING_NORMALLY and state ~= stateTypes.NAVIGATING_AROUND_ACCIDENT then
+      CarOperations.updateLateralAvoidance(carIndex, dt, sortedCarList[sortedCarListIndex], sortedCarList, storage)
+    end
+
     local currentTimeInState = CarManager.cars_timeInCurrentState[carIndex]
 
     -- increase the time spent in this state
