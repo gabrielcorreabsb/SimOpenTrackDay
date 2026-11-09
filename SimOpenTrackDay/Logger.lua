@@ -184,6 +184,7 @@ local function observeProtected(kind, carIndex, generation, incidentIndex, zoneI
      or sub(kind, 1, 8) == 'session-' or sub(kind, 1, 9) == 'collision-' or sub(kind, 1, 9) == 'callback-'
      or sub(kind, 1, 8) == 'control-' or sub(kind, 1, 5) == 'obs3-'
     or sub(kind, 1, 9) == 'decision-'
+    or sub(kind, 1, 5) == 'f1-2-' or sub(kind, 1, 5) == 'f1-3-'
     or sub(kind, -10) == '-essential')
   local isDetail = not isGlobal
   if isDetail and (type(carIndex) ~= 'number' or carIndex < 0 or carIndex ~= rawget(Logger, 'OBS1_FOCUS_CAR')) then return end

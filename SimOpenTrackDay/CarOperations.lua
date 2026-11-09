@@ -132,7 +132,6 @@ local LATERAL_OBSTACLE_BAND = 0.6
 local LATERAL_OBSTACLE_ON_TRACK = 1.0
 local LATERAL_STOPPED_KMH = 24
 local LATERAL_STOPPED_SECONDS = 2
-local LATERAL_CLOSING_KMH = 50
 local LATERAL_ENGAGE_SECONDS = 0.3
 local LATERAL_SIDE_HOLD_SECONDS = 1.5
 local LATERAL_RELEASE_BEHIND_M = 10
@@ -1600,6 +1599,21 @@ local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstac
   return true, obstacleLateral, distance
 end
 
+-- Per-obstacle slow timer, advanced at most once per frame and reset after any frame gap so a stale
+-- value can never overcount.
+local obstacleSlowTime, obstacleSlowFrame = {}, {}
+local function updateObstacleSlowTime(obstacle, dt)
+  local obstacleIndex = obstacle.index
+  local frame = CarManager._currentFrameId or 0
+  local lastFrame = obstacleSlowFrame[obstacleIndex]
+  if lastFrame == frame then return obstacleSlowTime[obstacleIndex] or 0 end
+  local elapsed = (lastFrame == frame - 1) and (obstacleSlowTime[obstacleIndex] or 0) or 0
+  local speed = obstacle.speedKmh
+  if finiteNumber(speed) and speed < LATERAL_STOPPED_KMH then elapsed = elapsed + dt else elapsed = 0 end
+  obstacleSlowFrame[obstacleIndex], obstacleSlowTime[obstacleIndex] = frame, elapsed
+  return elapsed
+end
+
 ---Finds the nearest valid obstacle ahead, preferring the car the caller is already tracking.
 local function findLateralObstacle(carIndex, car, myLat, mySpline, sortedCarsList, trackLength, preferredIndex)
   local bestIndex, bestLateral, bestDistance
@@ -1793,24 +1807,11 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
     return false
   end
 
-  local obstacleSpeed = obstacle.speedKmh
-  local mySpeed = car.speedKmh
-  local closeEnough = false
-  if finiteNumber(mySpeed) and mySpeed - obstacleSpeed >= LATERAL_CLOSING_KMH then
-    closeEnough = true
-  end
-  if not closeEnough then
-    if obstacleSpeed < LATERAL_STOPPED_KMH then
-      if record.slowCandidate == obstacle.index then
-        record.slowTime = record.slowTime + dt
-      else
-        record.slowCandidate, record.slowTime = obstacle.index, dt
-      end
-      closeEnough = record.slowTime >= LATERAL_STOPPED_SECONDS
-    else
-      record.slowCandidate, record.slowTime = nil, 0
-    end
-  end
+  -- Only a car that has itself been slow for LATERAL_STOPPED_SECONDS is an obstacle. The timer
+  -- belongs to the obstacle (shared by all followers), not to the follower: a fast follower crosses
+  -- the 80 m window in about 1.5 s. The closing-speed rule was removed after run 3: it fired in
+  -- every braking zone and pushed AI into the walls.
+  local closeEnough = updateObstacleSlowTime(obstacle, dt) >= LATERAL_STOPPED_SECONDS
   if not closeEnough then
     record.confirmTime, record.candidateIndex = 0, nil
     return false
