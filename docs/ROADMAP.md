@@ -86,6 +86,7 @@ See [DEFAULTS_AUDIT.md](reference/DEFAULTS_AUDIT.md). These run alongside F1, ea
 | [#9](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/9) D1+D3 | Racing line in normal driving (no offset to the track middle); `overrideAiAwareness` off. A/B first | **Done**: A/B observed in CSP 4305 on 2026-11-09 (x vs AI line correlation −0.55 → +0.38) |
 | [#10](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/10) D5+D2 | Overtaking pace boost capped; yield/overtake lanes ±0.6 or width-based | **Open** |
 | [#11](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/11) D4+D6+D7+D8 | Respect the launcher's AI level and aggression; caution 1 and aggression ≤ 0.95 per the SDK | **Open** |
+| [#12](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/12) F1-3 tuning | Side re-evaluation near the obstacle, offset precision, racing-line follow in normal driving | **Open** |
 
 ## Rules for every phase slice
 
