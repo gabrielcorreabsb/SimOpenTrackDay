@@ -163,6 +163,9 @@ local accidents_singleCar = {}
 local accidents_singleCarKind = {}
 local cars_singleCarIncidentIndex = {}
 local cars_singleCarZoneArmed = {}
+-- Diagnostic: the contact incident for which a skipped candidate was already logged (one line per
+-- car and incident). Evidence that the F1-2 path reads perception even when no solo spin happens.
+local cars_singleCarSkipLoggedIncident = {}
 -- Reused output for zone-bucket incident enumeration; never allocated per frame.
 local candidateIncidentIndexes = {}
 -- Resolved lazily: IncidentPerception loads after this module.
@@ -760,7 +763,22 @@ function AccidentManager.updateSingleCarZones(dt)
                     cars_singleCarZoneArmed[carIndex] = true
                     existing = nil
                 end
-                if existing == nil and not isInOtherUnresolvedIncident(carIndex) then
+                if existing == nil and isInOtherUnresolvedIncident(carIndex) then
+                    local kind, spline, _, generation = candidateFn(carIndex)
+                    if kind ~= nil then
+                        local owner = AccidentManager.cars_culpritInAccidentIndex[carIndex]
+                        if owner == nil or AccidentManager.accidents_resolved[owner] ~= false then
+                            owner = AccidentManager.cars_victimInAccidentIndex[carIndex]
+                        end
+                        if owner ~= nil and cars_singleCarSkipLoggedIncident[carIndex] ~= owner then
+                            cars_singleCarSkipLoggedIncident[carIndex] = owner
+                            Logger.observe('f1-2-single-car-zone-skipped', carIndex, generation, owner, nil,
+                                string.format('[F1-2] candidate skipped %s car=%d reason=in-contact-incident incident=%d spline=%.4f',
+                                    kind, carIndex, owner, spline),
+                                nil, CarManager.sessionGeneration, nil, nil)
+                        end
+                    end
+                elseif existing == nil then
                     local kind, spline, lateral, generation = candidateFn(carIndex)
                     if kind ~= nil then
                         if cars_singleCarZoneArmed[carIndex] ~= false then
@@ -1045,6 +1063,7 @@ function AccidentManager.resetSession()
     for accidentIndex in pairs(accidents_singleCarKind) do accidents_singleCarKind[accidentIndex] = nil end
     for carIndex in pairs(cars_singleCarIncidentIndex) do cars_singleCarIncidentIndex[carIndex] = nil end
     for carIndex in pairs(cars_singleCarZoneArmed) do cars_singleCarZoneArmed[carIndex] = nil end
+    for carIndex in pairs(cars_singleCarSkipLoggedIncident) do cars_singleCarSkipLoggedIncident[carIndex] = nil end
     singleCarZonesWasEnabled = false
     CompletableIndexCollectionManager.reset(accidentCompletableIndex)
     RaceTrackManager.resetOwnedYellowFlagZones()

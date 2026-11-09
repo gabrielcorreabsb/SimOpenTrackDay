@@ -116,6 +116,9 @@ Search the CSP log for `[F1-2]` and these kind fields:
 - `kind=f1-2-single-car-zone-declared` — detail `[F1-2] declared <kind> zone incident=<n> car=<n> spline=<0..1> lateral=<m>`
 - `kind=f1-2-single-car-zone-cleared` — detail `[F1-2] cleared <kind> zone incident=<n> car=<n>`
 - `kind=f1-2-single-car-zone-declined` — detail `[F1-2] zone declined incident=<n> car=<n>` (zone geometry could not be declared; the record is rolled back)
+- `kind=f1-2-single-car-zone-skipped` — detail `[F1-2] candidate skipped <spin|stopped> car=<n> reason=in-contact-incident incident=<n>`: a valid candidate whose car is already in a contact incident, which owns the zone. Logged once per car and incident; diagnostic evidence that the path reads perception.
+
+**Runs 1–3 (2026-11-08/09, CSP 4305, Interlagos):** contact zones, spin, stopped and wrong-way perception all worked. No `[F1-2]` line appeared, because every spun or stopped car was already in a contact incident, and no AI spun solo in a 9-minute AI-only run. The skipped diagnostic was added for run 4.
 
 Caution arbitration uses the existing control records: `kind=control-request`, `control-winner`, `control-request-released`, `control-request-expired`, `control-setter-attempt`, `control-setter-returned`, `control-handback-attempt`, `control-handback-returned` with `resource=setAICaution` (the same records also carry `setAITopSpeed` and `setAIThrottleLimit`). With the development panel enabled, the inspector lists **Caution requests** and **Caution control** after the throttle rows; “applied” is the last value the app sent because CSP has no caution read-back. The logger envelope remains `[OBS1]`; F1-2 records require the F1-2 flag and perception to be on. The logger is bounded and can truncate a busy session.
 
