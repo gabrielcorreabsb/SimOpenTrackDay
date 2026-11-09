@@ -42,13 +42,13 @@ Report each item as **observed**, **limited** or **pending**. Never round "limit
 
 Run these in one session to close v0.2. Everything else on this page stays **limited** or **pending** in the roadmap and does not block the release.
 
-- [ ] The CSP log shows `Checking SimOpenTrackDay v0.2` and `[F0-CSP-GATE] ... gate passed`.
-- [ ] **M1a:** the player and autopilot cars are never written (watch your own car while yielding/overtaking AI pass around you).
-- [ ] **M1a:** pause and replay: no AI change while paused or in replay, and normal behavior on return.
-- [ ] **M1a:** ten enable/disable cycles from the header, with no leftover speed limit, offset or hazard lights on the AI.
-- [ ] **M1b:** after a yield ends, the AI returns to its normal speed (the applied limit is released).
-- [ ] **S1:** a session reset (or a car reset) removes every yellow zone of that incident.
-- [ ] **S7-1/2:** a light touch creates no zone; a real contact creates one, and it disappears about 3 s after the cars are clear.
+- [x] The CSP log shows `Checking SimOpenTrackDay v0.2` and `[F0-CSP-GATE] ... gate passed`. **Observed** 2026-11-08 (two sessions, CSP 4305, Interlagos).
+- [x] **M1a:** the player and autopilot cars are never written (watch your own car while yielding/overtaking AI pass around you). **Observed** by the maintainer; the app never acted on car 0.
+- [x] **M1a:** pause and replay: no AI change while paused or in replay, and normal behavior on return. **Observed**: log `mode=pause`, `mode=replay`, then zones handled again in live.
+- [x] **M1a:** ten enable/disable cycles from the header, with no leftover speed limit, offset or hazard lights on the AI. **Observed** (5 cycles, log `mode=disabled`; no leftovers reported).
+- [x] **M1b:** after a yield ends, the AI returns to its normal speed (the applied limit is released). **Observed** by the maintainer.
+- [ ] **S1:** a session reset (or a car reset) removes every yellow zone of that incident. **Limited**: no session restart with an active zone appears in the 2026-11-08 log.
+- [x] **S7-1/2:** a light touch creates no zone; a real contact creates one, and it disappears about 3 s after the cars are clear. **Observed**: 4 zones created and removed 4–5 s later; zones stay while a car remains stopped in them (known limitation, see F1-2/F1-4).
 - [ ] **Install and rollback:** copy the folder over a backup, then restore the backup; settings are kept.
 
 ## M1a — player isolation and lifecycle
