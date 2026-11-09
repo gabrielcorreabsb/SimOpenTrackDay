@@ -50,7 +50,12 @@ local CONTACT_MEASURE_SECONDS = 0.6
 local CONTACT_DEBOUNCE_SECONDS = 1.5
 local GROUP_WINDOW_SECONDS = 2
 local GROUP_DISTANCE_M = 15
-local LATERAL_EPSILON_M = 0.05
+-- Normalized CSP track coordinate (ac.worldCoordinateToTrack().x): -1 left edge, +1 right edge.
+local OFF_TRACK_NORMALIZED = 1.02
+-- Flood guard: one record per car and kind every 10 s, at most 30 records per minute overall.
+local EMIT_COOLDOWN_SECONDS = 10
+local RATE_WINDOW_SECONDS = 60
+local RATE_MAX_PER_WINDOW = 30
 local TIME_EPSILON_S = 1e-9
 local SPLINE_JUMP = 0.1
 local DISCONTINUITY_DT = 0.75
@@ -72,24 +77,23 @@ local UNKNOWN_TRACK_LENGTH = 11
 local UNKNOWN_POOL = 12
 local UNKNOWN_LINE = 13
 local UNKNOWN_NAMES = {
-  'wheelsOutside', 'trackSides', 'trackGeometry', 'pitState', 'carLook',
+  'wheelsOutside', 'trackLateral', 'trackGeometry', 'pitState', 'carLook',
   'collisionDepth', 'collidedWith', 'speedKmh', 'splinePosition', 'carFields',
   'trackLengthM', 'poolCapacity', 'lineBand',
 }
 
--- Geometry is cached per spline bucket: centre, planar tangent and signed right vector, plus the
--- AI-spline side distances. These arrays are filled once per track/session, not every frame.
+-- Geometry is cached per spline bucket: AI-spline centre, planar tangent and a perpendicular vector.
+-- It is used for heading (spin/wrong-way) and for the unsigned distance from the AI line (stopped
+-- band). Off-track uses CSP's normalized track coordinate instead. Filled once per track/session.
 local geometryX, geometryZ = {}, {}
 local geometryTangentX, geometryTangentZ = {}, {}
 local geometryRightX, geometryRightZ = {}, {}
-local geometryLeft, geometryRight = {}, {}
-local geometryCentreReady, geometrySidesReady = {}, {}
+local geometryCentreReady = {}
 for i = 1, MAX_BUCKETS do
   geometryX[i], geometryZ[i] = 0, 0
   geometryTangentX[i], geometryTangentZ[i] = 0, 0
   geometryRightX[i], geometryRightZ[i] = 0, 0
-  geometryLeft[i], geometryRight[i] = 0, 0
-  geometryCentreReady[i], geometrySidesReady[i] = 0, 0
+  geometryCentreReady[i] = 0
 end
 
 -- Reusable stopped-car index/spline arrays. Sorted descending like CarManager.currentSortedCarsList.
@@ -139,7 +143,6 @@ local trackLengthValid = false
 local bucketCount = 0
 local geometryBuilt = false
 local geometryAnyCentre = false
-local geometryAnySides = false
 local stoppedCount = 0
 
 local function clearCarPerception(carIndex)
@@ -163,6 +166,26 @@ local function clearCarPerception(carIndex)
   CarManager.cars_perceptionWrongReported[carIndex] = nil
 end
 
+-- Flood guard state. One cooldown table per kind (created once), indexed by car.
+local emitCooldowns = {}
+local rateWindowStart, rateCount, rateSuppressed = 0, 0, 0
+
+local function flushSuppressed(now)
+  if now - rateWindowStart < RATE_WINDOW_SECONDS then return end
+  if rateSuppressed > 0 and Logger and type(Logger.observe) == 'function' then
+    Logger.observe('incident-perception-suppressed', 0, 0, nil, nil,
+      string.format('[F1-1] suppressed=%d window=%ds', rateSuppressed, RATE_WINDOW_SECONDS), nil, nil, nil, '[F1-1] car=0 s=na')
+  end
+  rateWindowStart, rateCount, rateSuppressed = now, 0, 0
+end
+
+local function resetFloodGuard()
+  for _, perCar in pairs(emitCooldowns) do
+    for carIndex in pairs(perCar) do perCar[carIndex] = nil end
+  end
+  rateWindowStart, rateCount, rateSuppressed = 0, 0, 0
+end
+
 local function resetPending()
   for i = 1, GROUP_CAPACITY do groups[i].active = false end
   for i = 1, PAIR_CAPACITY do pairPool[i].key, pairPool[i].untilTime = 0, 0 end
@@ -177,6 +200,7 @@ local function resetAll(resetUnknownFlags)
   if resetUnknownFlags then
     for i = 1, #UNKNOWN_NAMES do unknownReported[i] = false end
   end
+  resetFloodGuard()
   stateTime = 0
 end
 
@@ -199,6 +223,23 @@ end
 local function emitEvent(kind, carIndex, generation, spline, detail, extra)
   if not Logger or type(Logger.observe) ~= 'function' then return end
   local carRef = validIndex(carIndex) and carIndex or 0
+  local perCar = emitCooldowns[kind]
+  if perCar == nil then
+    perCar = {}
+    emitCooldowns[kind] = perCar
+  end
+  local last = perCar[carRef]
+  if last ~= nil and stateTime - last < EMIT_COOLDOWN_SECONDS then
+    rateSuppressed = rateSuppressed + 1
+    return
+  end
+  flushSuppressed(stateTime)
+  if rateCount >= RATE_MAX_PER_WINDOW then
+    rateSuppressed = rateSuppressed + 1
+    return
+  end
+  rateCount = rateCount + 1
+  perCar[carRef] = stateTime
   local splineRef = finiteNumber(spline) and string.format('%.3f', spline) or 'na'
   local resource = string.format('[F1-1] car=%d s=%s', carRef, splineRef)
   Logger.observe(kind, carRef, generation or 0, nil, nil, detail, nil, nil, extra, resource)
@@ -238,9 +279,9 @@ end
 
 local function buildGeometry(trackLength)
   geometryBuilt = true
-  geometryAnyCentre, geometryAnySides = false, false
+  geometryAnyCentre = false
   for i = 1, MAX_BUCKETS do
-    geometryCentreReady[i], geometrySidesReady[i] = 0, 0
+    geometryCentreReady[i] = 0
   end
 
   if finiteNumber(trackLength) and trackLength > 0 then
@@ -254,7 +295,6 @@ local function buildGeometry(trackLength)
   end
 
   local trackTo = ac and ac.trackProgressToWorldCoordinateTo
-  local sidesFunction = ac and ac.getTrackAISplineSides
   if scratchVec3 == nil or trackTo == nil then
     reportUnknown(UNKNOWN_GEOMETRY, 0, nil)
     return
@@ -286,68 +326,68 @@ local function buildGeometry(trackLength)
       end
     end
 
-    if sidesFunction ~= nil then
-      local sidesOK, sides = pcall(sidesFunction, startProgress)
-      if sidesOK and sides ~= nil then
-        local left, right = sides.x, sides.y
-        if finiteNumber(left) and finiteNumber(right) and left > 0 and right > 0 then
-          geometryLeft[bucket], geometryRight[bucket] = left, right
-          geometrySidesReady[bucket] = 1
-          geometryAnySides = true
-        end
-      end
-    end
   end
 
   if not geometryAnyCentre then reportUnknown(UNKNOWN_GEOMETRY, 0, nil) end
-  if not geometryAnySides then reportUnknown(UNKNOWN_SIDES, 0, nil) end
 end
 
 local function classifyOffTrack(car, spline, bucket)
-  local state, sourceBits = 0, 0
-  local lateral, lateralKnown = 0, false
   local carIndex = car.index
+  local sourceBits = 0
+  local wheelsKnown, wheelsSome, wheelsOff = false, false, false
 
   local wheelsOutside = car.wheelsOutside
   if finiteNumber(wheelsOutside) and wheelsOutside >= 0 then
+    wheelsKnown = true
     sourceBits = sourceBits + 1
+    wheelsSome = wheelsOutside >= 1
     if wheelsOutside >= 3 then
-      state, sourceBits = 2, sourceBits + 2
+      wheelsOff = true
+      sourceBits = sourceBits + 2
     end
   else
     reportUnknown(UNKNOWN_WHEELS, carIndex, spline)
   end
 
-  if bucket > 0 and geometryCentreReady[bucket] == 1 and geometrySidesReady[bucket] == 1 then
-    -- Planar bucket approximation: ignore Y and measure from the bucket-centre spline point.
-    local position = car.position
+  -- Normalized lateral from CSP (cached per car per frame by CarManager; no extra allocation).
+  local position = car.position
+  local normalizedKnown, beyondEdge = false, false
+  if position ~= nil then
+    local ok, x = pcall(CarManager.getActualTrackLateralOffset, carIndex, position)
+    if ok and finiteNumber(x) then
+      normalizedKnown = true
+      sourceBits = sourceBits + 4
+      if x > OFF_TRACK_NORMALIZED or x < -OFF_TRACK_NORMALIZED then
+        beyondEdge = true
+        sourceBits = sourceBits + 8
+      end
+    end
+  end
+  if not normalizedKnown then reportUnknown(UNKNOWN_SIDES, carIndex, spline) end
+
+  -- Unsigned planar distance from the AI spline, only for the stopped "on the line" band.
+  local lineDistance, lineKnown = 0, false
+  if bucket > 0 and geometryCentreReady[bucket] == 1 then
     if position ~= nil and finiteNumber(position.x) and finiteNumber(position.z) then
       local deltaX, deltaZ = position.x - geometryX[bucket], position.z - geometryZ[bucket]
-      lateral = deltaX * geometryRightX[bucket] + deltaZ * geometryRightZ[bucket]
-      lateralKnown = true
-      sourceBits = sourceBits + 4
-      if lateral > geometryRight[bucket] + LATERAL_EPSILON_M
-        or lateral < -geometryLeft[bucket] - LATERAL_EPSILON_M then
-        state, sourceBits = 2, sourceBits + 8
-      end
+      lineDistance = math.abs(deltaX * geometryRightX[bucket] + deltaZ * geometryRightZ[bucket])
+      lineKnown = true
     else
       reportUnknown(UNKNOWN_CAR, carIndex, spline)
     end
-  elseif bucket > 0 and geometryCentreReady[bucket] ~= 1 then
-    reportUnknown(UNKNOWN_GEOMETRY, carIndex, spline)
-  elseif bucket > 0 then
-    reportUnknown(UNKNOWN_SIDES, carIndex, spline)
   else
     reportUnknown(UNKNOWN_GEOMETRY, carIndex, spline)
   end
 
-  -- Combined verdict: off wins; "on" requires both sources; any missing source without
-  -- positive off evidence stays unknown.
-  if state ~= 2 then
-    local wheelsKnown = band(sourceBits, 1) ~= 0
-    if wheelsKnown and lateralKnown then state = 1 else state = 0 end
+  -- Off needs the wheels: three or more outside, or the car beyond the edge with at least one
+  -- wheel outside. The normalized coordinate alone never reports off-track. "On" needs both sources.
+  local state = 0
+  if wheelsOff or (beyondEdge and wheelsSome) then
+    state = 2
+  elseif wheelsKnown and normalizedKnown then
+    state = 1
   end
-  return state, sourceBits, lateral, lateralKnown
+  return state, sourceBits, lineDistance, lineKnown
 end
 
 local function headingRelative(car, bucket)
@@ -996,6 +1036,7 @@ function IncidentPerception.update(dt, sortedCars)
   updateSamples(now)
   evaluateStopped(now)
   finalizeGroups(now)
+  flushSuppressed(now)
 end
 
 ---Exposed for tests and future diagnostics; observations stay enabled only through storage.

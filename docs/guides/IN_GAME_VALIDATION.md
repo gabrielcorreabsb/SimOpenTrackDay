@@ -53,6 +53,12 @@ Run these in one session to close v0.2. Everything else on this page stays **lim
 
 ## F1-1 — incident perception (branch lane, pending)
 
+**Run 1 (2026-11-08, CSP 4305, Interlagos, ~20 AI): failed.** 394 of 395 off-track records showed `src=w:on l:off` for every AI car: the planar lateral check against `getTrackAISplineSides` was wrong, and the flood truncated the logger. Fixed in the lane:
+- Off-track now uses CSP's normalized track coordinate (`ac.worldCoordinateToTrack().x`, cached per frame by `CarManager.getActualTrackLateralOffset`). Off = `wheelsOutside >= 3`, or `|x| > 1.02` with at least one wheel outside; the coordinate alone never reports off-track. In records, `l:off` now means beyond the edge.
+- The planar bucket geometry is kept only for heading (spin/wrong-way) and the unsigned distance from the AI line (stopped band).
+- Flood guard: at most one record per car and kind every 10 s, and 30 records per minute overall. The excess is reported as `kind=incident-perception-suppressed` with `suppressed=N`.
+Contacts (3), one wrong-way and no false stopped in the pits were also seen in run 1; they need re-checking in run 2.
+
 Contract: [issue #3](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/3). This slice only observes; existing accident decisions remain unchanged. No F1-2 zones, caution or recovery behavior is added. The maintainer owns installation and every CSP check below; local compilation and mocks cannot check these boxes.
 
 ### Enable and read the logs
@@ -69,6 +75,7 @@ Search the CSP log for `[F1-1]` and these exact kind fields:
 - `kind=incident-perception-wrong-way`
 - `kind=incident-perception-contact`
 - `kind=incident-perception-unknown`
+- `kind=incident-perception-suppressed` (flood-guard summary)
 
 The existing logger envelope still says `[OBS1]`; this does not mean OBS1 was enabled. `carRef`/`genRef` identify the subject, `resource=[F1-1] car=… s=…` gives spline progress, and `detail` carries the event duration. Contacts include `drop=…` (km/h), `n=…` (accepted touches) and the first other party in `extra`. Unknown records identify an unavailable field; absence of an event is not proof of safety. The shared logger has bounded output and can truncate a busy session.
 
@@ -80,7 +87,7 @@ The existing logger envelope still says `[OBS1]`; this does not mean OBS1 was en
 - [ ] **Wrong-way:** heading dot product below -0.5 for 1 s above 10 km/h produces one episode record; resuming forward travel rearms it.
 - [ ] **Contact:** a contact between two AI produces one grouped incident record with measured speed drop over 0.6 s. Reciprocal observations are deduplicated; repeat touches within 1.5 s for the same pair are suppressed. Compare contacts within 15 m and 2 s, separated contacts, and contacts across the spline wrap.
 - [ ] **Ten normal-driving minutes:** no false stopped record in the pit lane, pit box or at session start. Include cars that have not yet moved.
-- [ ] **Missing data:** unavailable wheels/sides/heading/contact data produces `unknown`, never a safe verdict; retain the corresponding logs. One known on-track source plus one unknown source must not start a stopped timer; positive off-track evidence can still report an episode.
+- [ ] **Missing data:** unavailable wheels/track-lateral/heading/contact data produces `unknown`, never a safe verdict; retain the corresponding logs. One known on-track source plus one unknown source must not start a stopped timer; positive off-track evidence can still report an episode.
 - [ ] **Lifecycle:** pause/replay, app disable, session restart, jump and recycled indices do not finish stale timers or contacts. No perception writes to physics or controls occur.
 - [ ] **Load:** 20–30 AI cars with the flag enabled; record frame-time impact separately from functional acceptance. Geometry initialization remains synchronous: up to 4096 buckets are sampled in a single update on first enable, re-enable or a session/track-length change. Record any initialization hitch separately from steady-state frame times, especially on long tracks. This cost has not been measured in CSP.
 
