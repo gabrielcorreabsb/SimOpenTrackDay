@@ -59,6 +59,13 @@ Run these in one session to close v0.2. Everything else on this page stays **lim
 - Flood guard: at most one record per car and kind every 10 s, and 30 records per minute overall. The excess is reported as `kind=incident-perception-suppressed` with `suppressed=N`.
 Contacts (3), one wrong-way and no false stopped in the pits were also seen in run 1; they need re-checking in run 2.
 
+**Run 2 (2026-11-08, CSP 4305, Interlagos): accepted.** No Lua errors, no logger truncation, no hitch when enabling, normal FPS.
+- off-track: 8 records, down from 395. Two had 3+ wheels out. Six were beyond the edge with 1–2 wheels out, clustered in the same corners: track-limit excursions.
+- The maintainer confirmed one chain on track: car 17 touched the player, went off and spun (chg=93°).
+- The maintainer also confirmed that car 12, reported `stopped d=8.0s alone` with `src=w:on l:on`, was **stuck in a gravel trap**.
+
+**Known limitation for F1-2/F1-4:** CSP can report gravel/run-off inside the normalized track width with few `wheelsOutside`, so "on track" may include run-off. Do not treat `w:on l:off` or an "on track" stopped car as an obstruction of the racing line without the AI-line distance.
+
 Contract: [issue #3](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/3). This slice only observes; existing accident decisions remain unchanged. No F1-2 zones, caution or recovery behavior is added. The maintainer owns installation and every CSP check below; local compilation and mocks cannot check these boxes.
 
 ### Enable and read the logs
