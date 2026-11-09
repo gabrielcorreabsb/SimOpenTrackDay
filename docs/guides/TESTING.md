@@ -122,6 +122,10 @@ Use these scenarios to validate features after manually installing a test copy. 
 
 - **Expected:** when the anti-drag-race limiter applies, the car ahead's target speed is capped at 95% of the approaching car's speed.
 
+### Summarizing the CSP log
+
+After a session, `tools/logsummary.py` turns the app's log lines into normalized metrics and compares two sessions. It never runs the game and does not replace the checks above. See [tools/README.md](../../tools/README.md). The CSP log is overwritten at every launch: save a copy first with `--save`.
+
 ---
 
 ## 6. Operational troubleshooting
