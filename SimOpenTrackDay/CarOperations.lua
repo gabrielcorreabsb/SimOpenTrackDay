@@ -797,6 +797,12 @@ local function resolveLateralControl(carIndex, now, resolutionId)
     local value = useAbsolute and winner.value or winner.normalized
     if attempted[carIndex] == resolutionId then return end
     attempted[carIndex] = resolutionId
+    if not useAbsolute and applied and applied.active and applied.unit == 'absolute'
+      and isCallable(physics_setAISplineAbsoluteOffset) then
+      -- Leaving avoidance for a normalized traffic owner: zero the absolute offset first so the two
+      -- CSP offsets never stack.
+      pcall(physics_setAISplineAbsoluteOffset, carIndex, 0, false)
+    end
     observeControl('control-setter-attempt', carIndex, winnerName, value, 'lateralOffsets')
     local ok = pcall(api, carIndex, value, useAbsolute and false or winner.override)
     observeControl(ok and 'control-setter-returned' or 'control-setter-threw-uncertain', carIndex, winnerName, value, 'lateralOffsets')
@@ -1560,7 +1566,7 @@ end
 ---Returns nil when the API is unavailable or returns non-finite distances.
 local function readSplineSidesComponents(sides) return sides.x, sides.y end
 local function readSplineSides(splinePosition)
-  if type(ac_getTrackAISplineSides) ~= 'function' or not finiteNumber(splinePosition) then return nil end
+  if not isCallable(ac_getTrackAISplineSides) or not finiteNumber(splinePosition) then return nil end
   local ok, sides = pcall(ac_getTrackAISplineSides, splinePosition)
   if not ok or sides == nil then return nil end
   local componentsOK, left, right = pcall(readSplineSidesComponents, sides)
@@ -1569,10 +1575,11 @@ local function readSplineSides(splinePosition)
   return left, right
 end
 
----Converts a normalized lateral offset (-1..1, negative left of the AI line) to metres.
+---Converts CSP's normalized track coordinate (-1 left edge, 0 track middle, +1 right edge) to
+---metres from the AI line, which is what the absolute offset API and the spline sides use.
+---The AI line is generally not the track middle, so map linearly across the full width.
 local function lateralMeters(lateral, leftDistance, rightDistance)
-  if lateral < 0 then return lateral * leftDistance end
-  return lateral * rightDistance
+  return (lateral + 1) * 0.5 * (leftDistance + rightDistance) - leftDistance
 end
 
 local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstacle, trackLength)
@@ -1581,17 +1588,15 @@ local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstac
   local obstacleSpline, obstacleSpeed = obstacle.splinePosition, obstacle.speedKmh
   if not finiteNumber(obstacleSpline) or obstacleSpline < 0 or obstacleSpline > 1 then return false end
   if not finiteNumber(obstacleSpeed) then return false end
-  local obstacleLook, myLook = obstacle.look, car.look
-  if obstacleLook == nil or myLook == nil then return false end
-  local dot = MathHelpers_dot(obstacleLook, myLook)
-  if not finiteNumber(dot) or dot <= 0 then return false end
-  local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
-  if not finiteNumber(obstacleLateral) or math_abs(obstacleLateral) > LATERAL_OBSTACLE_ON_TRACK then return false end
-  if math_abs(obstacleLateral - myLat) >= LATERAL_OBSTACLE_BAND then return false end
+  -- No heading filter: a spun car facing backwards is exactly the obstacle to avoid.
+  -- Cheap spline-distance test first, then the cached lateral lookup.
   local aheadFraction = (obstacleSpline - mySpline) % 1
   if aheadFraction <= 0 or aheadFraction > 0.5 then return false end
   local distance = aheadFraction * trackLength
   if distance <= 0 or distance > LATERAL_OBSTACLE_AHEAD_M then return false end
+  local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
+  if not finiteNumber(obstacleLateral) or math_abs(obstacleLateral) > LATERAL_OBSTACLE_ON_TRACK then return false end
+  if math_abs(obstacleLateral - myLat) >= LATERAL_OBSTACLE_BAND then return false end
   return true, obstacleLateral, distance
 end
 
