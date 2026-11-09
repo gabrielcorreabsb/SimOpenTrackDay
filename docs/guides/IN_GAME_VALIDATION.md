@@ -51,6 +51,41 @@ Run these in one session to close v0.2. Everything else on this page stays **lim
 - [x] **S7-1/2:** a light touch creates no zone; a real contact creates one, and it disappears about 3 s after the cars are clear. **Observed**: 4 zones created and removed 4–5 s later; zones stay while a car remains stopped in them (known limitation, see F1-2/F1-4).
 - [ ] **Install and rollback:** copy the folder over a backup, then restore the backup; settings are kept. Install **observed** (v0.2 loaded over the previous copy); rollback **not run**: skipped by the maintainer's decision on 2026-11-08.
 
+## F1-1 — incident perception (branch lane, pending)
+
+Contract: [issue #3](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/3). This slice only observes; existing accident decisions remain unchanged. No F1-2 zones, caution or recovery behavior is added. The maintainer owns installation and every CSP check below; local compilation and mocks cannot check these boxes.
+
+### Enable and read the logs
+
+In the settings window's accidents section, select **Incident perception (log only)** next to **Handle accidents**. Clear the checkbox to disable observation again. The checkbox is available whether or not **Handle accidents** is enabled; it does not enable accident handling or OBS1.
+
+The declared flag is `StorageManager.Options.IncidentPerceptionEnabled`; its stored field is `incidentPerceptionEnabled`, default `false`. The checkbox persists through the existing storage schema for the current track/session mode; no Lua command or manual INI edit is needed. The normal app enable/live gates still apply. Do not clear other settings.
+
+Search the CSP log for `[F1-1]` and these exact kind fields:
+
+- `kind=incident-perception-stopped`
+- `kind=incident-perception-off-track`
+- `kind=incident-perception-spin`
+- `kind=incident-perception-wrong-way`
+- `kind=incident-perception-contact`
+- `kind=incident-perception-unknown`
+
+The existing logger envelope still says `[OBS1]`; this does not mean OBS1 was enabled. `carRef`/`genRef` identify the subject, `resource=[F1-1] car=… s=…` gives spline progress, and `detail` carries the event duration. Contacts include `drop=…` (km/h), `n=…` (accepted touches) and the first other party in `extra`. Unknown records identify an unavailable field; absence of an event is not proof of safety. The shared logger has bounded output and can truncate a busy session.
+
+### Maintainer scenarios
+
+- [ ] **Toggle and flag off:** check the checkbox in English, Spanish and Brazilian Portuguese, with **Handle accidents** both off and on. Verify persistence for the current track/session mode. With perception off, normal app behavior and no F1-1 perception records.
+- [ ] **Spin/off-track/stopped:** an AI incident produces an episode record with the car, spline position and duration; sustained conditions do not log every frame. A static sideways pose is not a spin: compare a greater-than-60-degree heading change, projected forward speed at most 10 km/h, sustained for 0.6 s, including near-zero-speed rotation. Off-track evidence sustains for 0.5 s.
+- [ ] **Stopped thresholds:** below 5 km/h on track, compare the 2 s off-line base threshold, 8 s alone on the line (`|lateral| <= 1.5 m`) and 6 s with another stopped subject within 8 m. A distant stopped car must not shorten an isolated on-line car's timer. Cars arm only after reaching 5 km/h since reset. Verify the spline-distance filter on parallel sections and hairpins.
+- [ ] **Wrong-way:** heading dot product below -0.5 for 1 s above 10 km/h produces one episode record; resuming forward travel rearms it.
+- [ ] **Contact:** a contact between two AI produces one grouped incident record with measured speed drop over 0.6 s. Reciprocal observations are deduplicated; repeat touches within 1.5 s for the same pair are suppressed. Compare contacts within 15 m and 2 s, separated contacts, and contacts across the spline wrap.
+- [ ] **Ten normal-driving minutes:** no false stopped record in the pit lane, pit box or at session start. Include cars that have not yet moved.
+- [ ] **Missing data:** unavailable wheels/sides/heading/contact data produces `unknown`, never a safe verdict; retain the corresponding logs. One known on-track source plus one unknown source must not start a stopped timer; positive off-track evidence can still report an episode.
+- [ ] **Lifecycle:** pause/replay, app disable, session restart, jump and recycled indices do not finish stale timers or contacts. No perception writes to physics or controls occur.
+- [ ] **Load:** 20–30 AI cars with the flag enabled; record frame-time impact separately from functional acceptance. Geometry initialization remains synchronous: up to 4096 buckets are sampled in a single update on first enable, re-enable or a session/track-length change. Record any initialization hitch separately from steady-state frame times, especially on long tracks. This cost has not been measured in CSP.
+
+All items are **pending**. Thresholds are initial guesses. Geometry uses cached approximately 8 m spline buckets (maximum 4096), planar tangents and lateral distances; banking/elevation and tight corners need particular scrutiny. Spin history is initialized at the first valid heading sample and refreshed near alignment (within 20 degrees); initially sideways cars cannot establish that a spin happened before observation began. Contact groups compare circular spline distance with the first contact, so chains drifting beyond 15 m form separate groups. Groups report the maximum available participant speed drop, not individual impact severity. Player index 0 is not an observation subject, only a possible contact party. Fixed pools bound work (16 groups, 48 participant samples, 64 debounced pairs); exhaustion reports `field=poolCapacity` and can lose observations. These limits and actual CSP field behavior require in-game validation before acceptance.
+
 ## M1a — player isolation and lifecycle
 
 - [ ] Callback order and victim/player reset.

@@ -107,9 +107,12 @@ CarManager.sortedCarList_carIndexToSortedIndex = {} -- [carIndex] = sortedListIn
 ---@type SortedCarsList
 CarManager.cars_currentReusableList = CarManager.cars_currentReusableList or {}
 
----Cache of the last actual track lateral offset per car within the current frame
----@type table<integer,{x:number, frameId:integer}>
-CarManager.cars_lateralOffsetCacheByCar = {}
+---Cache of the last actual track lateral offset per car within the current frame.
+---Parallel numeric tables avoid allocating a row per car per frame.
+---@type table<integer,number>
+CarManager.cars_lateralOffsetCacheX = {}
+---@type table<integer,integer>
+CarManager.cars_lateralOffsetCacheFrame = {}
 ---Incremented once per MANIFEST__UPDATE so the lateral offset cache is invalidated every frame
 ---@type integer
 CarManager._currentFrameId = 0
@@ -118,6 +121,43 @@ CarManager._currentFrameId = 0
 ---@type table<integer,number>
 CarManager.cars_previousSplinePosition = {}
 CarManager.cars_anchorPoints = CarManager.cars_anchorPoints or {}
+
+-- F1-1 observation-only per-car numeric state. The perception module owns the policy; these
+-- indexed fields exist here so generation/session lifecycle clears them with all other car memory.
+---@type table<integer,number>
+CarManager.cars_perceptionGeneration = {}
+---@type table<integer,number>
+CarManager.cars_perceptionPrevSpline = {}
+---@type table<integer,number>
+CarManager.cars_perceptionPrevDepth = {}
+---@type table<integer,number>
+CarManager.cars_perceptionStopTime = {}
+---@type table<integer,number>
+CarManager.cars_perceptionStopArmed = {}
+---@type table<integer,number>
+CarManager.cars_perceptionStopReported = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSourceBits = {}
+---@type table<integer,number>
+CarManager.cars_perceptionOffTime = {}
+---@type table<integer,number>
+CarManager.cars_perceptionOffReported = {}
+---@type table<integer,number>
+CarManager.cars_perceptionLateral = {}
+---@type table<integer,number>
+CarManager.cars_perceptionLateralValid = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSpinBaseline = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSpinBaselineValid = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSpinTime = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSpinReported = {}
+---@type table<integer,number>
+CarManager.cars_perceptionWrongTime = {}
+---@type table<integer,number>
+CarManager.cars_perceptionWrongReported = {}
 
 -- Session/index lifecycle stamps. Index identity is only observable as the
 -- connected/AI classification exposed by CSP; silent same-class recycling is unknowable.
@@ -367,8 +407,26 @@ CarManager.clearCarMemory = function(carIndex)
     CarOperations._currentAntiDragRaceTopSpeeds[carIndex] = nil
   end
   CarManager.cars_grip[carIndex] = nil
-  CarManager.cars_lateralOffsetCacheByCar[carIndex] = nil
+  CarManager.cars_lateralOffsetCacheX[carIndex] = nil
+  CarManager.cars_lateralOffsetCacheFrame[carIndex] = nil
   CarManager.cars_previousSplinePosition[carIndex] = nil
+  -- Keep cars_perceptionGeneration as a guard: a recycled index sees the old stamp and resets.
+  CarManager.cars_perceptionPrevSpline[carIndex] = nil
+  CarManager.cars_perceptionPrevDepth[carIndex] = nil
+  CarManager.cars_perceptionStopTime[carIndex] = nil
+  CarManager.cars_perceptionStopArmed[carIndex] = nil
+  CarManager.cars_perceptionStopReported[carIndex] = nil
+  CarManager.cars_perceptionSourceBits[carIndex] = nil
+  CarManager.cars_perceptionOffTime[carIndex] = nil
+  CarManager.cars_perceptionOffReported[carIndex] = nil
+  CarManager.cars_perceptionLateral[carIndex] = nil
+  CarManager.cars_perceptionLateralValid[carIndex] = nil
+  CarManager.cars_perceptionSpinBaseline[carIndex] = nil
+  CarManager.cars_perceptionSpinBaselineValid[carIndex] = nil
+  CarManager.cars_perceptionSpinTime[carIndex] = nil
+  CarManager.cars_perceptionSpinReported[carIndex] = nil
+  CarManager.cars_perceptionWrongTime[carIndex] = nil
+  CarManager.cars_perceptionWrongReported[carIndex] = nil
   CarManager.cars_AABBSIZE[carIndex] = nil
   CarManager.cars_HALF_AABSIZE[carIndex] = nil
   CarManager.cars_anchorPoints[carIndex] = nil
@@ -434,14 +492,15 @@ end
 ---@param carPosition vec3
 ---@return number
 function CarManager.getActualTrackLateralOffset(carIndex, carPosition)
-  local cachedLateralOffset = CarManager.cars_lateralOffsetCacheByCar[carIndex]
-  if cachedLateralOffset and cachedLateralOffset.frameId == CarManager._currentFrameId then
-    return cachedLateralOffset.x
+  local cacheFrame = CarManager.cars_lateralOffsetCacheFrame[carIndex]
+  if cacheFrame == CarManager._currentFrameId then
+    return CarManager.cars_lateralOffsetCacheX[carIndex]
   end
 
   local carTrackCoordinates = ac.worldCoordinateToTrack(carPosition)
   local x = carTrackCoordinates.x
-  CarManager.cars_lateralOffsetCacheByCar[carIndex] = {x = x, frameId = CarManager._currentFrameId}
+  CarManager.cars_lateralOffsetCacheX[carIndex] = x
+  CarManager.cars_lateralOffsetCacheFrame[carIndex] = CarManager._currentFrameId
   return x
 end
 

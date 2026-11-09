@@ -4,6 +4,8 @@ local getFullMessage
 -- OBS1-A is intentionally opt-in and process-local; it is not persisted.
 Logger.OBS1_ENABLED = false
 Logger.OBS1_FOCUS_CAR = -1
+-- Narrow feature gate for F1-1 observation records. It does not enable OBS1.
+Logger.INCIDENT_PERCEPTION_ENABLED = false
 Logger.OBS3_ENABLED = false
 Logger.OBS3_TARGET_CAR = -1
 Logger.OBS3_PEER_CAR_1 = -1
@@ -27,6 +29,20 @@ local rawget, type, pcall, tostring, format = rawget, type, pcall, tostring, str
 local sub = string.sub
 local min = math.min
 local UNKNOWN = 'UNKNOWN'
+local INCIDENT_PERCEPTION_PREFIX = 'incident-perception-'
+
+-- F1-1 records use the same bounded ring and budgets as global incident records, but they are
+-- admitted by their own feature gate so OBS1 stays off unless the user opted in separately.
+local function isIncidentPerceptionKind(kind)
+  return type(kind) == 'string' and sub(kind, 1, 20) == INCIDENT_PERCEPTION_PREFIX
+end
+
+local function observationAdmitted(kind)
+  if isIncidentPerceptionKind(kind) then
+    return rawget(Logger, 'INCIDENT_PERCEPTION_ENABLED') == true
+  end
+  return rawget(Logger, 'OBS1_ENABLED') == true
+end
 
 -- OBS3 stores only configured cars in a fixed, session-bounded frame store.
 local OBS3_WINDOWS, OBS3_FRAMES, OBS3_SLOTS, OBS3_TRIALS = 8, 200, 3, 64
@@ -123,7 +139,7 @@ local function emitOBSLine(message, isDetail, isMarker)
 end
 
 local function observeProtected(kind, carIndex, generation, incidentIndex, zoneIndex, detail, previousState, referenceSession, extra, resource)
-  if rawget(Logger, 'OBS1_ENABLED') ~= true then return end
+  if not observationAdmitted(kind) then return end
   local carManager = rawget(_G, 'CarManager')
   local sessionGeneration = type(carManager) == 'table' and carManager.sessionGeneration or nil
   if not obsSessionInitialized then
@@ -209,7 +225,7 @@ local function observeProtected(kind, carIndex, generation, incidentIndex, zoneI
     else obsGlobalOutputDrops = boundedIncrement(obsGlobalOutputDrops) end
     return true
   end
-  if not obsHeaderWritten then
+  if not obsHeaderWritten and rawget(Logger, 'OBS1_ENABLED') == true then
     obsHeaderWritten = true
     if emitOBSLine('[OBS1] capture=' .. tostring(obsCaptureSession) .. ' session=' .. tostring(sessionGeneration or 'UNKNOWN')
       .. ' refSession=per-record source=UNKNOWN installed=UNKNOWN csp=UNKNOWN track=UNKNOWN flood=UNKNOWN other-writers=UNKNOWN', false, false) then
@@ -248,9 +264,15 @@ end
 
 -- Returns true when the observation was accepted into the bounded ring; it never means the sink delivered it.
 function Logger.observe(kind, carIndex, generation, incidentIndex, zoneIndex, detail, previousState, referenceSession, extra, resource)
-  if rawget(Logger, 'OBS1_ENABLED') ~= true then return false end
+  if not observationAdmitted(kind) then return false end
   local ok, recorded = pcall(observeProtected, kind, carIndex, generation, incidentIndex, zoneIndex, detail, previousState, referenceSession, extra, resource)
   return ok and recorded == true
+end
+
+---Updates the narrow F1-1 logger gate. It never changes OBS1_ENABLED.
+---@param enabled boolean
+function Logger.setIncidentPerceptionEnabled(enabled)
+  Logger.INCIDENT_PERCEPTION_ENABLED = enabled == true
 end
 
 local function finiteNumber(value)

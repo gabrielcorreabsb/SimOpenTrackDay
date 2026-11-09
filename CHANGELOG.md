@@ -2,6 +2,14 @@
 
 Entries describe source changes. Unless an entry says otherwise, in-game (CSP) acceptance is still pending; see [docs/guides/IN_GAME_VALIDATION.md](docs/guides/IN_GAME_VALIDATION.md).
 
+## Unreleased
+
+### Added
+- **F1-1 incident perception** ([#3](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/3), branch lane): observation-only stopped, off-track, spin, wrong-way and grouped-contact records through `Logger.observe`, marked `[F1-1]`. The schema-backed `incidentPerceptionEnabled` flag is off by default and does not enable unrelated OBS1 diagnostics. One settings checkbox, localized in English, Spanish and Brazilian Portuguese, enables log-only observation independently of accident handling. No physics writes, zones or accident decisions are added. CSP acceptance is pending; see the [F1-1 checklist](docs/guides/IN_GAME_VALIDATION.md#f1-1--incident-perception-branch-lane-pending).
+
+### Changed
+- Lateral-offset caching uses reusable indexed numeric fields instead of allocating a per-car table every frame; its public getter is unchanged.
+
 ## 0.2 — 2026-11-08
 
 Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](docs/ROADMAP.md).

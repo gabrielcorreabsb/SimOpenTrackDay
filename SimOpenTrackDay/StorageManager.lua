@@ -51,6 +51,8 @@ StorageManager.Options ={
     HandleAccidents = 12,
     DistanceFromAccidentToSeeYellowFlag_meters = 13,
     DistanceToStartNavigatingAroundCarInAccident_meters = 14,
+
+    IncidentPerceptionEnabled = 15,
 }
 
 ---@enum StorageManager.Options_AICarValues
@@ -284,6 +286,9 @@ local optionsCollection_beforeDoD = {
     { name = StorageManager.Options.HandleAccidents, default=false, min=nil, max=nil },
     { name = StorageManager.Options.DistanceFromAccidentToSeeYellowFlag_meters, default=200.0, min=50.0, max=500.0 },
     { name = StorageManager.Options.DistanceToStartNavigatingAroundCarInAccident_meters, default=30.0, min=10.0, max=100.0 },
+
+    -- F1-1 observation only: off by default. Reading/writing this flag never grants physics writes.
+    { name = StorageManager.Options.IncidentPerceptionEnabled, default=false, min=nil, max=nil },
 }
 
 local optionsCollection_PathFinding_beforeDoD = {
@@ -416,6 +421,7 @@ optionsCollection_Behavior_beforeDoD = nil  -- free memory
 ---@field handleAccidents boolean
 ---@field distanceFromAccidentToSeeYellowFlag_meters number
 ---@field distanceToStartNavigatingAroundCarInAccident_meters number
+---@field incidentPerceptionEnabled boolean
 
 ---@type StorageTable
 local storageTable = {
@@ -438,6 +444,7 @@ local storageTable = {
     handleAccidents = StorageManager.options_default[StorageManager.Options.HandleAccidents],
     distanceFromAccidentToSeeYellowFlag_meters = StorageManager.options_default[StorageManager.Options.DistanceFromAccidentToSeeYellowFlag_meters],
     distanceToStartNavigatingAroundCarInAccident_meters = StorageManager.options_default[StorageManager.Options.DistanceToStartNavigatingAroundCarInAccident_meters],
+    incidentPerceptionEnabled = StorageManager.options_default[StorageManager.Options.IncidentPerceptionEnabled],
 }
 
 ---@class StorageTable_Debugging
@@ -678,6 +685,11 @@ storage_Global.usingAppVersion = thisAppVersion
 ---@return StorageTable storage_PerTrackPerMode
 function StorageManager.getStorage()
     return storage_PerTrackPerMode
+end
+
+---@return boolean
+function StorageManager.getIncidentPerceptionEnabled()
+    return storage_PerTrackPerMode.incidentPerceptionEnabled == true
 end
 
 ---@return StorageTable_Global storage_Global
