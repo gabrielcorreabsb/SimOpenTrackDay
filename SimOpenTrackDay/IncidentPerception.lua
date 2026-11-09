@@ -158,6 +158,10 @@ local function clearCarPerception(carIndex)
   CarManager.cars_perceptionOffReported[carIndex] = nil
   CarManager.cars_perceptionLateral[carIndex] = nil
   CarManager.cars_perceptionLateralValid[carIndex] = nil
+  CarManager.cars_perceptionPitKnown[carIndex] = nil
+  CarManager.cars_perceptionPitExcluded[carIndex] = nil
+  CarManager.cars_perceptionOffTrackState[carIndex] = nil
+  CarManager.cars_perceptionSpline[carIndex] = nil
   CarManager.cars_perceptionSpinBaseline[carIndex] = nil
   CarManager.cars_perceptionSpinBaselineValid[carIndex] = nil
   CarManager.cars_perceptionSpinTime[carIndex] = nil
@@ -796,6 +800,12 @@ local function processSubject(car, carIndex, dt, now)
   local pitExcluded = pitlane == true or isInPit == true
   if not pitKnown then reportUnknown(UNKNOWN_PIT, carIndex, spline) end
 
+  -- Persist the facts a downstream single-car zone check needs, once per car per update.
+  CarManager.cars_perceptionPitKnown[carIndex] = pitKnown and 1 or 0
+  CarManager.cars_perceptionPitExcluded[carIndex] = pitExcluded and 1 or 0
+  CarManager.cars_perceptionOffTrackState[carIndex] = offTrackState or 0
+  CarManager.cars_perceptionSpline[carIndex] = spline
+
   local stopArmed = CarManager.cars_perceptionStopArmed[carIndex] or 0
   if speedValid and speed >= STOP_ARM_SPEED_KMH then stopArmed = 1 end
 
@@ -1043,6 +1053,35 @@ end
 ---@return boolean
 function IncidentPerception.isEnabled()
   return featureEnabled
+end
+
+---Read-only single-car zone candidacy for the F1-2 layer. It reports facts already classified by
+---processSubject; the caller owns gating by the F1-2 storage flag and the zone lifecycle.
+---Only on-track, non-pit cars within 3 m of the AI line that have a reported spin or stop
+---qualify. Off-track and wrong-way cars never qualify.
+---@param carIndex integer
+---@return string|nil kind, number|nil spline, number|nil lateral, number|nil generation
+function IncidentPerception.getSingleCarZoneCandidate(carIndex)
+  if not featureEnabled or not CarManager then return nil end
+  if not (finiteNumber(carIndex) and carIndex >= 1 and carIndex % 1 == 0) then return nil end
+  local generation = CarManager.cars_perceptionGeneration[carIndex]
+  if generation == nil then return nil end
+  if CarManager.cars_perceptionPitKnown[carIndex] ~= 1 then return nil end
+  if CarManager.cars_perceptionPitExcluded[carIndex] == 1 then return nil end
+  if CarManager.cars_perceptionOffTrackState[carIndex] ~= 1 then return nil end
+  if CarManager.cars_perceptionLateralValid[carIndex] ~= 1 then return nil end
+  local lateral = CarManager.cars_perceptionLateral[carIndex]
+  if not finiteNumber(lateral) or math.abs(lateral) > 3 then return nil end
+  local spline = CarManager.cars_perceptionSpline[carIndex]
+  if not finiteNumber(spline) or spline < 0 or spline > 1 then return nil end
+  local kind
+  if CarManager.cars_perceptionSpinReported[carIndex] == 1 then
+    kind = 'spin'
+  elseif CarManager.cars_perceptionStopReported[carIndex] == 1 then
+    kind = 'stopped'
+  end
+  if kind == nil then return nil end
+  return kind, spline, lateral, generation
 end
 
 return IncidentPerception

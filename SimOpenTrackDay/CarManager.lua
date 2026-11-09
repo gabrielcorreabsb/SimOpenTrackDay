@@ -147,6 +147,14 @@ CarManager.cars_perceptionLateral = {}
 ---@type table<integer,number>
 CarManager.cars_perceptionLateralValid = {}
 ---@type table<integer,number>
+CarManager.cars_perceptionPitKnown = {}
+---@type table<integer,number>
+CarManager.cars_perceptionPitExcluded = {}
+---@type table<integer,number>
+CarManager.cars_perceptionOffTrackState = {}
+---@type table<integer,number>
+CarManager.cars_perceptionSpline = {}
+---@type table<integer,number>
 CarManager.cars_perceptionSpinBaseline = {}
 ---@type table<integer,number>
 CarManager.cars_perceptionSpinBaselineValid = {}
@@ -421,6 +429,10 @@ CarManager.clearCarMemory = function(carIndex)
   CarManager.cars_perceptionOffReported[carIndex] = nil
   CarManager.cars_perceptionLateral[carIndex] = nil
   CarManager.cars_perceptionLateralValid[carIndex] = nil
+  CarManager.cars_perceptionPitKnown[carIndex] = nil
+  CarManager.cars_perceptionPitExcluded[carIndex] = nil
+  CarManager.cars_perceptionOffTrackState[carIndex] = nil
+  CarManager.cars_perceptionSpline[carIndex] = nil
   CarManager.cars_perceptionSpinBaseline[carIndex] = nil
   CarManager.cars_perceptionSpinBaselineValid[carIndex] = nil
   CarManager.cars_perceptionSpinTime[carIndex] = nil

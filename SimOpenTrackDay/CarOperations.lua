@@ -106,19 +106,47 @@ local function observeControl(kind, carIndex, owner, value, resource)
   pcall(observeControlImpl, kind, carIndex, owner, value, resource)
 end
 
--- Ownership is intentionally limited to the AI top-speed and throttle-limit APIs.
+-- Ownership covers the AI top-speed, throttle-limit and caution APIs.
 local CONTROL_LEASE_SECONDS = 1
 local OWNER_PRIORITY = { INCIDENT_STOP = 100, ACCIDENT_NAVIGATION = 90, YELLOW_FLAG = 80, TRAFFIC_YIELD = 50, COMPAT = 10 }
 local OWNER_ORDER = { 'INCIDENT_STOP', 'ACCIDENT_NAVIGATION', 'YELLOW_FLAG', 'TRAFFIC_YIELD', 'COMPAT' }
 CarOperations._topSpeedRequests = CarOperations._topSpeedRequests or {}
 CarOperations._throttleRequests = CarOperations._throttleRequests or {}
+CarOperations._cautionRequests = CarOperations._cautionRequests or {}
 CarOperations._topSpeedApplied = CarOperations._topSpeedApplied or {}
 CarOperations._throttleApplied = CarOperations._throttleApplied or {}
+CarOperations._cautionApplied = CarOperations._cautionApplied or {}
 CarOperations._topSpeedWinner = CarOperations._topSpeedWinner or {}
 CarOperations._throttleWinner = CarOperations._throttleWinner or {}
+CarOperations._cautionWinner = CarOperations._cautionWinner or {}
 CarOperations._topSpeedAttempted = CarOperations._topSpeedAttempted or {}
 CarOperations._throttleAttempted = CarOperations._throttleAttempted or {}
+CarOperations._cautionAttempted = CarOperations._cautionAttempted or {}
 CarOperations._resolutionId = 0
+
+local function isCallable(value)
+  local valueType = type(value)
+  return valueType == 'function' or valueType == 'cdata'
+end
+
+local function controlResource(slots)
+  if slots == CarOperations._topSpeedRequests then return 'setAITopSpeed' end
+  if slots == CarOperations._throttleRequests then return 'setAIThrottleLimit' end
+  return 'setAICaution'
+end
+
+local function controlWinners(slots)
+  if slots == CarOperations._topSpeedRequests then return CarOperations._topSpeedWinner end
+  if slots == CarOperations._throttleRequests then return CarOperations._throttleWinner end
+  return CarOperations._cautionWinner
+end
+
+local function defaultAICaution()
+  local ok, aiValues = pcall(StorageManager.getStorage_AICarValues)
+  local value = ok and type(aiValues) == 'table' and aiValues.defaultAICaution or nil
+  if type(value) ~= 'number' or value ~= value or value < 0 or value > 16 then return 3 end
+  return value
+end
 local INCIDENT_STOP_SECONDS = 10
 local INCIDENT_COUNTER_SECONDS = 1
 local incidentEpisodes = {}
@@ -284,11 +312,12 @@ function CarOperations.updateIncidentStop(carIndex)
   if now < episode.deadline then
     local throttleRequested = CarOperations.requestAIThrottleLimit(carIndex, 0, 'INCIDENT_STOP')
     local topRequested = CarOperations.requestAITopSpeed(carIndex, 0, 'INCIDENT_STOP')
+    local cautionRequested = CarOperations.requestAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT, 'INCIDENT_STOP')
     if rawget(Logger, 'OBS1_ENABLED') == true then
-    s2Diagnostic('control-request', carIndex, episode, 'control-request', 'throttleRequested', throttleRequested,
-        'topSpeedRequested', topRequested)
+      s2Diagnostic('control-request', carIndex, episode, 'control-request', 'throttleRequested', throttleRequested,
+        'topSpeedRequested', topRequested, 'cautionRequested', cautionRequested)
     end
-    if not throttleRequested or not topRequested then return false end
+    if not throttleRequested or not topRequested or not cautionRequested then return false end
     traceMissingAPI(episode, carIndex, 'setAIStopCounter', physics_setAIStopCounter, 'api-stop-counter')
     local counterOK = CarOperations.setAIStopCounter(carIndex, 1)
     traceOutcome(episode, carIndex, 'stopCounter', counterOK)
@@ -297,10 +326,7 @@ function CarOperations.updateIncidentStop(carIndex)
     local gentleOK = CarOperations.setGentleStop(carIndex, true)
     traceOutcome(episode, carIndex, 'gentleStop=true', gentleOK)
     if gentleOK then episode.gentleOwned, episode.gentleConfirmed = true, true end
-    traceMissingAPI(episode, carIndex, 'setAICaution', physics_setAICaution, 'api-caution')
-    local cautionOK = CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT)
-    traceOutcome(episode, carIndex, 'caution=after-accident', cautionOK)
-    if cautionOK then episode.cautionOwned, episode.cautionConfirmed = true, true end
+    episode.cautionOwned = true
     traceMissingAPI(episode, carIndex, 'preventAIFromRetiring', physics_preventAIFromRetiring, 'api-prevent-retiring')
     local retireOK = CarOperations.preventAIFromRetiring(carIndex)
     traceOutcome(episode, carIndex, 'preventRetiring', retireOK)
@@ -312,6 +338,7 @@ function CarOperations.updateIncidentStop(carIndex)
     s2Diagnostic('deadline-release-start', carIndex, episode, 'deadline-release', 'physicalEvidence', 'unavailable')
     CarOperations.releaseAIThrottleLimit(carIndex, 'INCIDENT_STOP')
     CarOperations.releaseAITopSpeed(carIndex, 'INCIDENT_STOP')
+    CarOperations.releaseAICaution(carIndex, 'INCIDENT_STOP')
     episode.releasing = true
   end
   if episode.gentleOwned and not episode.gentleRestored then
@@ -320,20 +347,8 @@ function CarOperations.updateIncidentStop(carIndex)
       episode.gentleOwned, episode.gentleRestored = false, true
     else traceOutcome(episode, carIndex, 'gentleStop=false', false) end
   end
-  if episode.cautionOwned and not episode.cautionRestored then
-    local ok, aiValues = pcall(StorageManager.getStorage_AICarValues)
-    local defaultCaution = ok and type(aiValues) == 'table' and aiValues.defaultAICaution or nil
-    if type(defaultCaution) == 'number' and defaultCaution == defaultCaution
-      and defaultCaution ~= math.huge and defaultCaution ~= -math.huge
-       and CarOperations.setAICaution(carIndex, defaultCaution) then
-      traceOutcome(episode, carIndex, 'caution=restore', true)
-      episode.cautionOwned, episode.cautionRestored = false, true
-    elseif episode.cautionOwned and not episode.cautionRestored then
-      traceOutcome(episode, carIndex, 'caution=restore', false)
-    end
-  end
   if not episode.gentleConfirmed or not episode.gentleRestored or not episode.cautionConfirmed
-    or not episode.cautionRestored or not episode.counterConfirmed or not episode.topConfirmed
+    or not episode.cautionHandedBack or not episode.counterConfirmed or not episode.topConfirmed
     or not episode.throttleConfirmed or not episode.topHandedBack or not episode.throttleHandedBack then return false end
   if not episode.counterUntil or now < episode.counterUntil then return false end
   local completed = incidentCompleted[carIndex] or {}
@@ -374,7 +389,7 @@ local function requestControl(slots, carIndex, value, owner, priority, maximum)
     or value < 0 or value > maximum or now == nil then return false end
   local slot = getControlSlot(slots, carIndex)
   local item = slot.byOwner[owner]
-  local resource = slots == CarOperations._topSpeedRequests and 'setAITopSpeed' or 'setAIThrottleLimit'
+  local resource = controlResource(slots)
   local changed = not item.active or item.value ~= value or item.sessionGeneration ~= CarManager.sessionGeneration
   if not item.active then slot.activeCount = slot.activeCount + 1 end
   item.value, item.priority, item.expiresAt = value, fixedPriority, now + CONTROL_LEASE_SECONDS
@@ -393,22 +408,26 @@ end
 function CarOperations.requestAIThrottleLimit(carIndex, value, owner, priority)
   return requestControl(CarOperations._throttleRequests, carIndex, value, owner, priority, 1)
 end
+function CarOperations.requestAICaution(carIndex, value, owner, priority)
+  return requestControl(CarOperations._cautionRequests, carIndex, value, owner, priority, 16)
+end
 local function releaseControl(slots, carIndex, owner)
   local slot = slots[carIndex]
   local item = slot and slot.byOwner[owner]
   if not item or not item.active then return false end
   item.active = false
   slot.activeCount = slot.activeCount - 1
-  local resource = slots == CarOperations._topSpeedRequests and 'setAITopSpeed' or 'setAIThrottleLimit'
+  local resource = controlResource(slots)
   resetControlTrace(carIndex, resource)
   observeControl('control-request-released', carIndex, owner, item.value, resource)
-  local winners = slots == CarOperations._topSpeedRequests and CarOperations._topSpeedWinner or CarOperations._throttleWinner
+  local winners = controlWinners(slots)
   local winner = winners[carIndex]
   if winner and winner.active and winner.owner == owner then winner.active = false end
   return true
 end
 function CarOperations.releaseAITopSpeed(carIndex, owner) return releaseControl(CarOperations._topSpeedRequests, carIndex, owner) end
 function CarOperations.releaseAIThrottleLimit(carIndex, owner) return releaseControl(CarOperations._throttleRequests, carIndex, owner) end
+function CarOperations.releaseAICaution(carIndex, owner) return releaseControl(CarOperations._cautionRequests, carIndex, owner) end
 
 local function clearCarRequests(slots, carIndex, resource)
   local slot = slots[carIndex]
@@ -426,14 +445,19 @@ function CarOperations.clearOwnedControlsForCar(carIndex)
   trafficPedalOwnership[carIndex], trafficLateralOwnership[carIndex] = nil, nil
   clearCarRequests(CarOperations._topSpeedRequests, carIndex, 'setAITopSpeed')
   clearCarRequests(CarOperations._throttleRequests, carIndex, 'setAIThrottleLimit')
+  clearCarRequests(CarOperations._cautionRequests, carIndex, 'setAICaution')
   local topWinner = CarOperations._topSpeedWinner[carIndex]
   local throttleWinner = CarOperations._throttleWinner[carIndex]
+  local cautionWinner = CarOperations._cautionWinner[carIndex]
   local topApplied = CarOperations._topSpeedApplied[carIndex]
   local throttleApplied = CarOperations._throttleApplied[carIndex]
+  local cautionApplied = CarOperations._cautionApplied[carIndex]
   if topWinner then topWinner.active = false end
   if throttleWinner then throttleWinner.active = false end
+  if cautionWinner then cautionWinner.active = false end
   if topApplied then topApplied.active = false end
   if throttleApplied then throttleApplied.active = false end
+  if cautionApplied then cautionApplied.active = false end
 end
 
 -- A referenced car can disappear without changing this owner's identity. Cancel only
@@ -459,13 +483,18 @@ function CarOperations.clearDependentReferenceControlsForCar(carIndex)
   end
   clearNonIncidentRequests(CarOperations._topSpeedRequests, 'setAITopSpeed')
   clearNonIncidentRequests(CarOperations._throttleRequests, 'setAIThrottleLimit')
+  clearNonIncidentRequests(CarOperations._cautionRequests, 'setAICaution')
   if not preserveIncident then
     local topWinner, throttleWinner = CarOperations._topSpeedWinner[carIndex], CarOperations._throttleWinner[carIndex]
+    local cautionWinner = CarOperations._cautionWinner[carIndex]
     local topApplied, throttleApplied = CarOperations._topSpeedApplied[carIndex], CarOperations._throttleApplied[carIndex]
+    local cautionApplied = CarOperations._cautionApplied[carIndex]
     if topWinner then topWinner.active = false end
     if throttleWinner then throttleWinner.active = false end
+    if cautionWinner then cautionWinner.active = false end
     if topApplied then topApplied.active = false end
     if throttleApplied then throttleApplied.active = false end
+    if cautionApplied then cautionApplied.active = false end
   end
 end
 
@@ -475,8 +504,10 @@ function CarOperations.clearAllOwnedControls()
   for carIndex in pairs(trafficLateralOwnership) do trafficLateralOwnership[carIndex] = nil end
   for carIndex in pairs(CarOperations._topSpeedRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._throttleRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._cautionRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._topSpeedApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._throttleApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._cautionApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
 end
 
 local function resolveControl(carIndex, slots, winners, applied, attempted, setterName, neutral, cap, now, resolutionId)
@@ -512,8 +543,9 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
   if episode and (episode.generation ~= CarManager.getCarGeneration(carIndex)
     or episode.session ~= CarManager.sessionGeneration) then episode = nil end
   local isTopSpeed = setterName == 'setAITopSpeed'
-  local acquiredKey = isTopSpeed and 'topConfirmed' or 'throttleConfirmed'
-  local handedBackKey = isTopSpeed and 'topHandedBack' or 'throttleHandedBack'
+  local isThrottle = setterName == 'setAIThrottleLimit'
+  local acquiredKey = isTopSpeed and 'topConfirmed' or (isThrottle and 'throttleConfirmed' or 'cautionConfirmed')
+  local handedBackKey = isTopSpeed and 'topHandedBack' or (isThrottle and 'throttleHandedBack' or 'cautionHandedBack')
   if winner then
     local writable = CarManager.isWritableAICar(carIndex) == true
     local value = winner.value
@@ -523,7 +555,8 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       -- A lower-priority owner can inherit an equal value without changing the last-setter audit shadow.
       previous.handbackOwner, previous.handbackPriority = winnerName, winner.priority
       if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
-        local controlKey = setterName == 'setAITopSpeed' and 'equal-transfer-top' or 'equal-transfer-throttle'
+        local controlKey = setterName == 'setAITopSpeed' and 'equal-transfer-top'
+          or (setterName == 'setAIThrottleLimit' and 'equal-transfer-throttle' or 'equal-transfer-caution')
         s2Diagnostic('logical-equal-transfer', carIndex, episode, controlKey, 'setter', setterName, 'owner', winnerName)
       end
       if episode then
@@ -534,22 +567,25 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       return
     end
     local api = physics and physics[setterName]
-    if episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) and type(api) ~= 'function' then
-      local apiKey = setterName == 'setAITopSpeed' and 'api-top-speed' or 'api-throttle'
+    if episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) and not isCallable(api) then
+      local apiKey = setterName == 'setAITopSpeed' and 'api-top-speed'
+        or (setterName == 'setAIThrottleLimit' and 'api-throttle' or 'api-caution')
       s2Diagnostic('api-unavailable', carIndex, episode, apiKey, 'operation', setterName)
     end
-    if writable and type(api) == 'function' then
+    if writable and isCallable(api) then
       if attempted[carIndex] == resolutionId then return end
       attempted[carIndex] = resolutionId
       observeControl('control-setter-attempt', carIndex, winnerName, value, setterName)
       if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
-        local attemptKey = setterName == 'setAITopSpeed' and 'attempt-top-speed' or 'attempt-throttle'
+        local attemptKey = setterName == 'setAITopSpeed' and 'attempt-top-speed'
+          or (setterName == 'setAIThrottleLimit' and 'attempt-throttle' or 'attempt-caution')
         s2Diagnostic('setter-attempt', carIndex, episode, attemptKey, 'operation', setterName, 'value', value)
       end
       local ok = pcall(api, carIndex, value)
       observeControl(ok and 'control-setter-returned' or 'control-setter-threw-uncertain', carIndex, winnerName, value, setterName)
       if rawget(Logger, 'OBS1_ENABLED') == true and episode and (winnerName == 'INCIDENT_STOP' or episode.releasing) then
-        local resultKey = setterName == 'setAITopSpeed' and 'result-top-speed' or 'result-throttle'
+        local resultKey = setterName == 'setAITopSpeed' and 'result-top-speed'
+          or (setterName == 'setAIThrottleLimit' and 'result-throttle' or 'result-caution')
         s2Diagnostic(ok and 'setter-returned' or 'setter-threw-uncertain', carIndex, episode,
           resultKey, 'operation', setterName, 'value', value)
       end
@@ -571,18 +607,21 @@ local function resolveControl(carIndex, slots, winners, applied, attempted, sett
       previous.active = false
       return
     end
-    if CarManager.isWritableAICar(carIndex) and physics and type(physics[setterName]) == 'function' then
+    local handbackApi = physics and physics[setterName]
+    if CarManager.isWritableAICar(carIndex) and isCallable(handbackApi) then
       if attempted[carIndex] == resolutionId then return end
         attempted[carIndex] = resolutionId
         observeControl('control-handback-attempt', carIndex, previous.owner or 'UNKNOWN', neutral, setterName)
        if rawget(Logger, 'OBS1_ENABLED') == true and episode and episode.releasing then
-         local handbackKey = setterName == 'setAITopSpeed' and 'handback-attempt-top' or 'handback-attempt-throttle'
+         local handbackKey = setterName == 'setAITopSpeed' and 'handback-attempt-top'
+           or (setterName == 'setAIThrottleLimit' and 'handback-attempt-throttle' or 'handback-attempt-caution')
          s2Diagnostic('handback-attempt', carIndex, episode, handbackKey, 'operation', setterName, 'neutral', neutral)
        end
-        local ok = pcall(physics[setterName], carIndex, neutral)
+        local ok = pcall(handbackApi, carIndex, neutral)
         observeControl(ok and 'control-handback-returned' or 'control-handback-threw-uncertain', carIndex, previous.owner or 'UNKNOWN', neutral, setterName)
          if rawget(Logger, 'OBS1_ENABLED') == true and episode and episode.releasing then
-          local handbackResultKey = setterName == 'setAITopSpeed' and 'handback-result-top' or 'handback-result-throttle'
+          local handbackResultKey = setterName == 'setAITopSpeed' and 'handback-result-top'
+            or (setterName == 'setAIThrottleLimit' and 'handback-result-throttle' or 'handback-result-caution')
           s2Diagnostic(ok and 'handback-returned' or 'handback-threw-uncertain', carIndex,
             episode, handbackResultKey, 'operation', setterName, 'neutral', neutral)
         end
@@ -596,15 +635,22 @@ end
 
 function CarOperations.getOwnedControlState(carIndex)
   local topRequests, throttleRequests = CarOperations._topSpeedRequests[carIndex], CarOperations._throttleRequests[carIndex]
+  local cautionRequests = CarOperations._cautionRequests[carIndex]
   local topWinner, throttleWinner = CarOperations._topSpeedWinner[carIndex], CarOperations._throttleWinner[carIndex]
+  local cautionWinner = CarOperations._cautionWinner[carIndex]
   local topApplied, throttleApplied = CarOperations._topSpeedApplied[carIndex], CarOperations._throttleApplied[carIndex]
+  local cautionApplied = CarOperations._cautionApplied[carIndex]
   if topRequests and topRequests.activeCount == 0 then topRequests = nil end
   if throttleRequests and throttleRequests.activeCount == 0 then throttleRequests = nil end
+  if cautionRequests and cautionRequests.activeCount == 0 then cautionRequests = nil end
   if topWinner and not topWinner.active then topWinner = nil end
   if throttleWinner and not throttleWinner.active then throttleWinner = nil end
+  if cautionWinner and not cautionWinner.active then cautionWinner = nil end
   if topApplied and not topApplied.active then topApplied = nil end
   if throttleApplied and not throttleApplied.active then throttleApplied = nil end
-  return topRequests, topWinner, topApplied, throttleRequests, throttleWinner, throttleApplied
+  if cautionApplied and not cautionApplied.active then cautionApplied = nil end
+  return topRequests, topWinner, topApplied, throttleRequests, throttleWinner, throttleApplied,
+    cautionRequests, cautionWinner, cautionApplied
 end
 
 function CarOperations.resolveOwnedAIControls(topSpeedCapKmh)
@@ -625,6 +671,14 @@ function CarOperations.resolveOwnedAIControls(topSpeedCapKmh)
       or (CarOperations._throttleWinner[carIndex] and CarOperations._throttleWinner[carIndex].active) then
       resolveControl(carIndex, CarOperations._throttleRequests, CarOperations._throttleWinner, CarOperations._throttleApplied,
         CarOperations._throttleAttempted, 'setAIThrottleLimit', 1, nil, now, resolutionId)
+    end
+  end
+  local cautionNeutral = defaultAICaution()
+  for carIndex, slot in pairs(CarOperations._cautionRequests) do
+    if slot.activeCount > 0 or (CarOperations._cautionApplied[carIndex] and CarOperations._cautionApplied[carIndex].active)
+      or (CarOperations._cautionWinner[carIndex] and CarOperations._cautionWinner[carIndex].active) then
+      resolveControl(carIndex, CarOperations._cautionRequests, CarOperations._cautionWinner, CarOperations._cautionApplied,
+        CarOperations._cautionAttempted, 'setAICaution', cautionNeutral, 16, now, resolutionId)
     end
   end
   return true
@@ -905,7 +959,7 @@ CarOperations._currentAntiDragRaceTopSpeeds = CarOperations._currentAntiDragRace
 ---@param caution number @AI caution from 0 to 16.
 CarOperations.setAICaution = function(carIndex, caution)
     if not canWriteCar(carIndex) or type(caution) ~= 'number' or caution ~= caution or caution == math.huge
-      or caution == -math.huge or caution < 0 or caution > 16 or type(physics_setAICaution) ~= 'function' then return false end
+      or caution == -math.huge or caution < 0 or caution > 16 or not isCallable(physics_setAICaution) then return false end
     local ok = pcall(physics_setAICaution, carIndex, caution)
     if not ok then return false end
     CarManager.cars_aiCaution[carIndex] = caution
@@ -1086,7 +1140,7 @@ function CarOperations.stopCarAfterAccident(carIndex)
     CarOperations.requestAITopSpeed(carIndex, 0, 'INCIDENT_STOP')
     CarOperations.setAIStopCounter(carIndex, 1)
     CarOperations.setGentleStop(carIndex, true)
-    CarOperations.setAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT) -- be very cautious
+    CarOperations.requestAICaution(carIndex, CarManager.AICautionValues.AFTER_ACCIDENT, 'INCIDENT_STOP') -- be very cautious
 
     CarOperations.preventAIFromRetiring(carIndex)
     return true

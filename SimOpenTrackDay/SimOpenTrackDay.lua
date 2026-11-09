@@ -201,9 +201,6 @@ CarState_DrivingNormally = require("CarStateMachine.States.CarState_DrivingNorma
 CarState_EasingInYield = require("CarStateMachine.States.CarState_EasingInYield")
 CarState_StayingOnYieldingLane = require("CarStateMachine.States.CarState_StayingOnYieldingLane")
 CarState_EasingOutYield = require("CarStateMachine.States.CarState_EasingOutYield")
-CarState_CollidedWithCar = require("CarStateMachine.States.CarState_CollidedWithCar")
-CarState_CollidedWithTrack = require("CarStateMachine.States.CarState_CollidedWithTrack")
-CarState_AnotherCarCollidedIntoMe = require("CarStateMachine.States.CarState_AnotherCarCollidedIntoMe")
 CarState_EasingInOvertake = require("CarStateMachine.States.CarState_EasingInOvertake")
 CarState_StayingOnOvertakingLane = require("CarStateMachine.States.CarState_StayingOnOvertakingLane")
 CarState_EasingOutOvertake = require("CarStateMachine.States.CarState_EasingOutOvertake")
@@ -256,6 +253,7 @@ local AccidentManager = AccidentManager
 local AccidentManager_registerCollision = AccidentManager.registerCollision
 local AccidentManager_informAboutCarReset = AccidentManager.informAboutCarReset
 local AccidentManager_updateRecovery = AccidentManager.updateRecovery
+local AccidentManager_updateSingleCarZones = AccidentManager.updateSingleCarZones
 local AppIconRenderer = AppIconRenderer
 local CameraManager = CameraManager
 local CameraManager_getFocusedCarIndex = CameraManager.getFocusedCarIndex
@@ -272,7 +270,6 @@ local CarStateMachine = CarStateMachine
 local CarStateMachine_setReasonWhyCantOvertake = CarStateMachine.setReasonWhyCantOvertake
 local CarStateMachine_setReasonWhyCantYield = CarStateMachine.setReasonWhyCantYield
 local CarStateMachine_updateCar = CarStateMachine.updateCar
-local CarStateMachine_handleQueuedAccidents = CarStateMachine.handleQueuedAccidents
 local CarStateMachine_clearPendingLifecycle = CarStateMachine.clearPendingLifecycle
 local UIManager = UIManager
 local RaceFlagManager = RaceFlagManager
@@ -789,10 +786,10 @@ function script.MANIFEST__UPDATE(dt)
   CarManager.currentSortedCarsList = sortedCars
 
   IncidentPerception.update(dt, sortedCars)
+  if AccidentManager_updateSingleCarZones then AccidentManager_updateSingleCarZones(dt) end
 
   -- handle any queued accidents before updating the car state machines
   OnCarEventManager.processQueuedEvents()
-  CarStateMachine_handleQueuedAccidents() -- todo: check if this can be integrated with the processQueuedEvents() above
   AccidentManager_updateRecovery(dt)
 
   -- Human errors: simulate realistic mistakes (brake/traction) with cooldown

@@ -53,6 +53,8 @@ StorageManager.Options ={
     DistanceToStartNavigatingAroundCarInAccident_meters = 14,
 
     IncidentPerceptionEnabled = 15,
+
+    SingleCarZonesEnabled = 16,
 }
 
 ---@enum StorageManager.Options_AICarValues
@@ -289,6 +291,9 @@ local optionsCollection_beforeDoD = {
 
     -- F1-1 observation only: off by default. Reading/writing this flag never grants physics writes.
     { name = StorageManager.Options.IncidentPerceptionEnabled, default=false, min=nil, max=nil },
+
+    -- F1-2 local zones: off by default. Only marks local zones for stopped/spun cars; requires incident perception.
+    { name = StorageManager.Options.SingleCarZonesEnabled, default=false, min=nil, max=nil },
 }
 
 local optionsCollection_PathFinding_beforeDoD = {
@@ -422,6 +427,7 @@ optionsCollection_Behavior_beforeDoD = nil  -- free memory
 ---@field distanceFromAccidentToSeeYellowFlag_meters number
 ---@field distanceToStartNavigatingAroundCarInAccident_meters number
 ---@field incidentPerceptionEnabled boolean
+---@field singleCarZonesEnabled boolean
 
 ---@type StorageTable
 local storageTable = {
@@ -445,6 +451,7 @@ local storageTable = {
     distanceFromAccidentToSeeYellowFlag_meters = StorageManager.options_default[StorageManager.Options.DistanceFromAccidentToSeeYellowFlag_meters],
     distanceToStartNavigatingAroundCarInAccident_meters = StorageManager.options_default[StorageManager.Options.DistanceToStartNavigatingAroundCarInAccident_meters],
     incidentPerceptionEnabled = StorageManager.options_default[StorageManager.Options.IncidentPerceptionEnabled],
+    singleCarZonesEnabled = StorageManager.options_default[StorageManager.Options.SingleCarZonesEnabled],
 }
 
 ---@class StorageTable_Debugging
@@ -690,6 +697,11 @@ end
 ---@return boolean
 function StorageManager.getIncidentPerceptionEnabled()
     return storage_PerTrackPerMode.incidentPerceptionEnabled == true
+end
+
+---@return boolean
+function StorageManager.getSingleCarZonesEnabled()
+    return storage_PerTrackPerMode.singleCarZonesEnabled == true
 end
 
 ---@return StorageTable_Global storage_Global

@@ -100,6 +100,49 @@ The existing logger envelope still says `[OBS1]`; this does not mean OBS1 was en
 
 All items are **pending**. Thresholds are initial guesses. Geometry uses cached approximately 8 m spline buckets (maximum 4096), planar tangents and lateral distances; banking/elevation and tight corners need particular scrutiny. Spin history is initialized at the first valid heading sample and refreshed near alignment (within 20 degrees); initially sideways cars cannot establish that a spin happened before observation began. Contact groups compare circular spline distance with the first contact, so chains drifting beyond 15 m form separate groups. Groups report the maximum available participant speed drop, not individual impact severity. Player index 0 is not an observation subject, only a possible contact party. Fixed pools bound work (16 groups, 48 participant samples, 64 debounced pairs); exhaustion reports `field=poolCapacity` and can lose observations. These limits and actual CSP field behavior require in-game validation before acceptance.
 
+## F1-2 — local single-car zones and arbitrated caution (branch lane, pending)
+
+Contract: [issue #4](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/4). Depends on F1-1; every item is **pending** and maintainer-owned. Local compilation and mocks cannot check any CSP behavior below.
+
+### Enable and read the logs
+
+1. Enable **Incident perception (log only)** so the perception accessor has data.
+2. Enable **Local zones for stopped or spun cars (experimental)** in Advanced -> Accidents. It is on its own line and does not require **Handle accidents**, but enable **Handle accidents** to exercise the 50 km/h yellow-zone and 30 km/h navigating responses.
+3. The declared flag is `StorageManager.Options.SingleCarZonesEnabled`; the stored field is `singleCarZonesEnabled`, default `false`. It persists through the existing per-track/per-mode storage schema. Do not clear other settings.
+4. Keep the global Caution flag off. F1-2 only arbitrates the app's own caution requests.
+
+Search the CSP log for `[F1-2]` and these kind fields:
+
+- `kind=f1-2-single-car-zone-declared` — detail `[F1-2] declared <kind> zone incident=<n> car=<n> spline=<0..1> lateral=<m>`
+- `kind=f1-2-single-car-zone-cleared` — detail `[F1-2] cleared <kind> zone incident=<n> car=<n>`
+- `kind=f1-2-single-car-zone-declined` — detail `[F1-2] zone declined incident=<n> car=<n>` (zone geometry could not be declared; the record is rolled back)
+- `kind=f1-2-single-car-zone-skipped` — detail `[F1-2] candidate skipped <spin|stopped> car=<n> reason=in-contact-incident incident=<n>`: a valid candidate whose car is already in a contact incident, which owns the zone. Logged once per car and incident; diagnostic evidence that the path reads perception.
+
+**Runs 1–3 (2026-11-08/09, CSP 4305, Interlagos):** contact zones, spin, stopped and wrong-way perception all worked. No `[F1-2]` line appeared, because every spun or stopped car was already in a contact incident, and no AI spun solo in a 9-minute AI-only run. The skipped diagnostic was added for run 4.
+
+**Run 4 (2026-11-09): accepted as limited.**
+- Cars 31 and 3 spun **off track** after contacts and were correctly not candidates. AC then sent car 31 back to the pits (`Resetting car #31 data`) 14 s later.
+- AC's native AI either recovers from a spin in under a second or sends a stuck car to the pits, so a single-car on-line candidate is rare.
+- **Observed:** contact zones still work after the dormant states were removed; caution arbitration runs without errors; off-track spins are excluded.
+- **Pending (F1-6):** creation of a single-car zone. The flag stays off by default.
+
+Caution arbitration uses the existing control records: `kind=control-request`, `control-winner`, `control-request-released`, `control-request-expired`, `control-setter-attempt`, `control-setter-returned`, `control-handback-attempt`, `control-handback-returned` with `resource=setAICaution` (the same records also carry `setAITopSpeed` and `setAIThrottleLimit`). With the development panel enabled, the inspector lists **Caution requests** and **Caution control** after the throttle rows; “applied” is the last value the app sent because CSP has no caution read-back. The logger envelope remains `[OBS1]`; F1-2 records require the F1-2 flag and perception to be on. The logger is bounded and can truncate a busy session.
+
+### Maintainer scenarios
+
+- [ ] **Spin on the racing line:** an AI spins on track, stays within 3 m of the AI line and outside the pit lane. Exactly one `declared` record appears. Cars behind enter the yellow zone (top speed 50, owner `YELLOW_FLAG`); closer cars navigate (top speed 30, owner `ACCIDENT_NAVIGATION`).
+- [ ] **Stopped on the line:** same as above for a car stopped below 5 km/h on the racing line. No per-frame F1-2 records while the state is unchanged.
+- [ ] **Gravel/run-off:** a car stuck in gravel or run-off does **not** create a zone, even when CSP reports its wheels as on track. `lateral` must be within 3 m for a zone.
+- [ ] **Track-limit excursion:** a car with one or two wheels beyond the edge (`w:on l:off`) does **not** create a zone.
+- [ ] **Pit lane/pit box:** a stopped or spun car in the pit lane does **not** create a zone.
+- [ ] **Clear rule:** after the car moves away (above 5 km/h or leaves the zone band), the zone clears about 3 s later with one `cleared` record. Recovery/reset/session end do not leave a synthetic incident behind.
+- [ ] **Flag off:** with the new checkbox off, or perception off, there are no `[F1-2]` records and normal app behavior is unchanged.
+- [ ] **Touches:** a contact with speed drop under about 5 km/h is a touch, not an incident; it creates no accident record and no zone.
+- [ ] **Caution priority:** with overlapping requests, the inspector and control records show `INCIDENT_STOP` (100) over `ACCIDENT_NAVIGATION` (90) over `YELLOW_FLAG` (80). Expired/released requests fall back to the next owner and finally to the default caution 3. Verify the 1 s lease does not leave the car at 0 or 16 after a state exits.
+- [ ] **Lifecycle/load:** pause, replay, session restart, jump and recycled indices do not keep stale synthetic incidents or zones. Check frame time with 20–30 AI cars while zones are active; record any hitch separately.
+
+Thresholds are initial: spin/stopped must be sustained by F1-1, the car must be on track, within 3 m of the AI line and not in the pit lane. CSP can include gravel/run-off inside the normalized track width, so “on track” alone is not sufficient; the AI-line distance and pit exclusion are mandatory. No lateral avoidance (F1-3) and no recovery holds (F1-4) are part of this slice.
+
 ## M1a — player isolation and lifecycle
 
 - [ ] Callback order and victim/player reset.
