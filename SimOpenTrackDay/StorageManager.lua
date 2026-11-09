@@ -434,6 +434,7 @@ optionsCollection_Behavior_beforeDoD = nil  -- free memory
 ---@field distanceToStartNavigatingAroundCarInAccident_meters number
 ---@field incidentPerceptionEnabled boolean
 ---@field singleCarZonesEnabled boolean
+---@field lateralAvoidanceEnabled boolean
 
 ---@type StorageTable
 local storageTable = {
@@ -458,6 +459,7 @@ local storageTable = {
     distanceToStartNavigatingAroundCarInAccident_meters = StorageManager.options_default[StorageManager.Options.DistanceToStartNavigatingAroundCarInAccident_meters],
     incidentPerceptionEnabled = StorageManager.options_default[StorageManager.Options.IncidentPerceptionEnabled],
     singleCarZonesEnabled = StorageManager.options_default[StorageManager.Options.SingleCarZonesEnabled],
+    lateralAvoidanceEnabled = StorageManager.options_default[StorageManager.Options.LateralAvoidanceEnabled],
 }
 
 ---@class StorageTable_Debugging
