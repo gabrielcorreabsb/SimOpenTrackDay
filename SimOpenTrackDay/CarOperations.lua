@@ -1845,8 +1845,9 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
   local startMeters = lateralMeters(myLat, leftDistance, rightDistance)
   startLateralQuintic(record, now, startMeters, targetMeters, LATERAL_RAMP_FACTOR * edgeMeters)
   Logger_observe('f1-3-avoid-engaged', carIndex, CarManager.getCarGeneration(carIndex),
-    nil, nil, string_format('[F1-3] engaged car=%d obstacle=%d side=%s metres=%.2f distance=%.1f',
-      carIndex, obstacle.index, side < 0 and 'left' or 'right', targetMeters, distance or -1),
+    nil, nil, -- Logger keeps 48 characters per field: keep the numbers inside that budget.
+    string_format('[F1-3] eng o=%d %s %.1fm d=%.0f e=%.1f',
+      obstacle.index, side < 0 and 'L' or 'R', targetMeters, distance or -1, edgeMeters or -1),
     nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
   local currentMeters = record.lastMeters
   CarOperations.requestLateralOffset(carIndex, currentMeters, 'ACCIDENT_NAVIGATION', 'absolute',
