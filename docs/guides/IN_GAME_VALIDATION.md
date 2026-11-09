@@ -120,6 +120,12 @@ Search the CSP log for `[F1-2]` and these kind fields:
 
 **Runs 1–3 (2026-11-08/09, CSP 4305, Interlagos):** contact zones, spin, stopped and wrong-way perception all worked. No `[F1-2]` line appeared, because every spun or stopped car was already in a contact incident, and no AI spun solo in a 9-minute AI-only run. The skipped diagnostic was added for run 4.
 
+**Run 4 (2026-11-09): accepted as limited.**
+- Cars 31 and 3 spun **off track** after contacts and were correctly not candidates. AC then sent car 31 back to the pits (`Resetting car #31 data`) 14 s later.
+- AC's native AI either recovers from a spin in under a second or sends a stuck car to the pits, so a single-car on-line candidate is rare.
+- **Observed:** contact zones still work after the dormant states were removed; caution arbitration runs without errors; off-track spins are excluded.
+- **Pending (F1-6):** creation of a single-car zone. The flag stays off by default.
+
 Caution arbitration uses the existing control records: `kind=control-request`, `control-winner`, `control-request-released`, `control-request-expired`, `control-setter-attempt`, `control-setter-returned`, `control-handback-attempt`, `control-handback-returned` with `resource=setAICaution` (the same records also carry `setAITopSpeed` and `setAIThrottleLimit`). With the development panel enabled, the inspector lists **Caution requests** and **Caution control** after the throttle rows; “applied” is the last value the app sent because CSP has no caution read-back. The logger envelope remains `[OBS1]`; F1-2 records require the F1-2 flag and perception to be on. The logger is bounded and can truncate a busy session.
 
 ### Maintainer scenarios
