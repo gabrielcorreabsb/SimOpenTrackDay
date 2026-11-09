@@ -77,6 +77,16 @@ Each slice has its own GitHub issue, using the ticket format below, and stays **
 | **F1-5** Incident hotspots | A learned per-track map (about 24 m bins, upstream spreading, decay, cap) stored through `StorageManager`; near a hotspot it only raises caution, bounded, through the caution arbitration | F1-1, F1-2 | — | **Open** ([#7](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/7)) |
 | **F1-6** Integration | Joint in-game validation, roadmap and changelog; closes F1 / v0.3 | all | S9 | **Open** ([#8](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/8)) |
 
+## Default-value fixes (from the 2026-11-09 audit)
+
+See [DEFAULTS_AUDIT.md](reference/DEFAULTS_AUDIT.md). These run alongside F1, each with its own ticket:
+
+| Ticket | Scope | Status |
+| --- | --- | --- |
+| [#9](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/9) D1+D3 | Racing line in normal driving (no offset to the track middle); `overrideAiAwareness` off. A/B first | **Open** |
+| [#10](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/10) D5+D2 | Overtaking pace boost capped; yield/overtake lanes ±0.6 or width-based | **Open** |
+| [#11](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/11) D4+D6+D7+D8 | Respect the launcher's AI level and aggression; caution 1 and aggression ≤ 0.95 per the SDK | **Open** |
+
 ## Rules for every phase slice
 
 Each slice gets a short ticket that the user approves before any edit. The ticket states:

@@ -20,6 +20,10 @@ This audit reviews the default values in `SimOpenTrackDay/StorageManager.lua` ag
 | D9 | `globalTopSpeedLimitKmh` (0) | 0 means no cap (`cap > 0` check) | None | Keep; label it "0 = off" in the UI |
 | D10 | `humanErrorEnabled` (true) | The app injects AI mistakes by default | Low; product choice | Keep, but note that it is on by default; F3 personalities will scale it |
 
+## Tickets
+
+#9 (D1+D3), #10 (D5+D2), #11 (D4+D6+D7+D8).
+
 ## Proposed order
 
 1. **D1** (racing line) and **D3** (awareness): biggest realism and safety gain. Change behind an A/B test in game.
