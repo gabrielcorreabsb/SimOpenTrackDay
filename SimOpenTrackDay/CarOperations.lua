@@ -1901,6 +1901,51 @@ CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsLis
 end
 
 
+-- Development-only offset calibration (Constants.ENABLE_OFFSET_CALIBRATION). Holds ONE AI car (the
+-- camera-focused AI, or the first writable AI) at a fixed sequence of requests, 6 s each, and logs
+-- the requested value next to the measured track x and metres from the AI line every 2 s. Used to
+-- learn the scale of setAISplineOffset/setAISplineAbsoluteOffset; it never runs in a release.
+local CALIBRATION_STEP_SECONDS = 6
+local CALIBRATION_LOG_SECONDS = 2
+local CALIBRATION_UNITS = { 'normalized', 'normalized', 'normalized', 'absolute', 'absolute', 'absolute' }
+local CALIBRATION_VALUES = { -0.6, 0, 0.6, -3, 0, 3 }
+local calibrationTime, calibrationLastLog, calibrationCar = 0, -1, nil
+
+function CarOperations.updateOffsetCalibration(dt)
+  if not finiteNumber(dt) or dt <= 0 or dt > 0.25 then return end
+  local sim = ac.getSim()
+  local candidate = sim and sim.focusedCar
+  if not (finiteNumber(candidate) and candidate > 0 and CarManager.isWritableAICar(candidate) == true) then
+    candidate = nil
+    for i = 1, (sim and sim.carsCount or 0) - 1 do
+      if CarManager.isWritableAICar(i) == true then candidate = i; break end
+    end
+  end
+  if candidate == nil then return end
+  if candidate ~= calibrationCar then
+    if calibrationCar ~= nil then CarOperations.releaseLateralOffset(calibrationCar, 'ACCIDENT_NAVIGATION') end
+    calibrationCar, calibrationTime, calibrationLastLog = candidate, 0, -1
+    Logger.log(string_format('[CAL] start car=%d', candidate))
+  end
+  calibrationTime = calibrationTime + dt
+  local step = math.floor(calibrationTime / CALIBRATION_STEP_SECONDS) % #CALIBRATION_VALUES + 1
+  local unit, value = CALIBRATION_UNITS[step], CALIBRATION_VALUES[step]
+  CarOperations.requestLateralOffset(candidate, value, 'ACCIDENT_NAVIGATION', unit,
+    unit == 'normalized' and value or 0, 1, false, unit == 'normalized' and value or 0)
+
+  if calibrationTime - calibrationLastLog < CALIBRATION_LOG_SECONDS then return end
+  calibrationLastLog = calibrationTime
+  local car = ac.getCar(candidate)
+  if car == nil then return end
+  local x = CarManager_getActualTrackLateralOffset(candidate, car.position)
+  local left, right = readSplineSides(car.splinePosition)
+  local metres = (finiteNumber(x) and left) and lateralMeters(x, left, right) or nil
+  Logger.log(string_format('[CAL] car=%d step=%d %s req=%.2f x=%s m=%s L=%s R=%s s=%.4f v=%.0f',
+    candidate, step, unit, value, finiteNumber(x) and string_format('%.3f', x) or 'na',
+    metres and string_format('%.2f', metres) or 'na', left and string_format('%.2f', left) or 'na',
+    right and string_format('%.2f', right) or 'na', car.splinePosition or -1, car.speedKmh or -1))
+end
+
 ---@param overtakingCar ac.StateCar
 ---@param yieldingCar ac.StateCar?
 ---@return number aiCaution
