@@ -35,7 +35,7 @@ Last reconciled: 2026-11-08. This replaces the M0–M9 / S1–S9 plan with visio
 
 | Phase | Vision (what the player sees) | Main scope | Absorbs | Status |
 | --- | --- | --- | --- | --- |
-| **F0** Validate the base | The current app is safe, observable and runs cleanly on the target CSP | Refresh the SDK to build 4305; minimum-build gate; close the pending in-game checks; read-back watchdog for values another mod overwrites; evaluate `ac.onCarAIToggle` for player/autopilot isolation; v0.2 release | M0, M1a, M1b, S1–S7 (Local), S2-D, S3, OBS1–3, S4, S5-A, S6-A, S7-1/2/1F/1G | **Local**, CSP acceptance pending |
+| **F0** Validate the base | The current app is safe, observable and runs cleanly on the target CSP | Refresh the SDK to build 4305; minimum-build gate; close the pending in-game checks; read-back watchdog for values another mod overwrites; evaluate `ac.onCarAIToggle` for player/autopilot isolation; v0.2 release | M0, M1a, M1b, S1–S7 (Local), S2-D, S3, OBS1–3, S4, S5-A, S6-A, S7-1/2/1F/1G | **Done** (v0.2): closing session observed in CSP 4305. Limited: S1 reset, forced build-gate failure, rollback not run. Other M1a/M1b/S checks remain in [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md) |
 | **F1** Safe incident | A crash slows the cars behind locally, they go around it, and the crashed car gets going again on its own | Obstruction detection before contact; real lateral avoidance (`setAISplineAbsoluteOffset`); local yellow only (zones + speed cap, no global flag); spin and wrong-way detection; contact grouping; self-recovery without teleport (back off walls, wait for a gap to rejoin); learned per-track incident hotspots that feed caution only | S7-1H, S7-3, S7-4, S8, S9 | **Open** |
 | **F2** Traffic and pace | Traffic feels organic: out lap, warm-up, push laps and cool-down; faster classes come through cleanly | Gap/TTC with history and hysteresis; per-car driving phases; car class detection for mixed grids; cold-tyre and dirty-air behavior through existing AI parameters only; slow lap-to-lap pace drift | M2, M4 | **Open** |
 | **F3** Personalities | Every driver is different: the careful novice, the consistent regular, the impatient hotshot | Seeded per session and identity; attributes (skill, consistency, awareness, patience, aggression); mistakes scaled to pace on top of `HumanErrorManager`; presets such as Mixed Trackday; optional driver names (`setAIDriverName`); real consumers for `BehaviorPolish` | M3 | **Open** |
@@ -52,11 +52,30 @@ v0.2 is complete when the existing AI behavior is safe and observable on the tar
 
 1. ~~Integrate the incident lane~~: done (`04b2bd7`).
 2. ~~Repository layout~~: done. The copied folder was smoke-tested in game on 2026-11-08 (app loads and works).
-3. **Refresh `sdk/ac_apps/`** from the build 4305 SDK and add the minimum-build gate ([issue #1](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/1)): **observed in CSP** on 2026-11-08 (build 4305: `[F0-CSP-GATE] build=4305 min=4305 gate passed`, then `mode=live`). The forced-failure check (`MIN_CSP_BUILD` above the installed build) is still **pending**.
-4. **Close the pending in-game checks** for M1a, M1b and S1–S7 using [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md).
-5. **Release:** bump the `Constants.lua`/`manifest.ini` version to `0.2`, update `CHANGELOG.md`, and do a manual install and rollback test.
+3. ~~Refresh `sdk/ac_apps/`~~ from the build 4305 SDK and add the minimum-build gate ([issue #1](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/1)): **observed in CSP** on 2026-11-08 (build 4305: `[F0-CSP-GATE] build=4305 min=4305 gate passed`, then `mode=live`). The forced-failure check (`MIN_CSP_BUILD` above the installed build) is still **pending**.
+4. ~~Close the pending in-game checks~~: the minimum closing set was observed (see item 5); the full M1a/M1b/S1–S7 lists stay in [IN_GAME_VALIDATION.md](guides/IN_GAME_VALIDATION.md) as limited/pending.
+5. ~~Release~~: done, tagged `v0.2` on 2026-11-08. The [v0.2 closing session](guides/IN_GAME_VALIDATION.md#v02-closing-session-minimum-set) was observed in CSP 4305. S1 (session reset with an active zone) is **limited**, and rollback was **not run** by the maintainer's decision.
 
 F1 is the first phase for v0.3.
+
+## F1 slices (v0.3)
+
+Each slice has its own GitHub issue, using the ticket format below, and stays **Open** until that ticket is approved. Rules for every slice:
+- Every new write goes through arbitration.
+- Each slice has its own flag, off by default, declared in the `StorageManager` schema.
+- No per-frame allocations.
+- Logs go through `Logger.observe`.
+- UI text uses msgids.
+
+| Slice | Objective | Depends on | Absorbs | Status |
+| --- | --- | --- | --- | --- |
+| **F1-0** Conflict watch + AI toggle | Read back `aiLevel`/`aiAggression` after the app writes them and log when another writer changes them (observation only); evaluate `ac.onCarAIToggle` to clear a car's state when it switches between AI and human | — | F0 leftovers | **Open** ([#2](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/2)) |
+| **F1-1** Incident perception | Observation only, per car: stopped timer, off-track (`wheelsOutside`, lateral vs `ac.getTrackAISplineSides`), spin and wrong-way (heading vs track tangent), contact on the rising edge of `collisionDepth` with the measured speed drop, and grouping of nearby contacts into one incident. Remove the per-frame table allocation in the lateral-offset cache | — | S7-3 (detection) | **Open** ([#3](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/3)) |
+| **F1-2** Local zones + arbitrated caution | Single-car incidents (spun or stopped on track) also create zones; caution joins the owner/priority arbitration, which resolves the yellow 3 / navigate 0 / stop 16 conflict; decide the fate of the dormant incident stop and the `COLLIDED_*` states; bucket-based lookup for upcoming accidents | F1-1 | S7-1H, S8 | **Open** ([#4](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/4)) |
+| **F1-3** Real lateral avoidance | Detect an obstruction before contact (slow car ahead in my lateral band for about 2 s), pick the free side from the track edges, and steer through a new lateral-offset arbitration (accident > yellow > traffic) with slew and a smooth transition, using `setAISplineAbsoluteOffset` (metres); return to the line once past by 10 m or more | F1-2 | S7-3, S7-4 | **Open** ([#5](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/5)) |
+| **F1-4** Self-recovery without teleport | monitor → hold → wait for a gap → release → verify motion. A stuck car is held while traffic approaches and released when the gap is clear; it is handed back to AC after a timeout. Reversing off a wall is behind an experimental flag. Repositioning stays out of scope (a future opt-in) | F1-1, F1-2 | S2 (revised) | **Open** ([#6](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/6)) |
+| **F1-5** Incident hotspots | A learned per-track map (about 24 m bins, upstream spreading, decay, cap) stored through `StorageManager`; near a hotspot it only raises caution, bounded, through the caution arbitration | F1-1, F1-2 | — | **Open** ([#7](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/7)) |
+| **F1-6** Integration | Joint in-game validation, roadmap and changelog; closes F1 / v0.3 | all | S9 | **Open** ([#8](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/8)) |
 
 ## Rules for every phase slice
 

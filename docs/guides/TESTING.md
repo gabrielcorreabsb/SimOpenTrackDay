@@ -62,7 +62,7 @@ This is a minimal manual smoke test to run after installing a test copy. The inc
 
 ### If required CSP APIs are missing
 
-If CSP functions are missing, inspect operational compatibility messages and CSP logs. Startup diagnostics were removed by an authorized project change; do not expect them. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the compatibility error modal; do not rely on a modal to detect failure. Use a CSP version that provides the APIs required by the app; this guide does not specify a minimum version.
+If CSP functions are missing, inspect operational compatibility messages and CSP logs. Startup diagnostics were removed by an authorized project change; do not expect them. `CSPCompatibilityManager.ShowErrorModalDialog = false` intentionally disables the compatibility error modal; do not rely on a modal to detect failure. The app requires CSP build `Constants.MIN_CSP_BUILD` (4305, CSP 0.3.2-preview2) or newer; below it, or when the build cannot be read, it stays inert and logs one `[F0-CSP-GATE]` line.
 
 - If required APIs are unavailable, update CSP through a trusted channel or disable the app in Lua Apps until compatibility is resolved.
 

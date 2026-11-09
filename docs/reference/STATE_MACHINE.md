@@ -106,16 +106,16 @@ In other words: `entry` runs in the frame after `transition`; `exit` is immediat
 | DEFENDING_POSITION  | holds the racing line for defenseDuration_s under   |
 |                     | pressure; when it expires -> EASING_IN_YIELD.       |
 +---------------------+------------------------------------------------------+
-| DRIVING_IN_YELLOW_  | enters an accident zone: reduces speed,             |
-| FLAG_ZONE           | hazards on, collisions disabled.                    |
+| DRIVING_IN_YELLOW_  | inside an accident zone: caution 3, top speed 50    |
+| FLAG_ZONE           | (owner YELLOW_FLAG), hazards on. No collision change.|
 +---------------------+------------------------------------------------------+
-| NAVIGATING_AROUND_  | avoids a stopped/crashed car via                    |
-| ACCIDENT            | CollisionAvoidanceManager.computeDesiredLateralOffset|
+| NAVIGATING_AROUND_  | close to an accident: caution 0, top speed 30       |
+| ACCIDENT            | (owner ACCIDENT_NAVIGATION). No lateral avoidance.  |
 +---------------------+------------------------------------------------------+
-| COLLIDED_WITH_TRACK | stubs: only stop the car. No transition.            |
-| COLLIDED_WITH_CAR   |                                                      |
-| ANOTHER_CAR_COLLIDED| (this state has minimumTimeInState = 10s)           |
-| _INTO_ME            |                                                      |
+| COLLIDED_WITH_TRACK | registered but never entered today (no caller      |
+| COLLIDED_WITH_CAR   | queues them). The two COLLIDED_WITH_CAR /           |
+| ANOTHER_CAR_COLLIDED| ANOTHER_CAR states exit when the incident stop      |
+| _INTO_ME            | completes; the stop itself is never admitted.       |
 +---------------------+------------------------------------------------------+
 | AFTER_CUSTOMAIFLOOD | after AI Flood respawn: resets fuel/RPM/gear and    |
 | _TELEPORT           | reactivates the car. Empty transition (commented).  |
@@ -189,32 +189,34 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 ### 3.9 DRIVING_IN_YELLOW_FLAG_ZONE
 - **File:** `CarStateMachine/States/CarState_DrivingInYellowFlagZone.lua` — **min:** `0`
 - **Entry:** empty.
-- **Update:** `setAITopSpeed(50)`, `toggleTurningLights(Hazards)`, `toggleCarCollisions(false)`.
+- **Update:** `CarOperations.setAICaution(3)` (direct write, not arbitrated), `requestAITopSpeed(50, 'YELLOW_FLAG')` renewed every frame (1 s lease), hazard lights. Collisions are **not** changed.
 - **Transitions:** `isCarComingUpToAccident` within `distanceToStartNavigatingAroundCarInAccident_meters` -> `NAVIGATING_AROUND_ACCIDENT`; left the zone -> `DRIVING_NORMALLY`.
-- **Exit:** top speed and turning lights.
+- **Exit:** releases the `YELLOW_FLAG` top speed and turns the lights off.
 
 ### 3.10 NAVIGATING_AROUND_ACCIDENT
 - **File:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
 - **Entry:** empty.
-- **Update:** `setAICaution(0)`, `setAITopSpeed(30)`; recalculates the nearest accident; offset via `CollisionAvoidanceManager.computeDesiredLateralOffset`; `driveSafelyToSide(..., 5, true, false)`; `preventAIFromRetiring`; `toggleCarCollisions(false)`.
+- **Update:** `CarOperations.setAICaution(0)` (direct write, not arbitrated), `requestAITopSpeed(30, 'ACCIDENT_NAVIGATION')`, recalculates the nearest accident, `preventAIFromRetiring`. **There is no lateral avoidance:** the `CollisionAvoidanceManager` call and `driveSafelyToSide` are commented out, so the last offset from normal driving stays in force. Collisions are **not** changed.
 - **Transitions:** no accident index, accident resolved, car not found, or we have passed it and are `> 10 m` away -> `DRIVING_NORMALLY`; nearest accident detected -> remain.
-- **Exit:** caution, top speed, pedals, and `cars_navigatingAroundAccidentIndex = 0`.
+- **Exit:** `removeAICaution`, releases the `ACCIDENT_NAVIGATION` top speed, resets gas and brake, and `cars_navigatingAroundAccidentIndex = 0`.
 
 ### 3.11 COLLIDED_WITH_TRACK
 - **File:** `CarStateMachine/States/CarState_CollidedWithTrack.lua` — **min:** `0`
-- **Entry/Exit:** empty. **Update:** `stopCarAfterAccident(carIndex)`.
-- **Transition:** empty — **terminal state**.
+- **Update:** `stopCarAfterAccident(carIndex)`. **Transition:** empty.
+- **Never entered today:** the track-collision branch in `CarStateMachine.lua` is commented out.
 
 ### 3.12 COLLIDED_WITH_CAR
 - **File:** `CarStateMachine/States/CarState_CollidedWithCar.lua` — **min:** `0`
-- **Entry/Exit:** empty. **Update:** `stopCarAfterAccident(carIndex)` + `toggleCarCollisions(false)`.
-- **Transition:** empty — **terminal state**.
+- **Entry/Update/Exit:** empty.
+- **Transition:** -> `DRIVING_NORMALLY` once the incident stop is no longer active and has completed.
+- **Never entered today:** `handleQueuedAccidents` only logs `registered-contact-no-s2-admission`, and `CarOperations.admitIncidentStop` has no callers.
 
 ### 3.13 ANOTHER_CAR_COLLIDED_INTO_ME
-- **File:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `10`
-- **Entry:** `ac.overrideCarControls` (horn commented out).
-- **Update:** `stopCarAfterAccident(carIndex)` + `toggleCarCollisions(false)`.
-- **Transition:** empty — **terminal state** (the 10 s minimum does not lead anywhere). **Exit:** empty.
+- **File:** `CarStateMachine/States/CarState_AnotherCarCollidedIntoMe.lua` — **min:** `0`
+- **Entry:** calls `ac.overrideCarControls(carIndex)` and does nothing with it. **Update/Exit:** empty.
+- **Transition:** same as 3.12. **Never entered today**, for the same reason.
+
+The fate of 3.11–3.13 and of the dormant incident stop is decided in roadmap slice F1-2.
 
 ### 3.14 AFTER_CUSTOMAIFLOOD_TELEPORT
 - **File:** `CarStateMachine/States/CarState_AfterCustomAIFloodTeleport.lua` — **min:** `0`
@@ -280,9 +282,9 @@ Otherwise, records a `ReasonWhyCantOvertake` (e.g. `YieldingCarIsFaster`, `Yield
 
 ## 6. Cautions
 
-- **A long minimum time can trap the AI.** Use `minimumTimeInState = 0` in most cases; `10` is the largest value used (`ANOTHER_CAR_COLLIDED_INTO_ME`).
+- **A long minimum time can trap the AI.** Use `minimumTimeInState = 0` in most cases.
 - **Circular dependencies need an escape.** If A transitions to B and B to A, ensure an exit timer/condition (e.g. the `DEFENDING_POSITION` timer).
-- **Terminal states are intentional** (`COLLIDED_*`): an empty transition keeps the car stopped. Do not add transitions without reviewing `AccidentManager`.
+- **`COLLIDED_*` states are dormant** (never entered). `COLLIDED_WITH_TRACK` has an empty transition and would keep the car stopped; do not wire it up without reviewing `AccidentManager` (see slice F1-2).
 - **References saved by the previous state.** `EASING_IN_YIELD` and `EASING_IN_OVERTAKE` depend on `cars_currentlyYieldingCarToIndex` / `cars_currentlyOvertakingCarIndex` being set before entry.
 - **`changeState` resets `cars_timeInCurrentState`** — do not rely on the previous time after a transition.
 - **Transitions are queued:** `entry` runs at the start of the next `updateCar`, not in the frame that made the decision.

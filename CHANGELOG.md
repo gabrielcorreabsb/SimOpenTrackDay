@@ -2,7 +2,7 @@
 
 Entries describe source changes. Unless an entry says otherwise, in-game (CSP) acceptance is still pending; see [docs/guides/IN_GAME_VALIDATION.md](docs/guides/IN_GAME_VALIDATION.md).
 
-## Unreleased (0.2)
+## 0.2 — 2026-11-08
 
 Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -12,6 +12,8 @@ Theme: a safe track-day foundation. Scope and status are in [docs/ROADMAP.md](do
 - Read-only development inspector for gates, lifecycle and control ownership in the Overview tab. It is off by default (`ENABLE_DEVELOPMENT_DEBUG_PANEL = false`).
 
 ### Changed
+- Version set to `0.2` in `Constants.lua` and `manifest.ini`.
+- Docs aligned with the code: incident states in `STATE_MACHINE.md` (no collision disabling, no lateral avoidance, dormant `COLLIDED_*` states), the removed `[RTD-DIAG-*]` rule in `AGENTS.md`, the minimum CSP build in `TESTING.md`, and a v0.2 closing session in `IN_GAME_VALIDATION.md`.
 - UI: a responsive borderless window, a compact car list, native control wrappers, a shared lane-target design, and a polished header and close button.
 - **M1a:** per-car writes are blocked for the player, autopilot, humans and invalid indices, and nothing actuates while paused, in replay, disabled or without physics permission. `physics.allowed` is accepted as a Lua function or a callable `cdata`. Identity is tracked by generation, and stale events are discarded.
 - **M1b:** top speed and throttle go through arbitration, which tracks owners, priority, expiry and the requested vs applied value.

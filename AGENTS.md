@@ -29,7 +29,7 @@
 
 ## Compatibility and validation
 
-- Preserve the nine `[RTD-DIAG-*]` records and `CSPCompatibilityManager.ShowErrorModalDialog = false` unless a separately authorized and validated change requires otherwise.
+- Startup diagnostics (the former `[RTD-DIAG-*]` records) were removed by an authorized change; do not reintroduce them. Preserve `CSPCompatibilityManager.ShowErrorModalDialog = false` and the `[F0-CSP-GATE]` minimum-build gate unless a separately authorized and validated change requires otherwise.
 - Preserve manifest, callback IDs, and credits/licenses; do not change these contracts as incidental cleanup.
 - Validation commands and limits are in [`docs/guides/TESTING.md`](docs/guides/TESTING.md). There is no automated test suite: runtime changes need the LuaJIT compile check plus in-game checks in [`docs/guides/IN_GAME_VALIDATION.md`](docs/guides/IN_GAME_VALIDATION.md). Documentation-only changes require link/diff review only.
 - Report only checks actually run; mocks/headless checks do not establish CSP runtime or rendering.
