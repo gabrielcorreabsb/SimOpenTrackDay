@@ -84,6 +84,8 @@ end
 ---@param storage StorageTable
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
       local car = sortedCarsList[sortedCarsListIndex]
+      -- F1-3 lightweight check: detect a stopped/limping car ahead even without an accident record.
+      CarOperations.updateLateralAvoidance(carIndex, dt, car, sortedCarsList, storage)
       if car and (car.isInPitlane == true or car.isInPit == true) then
         CarOperations.releaseTrafficYieldControls(carIndex)
         CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')

@@ -55,6 +55,8 @@ StorageManager.Options ={
     IncidentPerceptionEnabled = 15,
 
     SingleCarZonesEnabled = 16,
+
+    LateralAvoidanceEnabled = 17,
 }
 
 ---@enum StorageManager.Options_AICarValues
@@ -294,6 +296,10 @@ local optionsCollection_beforeDoD = {
 
     -- F1-2 local zones: off by default. Only marks local zones for stopped/spun cars; requires incident perception.
     { name = StorageManager.Options.SingleCarZonesEnabled, default=false, min=nil, max=nil },
+
+    -- F1-3 real lateral avoidance: off by default. Requests absolute spline offsets around
+    -- stopped/limping cars ahead; requires incident perception for the on-track classification.
+    { name = StorageManager.Options.LateralAvoidanceEnabled, default=false, min=nil, max=nil },
 }
 
 local optionsCollection_PathFinding_beforeDoD = {
@@ -702,6 +708,11 @@ end
 ---@return boolean
 function StorageManager.getSingleCarZonesEnabled()
     return storage_PerTrackPerMode.singleCarZonesEnabled == true
+end
+
+---@return boolean
+function StorageManager.getLateralAvoidanceEnabled()
+    return storage_PerTrackPerMode.lateralAvoidanceEnabled == true
 end
 
 ---@return StorageTable_Global storage_Global

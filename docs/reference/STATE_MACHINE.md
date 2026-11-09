@@ -126,7 +126,7 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 ### 3.1 DRIVING_NORMALLY
 - **File:** `CarStateMachine/States/CarState_DrivingNormally.lua` — **min:** `0`
 - **Entry:** synchronizes the calculated offset with the actual offset; target = `storage.defaultLateralOffset`; clears overtake/yield references; turning lights off; restores default aggression/difficulty/grip/caution; resets throttle.
-- **Update:** `driveSafelyToSide(car, targetOffset, 1000, storage.overrideAiAwareness, true, false)`.
+- **Update:** `CarOperations.updateLateralAvoidance(...)` (F1-3, lightweight: detects a stopped/limping car ahead even without an accident record; no-op with the flag off), then `driveSafelyToSide(car, targetOffset, 1000, storage.overrideAiAwareness, true, false)`.
 - **Transitions:** `handleYellowFlagZone` -> `DRIVING_IN_YELLOW_FLAG_ZONE` / `NAVIGATING_AROUND_ACCIDENT`; `handleShouldWeYieldToBehindCar` -> `EASING_IN_YIELD`; `handleShouldWeOvertakeFrontCar` -> `EASING_IN_OVERTAKE`.
 - **Exit:** `ReasonWhyCantYield = None`. Ignored in the pits or during `storage.deferTimeAfterSessionStart`.
 
@@ -191,9 +191,9 @@ Format: file, `minimumTimeInState (min)`, `entry`, `update`, transitions, and `e
 ### 3.10 NAVIGATING_AROUND_ACCIDENT
 - **File:** `CarStateMachine/States/CarState_NavigatingAroundAccident.lua` — **min:** `0`
 - **Entry:** empty.
-- **Update:** `CarOperations.requestAICaution(carIndex, 0, 'ACCIDENT_NAVIGATION')` (arbitrated), `requestAITopSpeed(30, 'ACCIDENT_NAVIGATION')`, recalculates the nearest accident, `preventAIFromRetiring`. **There is no lateral avoidance:** the `CollisionAvoidanceManager` call and `driveSafelyToSide` are commented out, so the last offset from normal driving stays in force. Collisions are **not** changed.
+- **Update:** `CarOperations.requestAICaution(carIndex, 0, 'ACCIDENT_NAVIGATION')` (arbitrated), `requestAITopSpeed(30, 'ACCIDENT_NAVIGATION')`, recalculates the nearest accident, `preventAIFromRetiring`, and `CarOperations.updateLateralAvoidance(...)`. With the `lateralAvoidanceEnabled` flag on, the update detects a stopped/limping car ahead in the same lateral band, picks the freer side from `ac.getTrackAISplineSides`, and requests a lateral offset as `ACCIDENT_NAVIGATION` through the lateral arbitration; the single writer applies it with a slew limit and the quintic transition. With the `lateralAvoidanceEnabled` flag off, the state keeps only caution 0 and top speed 30. Collisions are **not** changed. If the absolute-offset API or the track-side distances are unavailable, no lateral offset is requested and only the speed caps apply.
 - **Transitions:** no accident index, accident resolved, car not found, or we have passed it and are `> 10 m` away -> `DRIVING_NORMALLY`; nearest accident detected -> remain.
-- **Exit:** releases the `ACCIDENT_NAVIGATION` caution and top-speed requests, resets gas and brake, and `cars_navigatingAroundAccidentIndex = 0`.
+- **Exit:** releases the `ACCIDENT_NAVIGATION` caution, top-speed and lateral requests, resets gas and brake, and `cars_navigatingAroundAccidentIndex = 0`.
 
 Single-car local zones: `AccidentManager` can also declare a zone when incident perception reports a car that is stopped or spun, still on track, within 3 m of the AI line and not in the pit lane. Such a car uses the same zone declaration, buckets and 3 s clear rule as a contact incident. A car in gravel/run-off, or a track-limit excursion with only one or two wheels beyond the edge, never creates a zone. The feature is behind its own storage flag, off by default.
 
@@ -286,6 +286,22 @@ Caution is arbitrated in `CarOperations` like top speed and throttle: an owner r
 | `COMPAT` | 10 | no current caution request |
 
 The global Caution flag stays off; caution ownership is local to the app.
+
+### Lateral ownership
+
+Spline offsets are also arbitrated. The single writer is `resolveLateralControl` in `CarOperations`; `driveSafelyToSide` and the traffic release path only request or release. Requests carry either normalized spline units (the legacy `physics.setAISplineOffset`) or metres from the AI line (the absolute API); the writer prefers `physics.setAISplineAbsoluteOffset` when the request is in metres and that callable exists, and otherwise writes the normalized value. The 1 s lease, priority, lexical tie-break, requested-vs-applied shadow and once-per-frame write match the caution model. When no owner remains, the writer hands the app's own offset back to 0 once, using the unit it last applied; unlike caution, there is no neutral value to restore.
+
+| Owner | Priority | Lateral request |
+| --- | --- | --- |
+| `INCIDENT_STOP` | 100 | no current lateral request |
+| `ACCIDENT_NAVIGATION` | 90 | F1-3 avoidance target in metres (`setAISplineAbsoluteOffset`) |
+| `YELLOW_FLAG` | 80 | no current lateral request |
+| `TRAFFIC_YIELD` | 50 | normalized offset from `driveSafelyToSide` |
+| `TRAFFIC_OVERTAKE` | 50 | normalized offset from `driveSafelyToSide` |
+| `NORMAL_TRAFFIC` | 40 | normalized offset from `driveSafelyToSide` (default lane) |
+| `COMPAT` | 10 | normalized offset from `driveSafelyToSide` (compatibility calls) |
+
+F1-3 avoidance runs inside `NAVIGATING_AROUND_ACCIDENT` and as a lightweight check in `DRIVING_NORMALLY`. An obstacle is a car ahead within about 80 m along the spline, same direction, on track (`|x| <= 1.0`), in the same lateral band (within 0.6 of the normalized half-width), excluding pit-lane cars; it must be below 24 km/h for 2 s or approached at least 50 km/h faster. Avoidance engages after 0.3 s, holds the chosen side for at least 1.5 s, and releases when the obstacle is more than 10 m behind or no longer qualifies. The side is chosen from `ac.getTrackAISplineSides` with one car width plus 1 m of margin; when neither side has room, no offset is requested and the speed caps still apply. The flag is `lateralAvoidanceEnabled`, off by default.
 
 ---
 

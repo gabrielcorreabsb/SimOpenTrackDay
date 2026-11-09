@@ -143,6 +143,40 @@ Caution arbitration uses the existing control records: `kind=control-request`, `
 
 Thresholds are initial: spin/stopped must be sustained by F1-1, the car must be on track, within 3 m of the AI line and not in the pit lane. CSP can include gravel/run-off inside the normalized track width, so “on track” alone is not sufficient; the AI-line distance and pit exclusion are mandatory. No lateral avoidance (F1-3) and no recovery holds (F1-4) are part of this slice.
 
+## F1-3 — real lateral avoidance (branch lane, pending)
+
+Contract: [issue #5](https://github.com/gabrielcorreabsb/SimOpenTrackDay/issues/5). Depends on F1-2. Every item is **pending** and maintainer-owned; local compilation and mocks cannot check any CSP behavior below.
+
+### Enable and read the logs
+
+1. Enable **Incident perception (log only)**.
+2. Enable **Lateral avoidance for stopped or slow cars (experimental)** in Advanced -> Accidents. It is on its own line, does not require **Handle accidents**, and the avoidance check also runs in normal driving.
+3. The declared flag is `StorageManager.Options.LateralAvoidanceEnabled`; the stored field is `lateralAvoidanceEnabled`, default `false`. It persists through the existing per-track/per-mode schema. Do not clear other settings.
+4. Keep the global Caution flag off. F1-3 only arbitrates the app's own lateral offset requests; collisions and the global flag are unchanged.
+
+Search the CSP log for `[F1-3]` and these kind fields (one record per engagement, never per frame):
+
+- `kind=f1-3-avoid-engaged` — detail `[F1-3] engaged car=<n> obstacle=<n> side=<left|right> metres=<m> distance=<m>`
+- `kind=f1-3-avoid-released` — detail `[F1-3] released reason=<passed|obstacle-gone|no-room|pit|disabled|state-exit> obstacle=<n>`
+- `kind=f1-3-avoid-no-room` — detail `[F1-3] no room obstacle=<n> spline=<0..1> lateral=<x> left=<m> right=<m>` (logged once per obstacle attempt; the speed caps still apply)
+
+Lateral ownership uses the existing control records with `resource=lateralOffsets` (`control-request`, `control-winner`, `control-request-released`, `control-request-expired`, `control-setter-attempt`, `control-setter-returned`, `control-handback-attempt`, `control-handback-returned`). F1-3 records require the F1-3 flag and perception to be on; the logger envelope remains `[OBS1]` and can truncate a busy session.
+
+### Maintainer scenarios
+
+- [ ] **Stopped AI on the racing line:** an AI stops on the racing line with other AI behind. In at least 8 of 10 passes, a following car requests and applies an offset to the freer side, passes without contact, and returns to the line (`passed` release). Record the pass count.
+- [ ] **Limping car:** a car moving well below the field but above 24 km/h is avoided when the closing speed is at least 50 km/h; a slower closing speed does not engage.
+- [ ] **No room:** on a narrow section, with both sides short of one car width plus 1 m, no offset is requested, one `no-room` record appears, and the caution/top-speed caps still apply.
+- [ ] **On-track band:** a car in gravel or run-off, even inside CSP's normalized track width, is not avoided. A car on track but more than 0.6 of the half-width away laterally is not avoided. Pit-lane cars are never obstacles.
+- [ ] **Hysteresis:** the offset starts after about 0.3 s of a sustained condition and the chosen side does not flip for at least 1.5 s. The app releases after the obstacle is more than 10 m behind or no longer qualifies; AC's fast spin recovery does not leave a stale offset.
+- [ ] **Player as obstacle:** the player car stopped on the line can be avoided, but the app never writes the player car (index 0) or an autopilot/human car.
+- [ ] **Yield/overtake unchanged:** with the flag on, yielding and overtaking still reach the same sides and offsets as before F1-3; the only change is that the write now passes through the lateral arbitration.
+- [ ] **Fallbacks:** if `physics.setAISplineAbsoluteOffset` is missing, the app still writes the normalized offset; if `ac.getTrackAISplineSides` is missing or invalid, it requests no offset and keeps the speed caps.
+- [ ] **Flag off:** with the checkbox off, there are no `[F1-3]` records and normal app behavior is unchanged.
+- [ ] **Lifecycle/load:** pause, replay, session restart, jump and recycled indices do not keep a stale lateral request or a stale avoidance record. Check frame time with 20–30 AI cars while avoidance is active; record any hitch separately.
+
+Thresholds are initial: 80 m ahead, 0.6 lateral band, 24 km/h for 2 s or 50 km/h closing, 0.3 s engage, 1.5 s side hold, 10 m behind to release, and one car width plus 1 m of clearance. The API is a request, not a guarantee: AC's native AI keeps steering, and a narrow track may leave no free side. No collision disabling and no recovery holds (F1-4) are part of this slice.
+
 ## M1a — player isolation and lifecycle
 
 - [ ] Callback order and victim/player reset.

@@ -8,6 +8,8 @@ Logger.OBS1_FOCUS_CAR = -1
 Logger.INCIDENT_PERCEPTION_ENABLED = false
 -- Independent narrow gate for F1-2 zone/caution records; it does not enable F1-1 or OBS1.
 Logger.F1_2_ENABLED = false
+-- Independent narrow gate for F1-3 lateral-avoidance records.
+Logger.F1_3_ENABLED = false
 Logger.OBS3_ENABLED = false
 Logger.OBS3_TARGET_CAR = -1
 Logger.OBS3_PEER_CAR_1 = -1
@@ -33,6 +35,7 @@ local min = math.min
 local UNKNOWN = 'UNKNOWN'
 local INCIDENT_PERCEPTION_PREFIX = 'incident-perception-'
 local F1_2_PREFIX = 'f1-2-'
+local F1_3_PREFIX = 'f1-3-'
 
 -- F1-1 records use the same bounded ring and budgets as global incident records, but they are
 -- admitted by their own feature gate so OBS1 stays off unless the user opted in separately.
@@ -45,12 +48,20 @@ local function isF1_2Kind(kind)
   return type(kind) == 'string' and sub(kind, 1, 5) == F1_2_PREFIX
 end
 
+-- F1-3 records are admitted independently of F1-1/F1-2 so avoidance can be logged alone.
+local function isF1_3Kind(kind)
+  return type(kind) == 'string' and sub(kind, 1, 5) == F1_3_PREFIX
+end
+
 local function observationAdmitted(kind)
   if isIncidentPerceptionKind(kind) then
     return rawget(Logger, 'INCIDENT_PERCEPTION_ENABLED') == true
   end
   if isF1_2Kind(kind) then
     return rawget(Logger, 'F1_2_ENABLED') == true
+  end
+  if isF1_3Kind(kind) then
+    return rawget(Logger, 'F1_3_ENABLED') == true
   end
   return rawget(Logger, 'OBS1_ENABLED') == true
 end
@@ -290,6 +301,12 @@ end
 ---@param enabled boolean
 function Logger.setF1_2Enabled(enabled)
   Logger.F1_2_ENABLED = enabled == true
+end
+
+---Updates the narrow F1-3 logger gate. It never enables F1-1, F1-2 or OBS1.
+---@param enabled boolean
+function Logger.setF1_3Enabled(enabled)
+  Logger.F1_3_ENABLED = enabled == true
 end
 
 local function finiteNumber(value)
