@@ -49,7 +49,7 @@ Run these in one session to close v0.2. Everything else on this page stays **lim
 - [x] **M1b:** after a yield ends, the AI returns to its normal speed (the applied limit is released). **Observed** by the maintainer.
 - [ ] **S1:** a session reset (or a car reset) removes every yellow zone of that incident. **Limited**: no session restart with an active zone appears in the 2026-11-08 log.
 - [x] **S7-1/2:** a light touch creates no zone; a real contact creates one, and it disappears about 3 s after the cars are clear. **Observed**: 4 zones created and removed 4–5 s later; zones stay while a car remains stopped in them (known limitation, see F1-2/F1-4).
-- [ ] **Install and rollback:** copy the folder over a backup, then restore the backup; settings are kept.
+- [ ] **Install and rollback:** copy the folder over a backup, then restore the backup; settings are kept. Install **observed** (v0.2 loaded over the previous copy); rollback **not run**: skipped by the maintainer's decision on 2026-11-08.
 
 ## M1a — player isolation and lifecycle
 
