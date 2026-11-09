@@ -129,7 +129,8 @@ local CAR_WIDTH_M = 1.8
 local CAR_HALF_WIDTH_M = CAR_WIDTH_M * 0.5
 local LATERAL_OBSTACLE_AHEAD_M = 120
 local LATERAL_OBSTACLE_BAND = 0.6
-local LATERAL_OBSTACLE_ON_TRACK = 1.0
+-- A car whose centre is slightly beyond the edge still blocks the track with its body (run 8).
+local LATERAL_OBSTACLE_ON_TRACK = 1.15
 local LATERAL_STOPPED_KMH = 24
 local LATERAL_STOPPED_SECONDS = 2
 local LATERAL_ENGAGE_SECONDS = 0.3
@@ -1576,17 +1577,21 @@ local function readSplineSides(splinePosition)
   return left, right
 end
 
----Converts CSP's normalized track coordinate (-1 left edge, 0 track middle, +1 right edge) to
----metres from the AI line, which is what the absolute offset API and the spline sides use.
----The AI line is generally not the track middle, so map linearly across the full width.
+-- Calibration (2026-11-09, CSP 4305, Interlagos, [CAL] log): both setAISplineOffset (normalized) and
+-- setAISplineAbsoluteOffset (metres) are measured from the TRACK MIDDLE, on the same scale as
+-- ac.worldCoordinateToTrack().x: normalized -0.6/0/+0.6 gave x of about -0.6/0/+0.55, and absolute
+-- -3/0/+3 m gave x of about -0.65/-0.1/+0.5. ac.getTrackAISplineSides is relative to the AI line,
+-- which moves across the track, so only its sum (the track width) is used here.
+-- All avoidance geometry is therefore in metres from the track middle.
+
+---Normalized track coordinate to metres from the track middle (half width = (left + right) / 2).
 local function lateralMeters(lateral, leftDistance, rightDistance)
-  return (lateral + 1) * 0.5 * (leftDistance + rightDistance) - leftDistance
+  return lateral * 0.5 * (leftDistance + rightDistance)
 end
 
----Inverse of lateralMeters: metres from the AI line back to CSP's normalized track coordinate,
----the scale setAISplineOffset uses (the same one the yield/overtake lanes use successfully).
+---Metres from the track middle back to the normalized track coordinate used by setAISplineOffset.
 local function metersToNormalized(meters, leftDistance, rightDistance)
-  return 2 * (meters + leftDistance) / (leftDistance + rightDistance) - 1
+  return meters / (0.5 * (leftDistance + rightDistance))
 end
 
 local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstacle, trackLength)
@@ -1649,12 +1654,14 @@ local function findLateralObstacle(carIndex, car, myLat, mySpline, sortedCarsLis
   return bestIndex, bestLateral, bestDistance
 end
 
----Chooses the passing side and target offset in metres from the AI line.
----Returns target metres, edge distance, side sign (-1 left, +1 right), left and right edge
----distances, and the no-room flag.
+---Chooses the passing side and target offset in metres from the track middle.
+---Returns target metres, half width, side sign (-1 left, +1 right), the two edge distances
+---from the middle (both the half width) and the no-room flag.
 local function computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
-  local leftDistance, rightDistance = readSplineSides(obstacle.splinePosition)
-  if not leftDistance then return nil, nil, 0, nil, nil, true end
+  local aiLeft, aiRight = readSplineSides(obstacle.splinePosition)
+  if not aiLeft then return nil, nil, 0, nil, nil, true end
+  local halfWidth = 0.5 * (aiLeft + aiRight)
+  local leftDistance, rightDistance = halfWidth, halfWidth
   local obstacleMeters = lateralMeters(obstacleLateral, leftDistance, rightDistance)
   local roomLeft = leftDistance + obstacleMeters
   local roomRight = rightDistance - obstacleMeters

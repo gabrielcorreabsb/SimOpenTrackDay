@@ -39,6 +39,12 @@ The project now targets the latest CSP. The reference build is **0.3.2-preview2 
 
 Evidence class: **S only** (source: SDK of build 4305). **R pending** for all of them. The baseline tables below are unchanged.
 
+**Runtime calibration of the lateral offset APIs (R, 2026-11-09, CSP 4305, Interlagos, one AI car, `[CAL]` log):**
+- Both `physics.setAISplineOffset` (normalized) and `physics.setAISplineAbsoluteOffset` (metres) are measured from the **track middle**, on the same scale as `ac.worldCoordinateToTrack().x`.
+  - Normalized −0.6 / 0 / +0.6 gave x ≈ −0.6 / 0 / +0.55.
+  - Absolute −3 / 0 / +3 m gave x ≈ −0.65 / −0.1 / +0.5.
+- `ac.getTrackAISplineSides` is relative to the AI line, which moves across the track (left/right varied between about 1 and 15 m along the lap). Only their sum, the track width, is frame-independent.
+
 ## Capability inventory
 
 `lib.lua:<line>` references locate code in the baseline; they are not calls executed by this audit. For every row: **installed build unknown, R pending**.
