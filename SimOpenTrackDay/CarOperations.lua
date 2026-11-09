@@ -4,6 +4,7 @@ local CarOperations = {}
 local ac = ac
 local ac_getCar = ac.getCar
 local ac_getCarMaxSpeedWithGear = ac.getCarMaxSpeedWithGear
+local ac_getTrackAISplineSides = ac.getTrackAISplineSides
 local ac_overrideCarControls = ac.overrideCarControls
 local ac_setTargetCar = ac.setTargetCar
 local ac_setTurningLights = ac.setTurningLights
@@ -22,6 +23,7 @@ local physics_setAIAggression = physics.setAIAggression
 local physics_setAICaution = physics.setAICaution
 local physics_setAILevel = physics.setAILevel
 local physics_setAISplineOffset = physics.setAISplineOffset
+local physics_setAISplineAbsoluteOffset = physics.setAISplineAbsoluteOffset
 local physics_setAIStopCounter = physics.setAIStopCounter
 local physics_setExtraAIGrip = physics.setExtraAIGrip
 local physics_setGentleStop = physics.setGentleStop
@@ -47,6 +49,7 @@ local RaceTrackManager_getLateralOffsetSign = RaceTrackManager.getLateralOffsetS
 local RaceTrackManager_getOppositeSide = RaceTrackManager.getOppositeSide
 local RaceTrackManager_getOvertakingSide = RaceTrackManager.getOvertakingSide
 local RaceTrackManager_getYieldingSide = RaceTrackManager.getYieldingSide
+local RaceTrackManager_getTrackLengthMeters = RaceTrackManager.getTrackLengthMeters
 local StorageManager = StorageManager
 local StorageManager_getStorage = StorageManager.getStorage
 local StorageManager_getStorage_Overtaking = StorageManager.getStorage_Overtaking
@@ -108,8 +111,36 @@ end
 
 -- Ownership covers the AI top-speed, throttle-limit and caution APIs.
 local CONTROL_LEASE_SECONDS = 1
-local OWNER_PRIORITY = { INCIDENT_STOP = 100, ACCIDENT_NAVIGATION = 90, YELLOW_FLAG = 80, TRAFFIC_YIELD = 50, COMPAT = 10 }
-local OWNER_ORDER = { 'INCIDENT_STOP', 'ACCIDENT_NAVIGATION', 'YELLOW_FLAG', 'TRAFFIC_YIELD', 'COMPAT' }
+local OWNER_PRIORITY = {
+  INCIDENT_STOP = 100,
+  ACCIDENT_NAVIGATION = 90,
+  YELLOW_FLAG = 80,
+  TRAFFIC_YIELD = 50,
+  TRAFFIC_OVERTAKE = 50,
+  NORMAL_TRAFFIC = 40,
+  COMPAT = 10,
+}
+local OWNER_ORDER = {
+  'INCIDENT_STOP', 'ACCIDENT_NAVIGATION', 'YELLOW_FLAG', 'TRAFFIC_YIELD', 'TRAFFIC_OVERTAKE', 'NORMAL_TRAFFIC', 'COMPAT',
+}
+
+-- F1-3 lateral avoidance tuning. All distances are metres unless stated otherwise.
+local CAR_WIDTH_M = 1.8
+local CAR_HALF_WIDTH_M = CAR_WIDTH_M * 0.5
+local LATERAL_OBSTACLE_AHEAD_M = 120
+local LATERAL_OBSTACLE_BAND = 0.6
+-- A car whose centre is slightly beyond the edge still blocks the track with its body (run 8).
+local LATERAL_OBSTACLE_ON_TRACK = 1.15
+local LATERAL_STOPPED_KMH = 24
+local LATERAL_STOPPED_SECONDS = 2
+local LATERAL_ENGAGE_SECONDS = 0.3
+local LATERAL_SIDE_HOLD_SECONDS = 1.5
+local LATERAL_RELEASE_BEHIND_M = 10
+local LATERAL_CLEARANCE_M = CAR_WIDTH_M + 1.0
+-- Lateral speed of the avoidance move in metres per second (independent of the edge distance;
+-- run 5 used 0.8 x edge distance, about 1.2 m/s near an edge, far too slow).
+local LATERAL_RAMP_MPS = 3.0
+CarOperations._lateralAvoidance = CarOperations._lateralAvoidance or {}
 CarOperations._topSpeedRequests = CarOperations._topSpeedRequests or {}
 CarOperations._throttleRequests = CarOperations._throttleRequests or {}
 CarOperations._cautionRequests = CarOperations._cautionRequests or {}
@@ -122,6 +153,13 @@ CarOperations._cautionWinner = CarOperations._cautionWinner or {}
 CarOperations._topSpeedAttempted = CarOperations._topSpeedAttempted or {}
 CarOperations._throttleAttempted = CarOperations._throttleAttempted or {}
 CarOperations._cautionAttempted = CarOperations._cautionAttempted or {}
+-- Lateral offset arbitration. Unlike the pedal/caution controls, lateral values may be
+-- negative (left of the AI line) and are expressed either in normalized spline units
+-- or in metres from the AI line (absolute API).
+CarOperations._lateralRequests = CarOperations._lateralRequests or {}
+CarOperations._lateralWinner = CarOperations._lateralWinner or {}
+CarOperations._lateralApplied = CarOperations._lateralApplied or {}
+CarOperations._lateralAttempted = CarOperations._lateralAttempted or {}
 CarOperations._resolutionId = 0
 
 local function isCallable(value)
@@ -429,6 +467,58 @@ function CarOperations.releaseAITopSpeed(carIndex, owner) return releaseControl(
 function CarOperations.releaseAIThrottleLimit(carIndex, owner) return releaseControl(CarOperations._throttleRequests, carIndex, owner) end
 function CarOperations.releaseAICaution(carIndex, owner) return releaseControl(CarOperations._cautionRequests, carIndex, owner) end
 
+local function finiteNumber(value)
+  return type(value) == 'number' and value == value and value ~= math_huge and value ~= -math_huge
+end
+
+-- Requests a lateral offset for the next resolution pass. `value` is metres from the AI
+-- line when unit == 'absolute', otherwise normalized spline units (-1..1). `normalized`
+-- is the fallback used when the absolute API is unavailable. `target` is the normalized
+-- offset parked in CarManager.cars_targetSplineOffset for arrival checks.
+local function requestLateralControl(carIndex, value, owner, unit, normalized, edgeMeters, override, target)
+  local fixedPriority = type(owner) == 'string' and OWNER_PRIORITY[owner] or nil
+  local now = getActiveGameTime()
+  if not canWriteCar(carIndex) or not fixedPriority or not finiteNumber(value) or now == nil
+    or math_abs(value) > 100 then return false end
+  local slot = getControlSlot(CarOperations._lateralRequests, carIndex)
+  local item = slot.byOwner[owner]
+  if not item then return false end
+  local changed = not item.active or item.value ~= value or item.unit ~= unit
+    or item.sessionGeneration ~= CarManager.sessionGeneration
+  if not item.active then slot.activeCount = slot.activeCount + 1 end
+  item.value, item.priority, item.expiresAt = value, fixedPriority, now + CONTROL_LEASE_SECONDS
+  item.unit = unit == 'absolute' and 'absolute' or 'normalized'
+  item.normalized = finiteNumber(normalized) and normalized or value
+  item.edgeMeters = finiteNumber(edgeMeters) and math_abs(edgeMeters) > 0.01 and edgeMeters or nil
+  item.override = override == true
+  item.target = finiteNumber(target) and target or item.normalized
+  item.carGeneration, item.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+  item.active = true
+  if changed then
+    resetControlTrace(carIndex, 'lateralOffsets')
+    observeControl('control-request', carIndex, owner, value, 'lateralOffsets')
+  end
+  return true
+end
+
+function CarOperations.requestLateralOffset(carIndex, value, owner, unit, normalized, edgeMeters, override, target)
+  return requestLateralControl(carIndex, value, owner, unit, normalized, edgeMeters, override, target)
+end
+
+local function releaseLateralControl(carIndex, owner)
+  local slot = CarOperations._lateralRequests[carIndex]
+  local item = slot and slot.byOwner[owner]
+  if not item or not item.active then return false end
+  item.active = false
+  slot.activeCount = slot.activeCount - 1
+  resetControlTrace(carIndex, 'lateralOffsets')
+  observeControl('control-request-released', carIndex, owner, item.value, 'lateralOffsets')
+  local winner = CarOperations._lateralWinner[carIndex]
+  if winner and winner.active and winner.owner == owner then winner.active = false end
+  return true
+end
+function CarOperations.releaseLateralOffset(carIndex, owner) return releaseLateralControl(carIndex, owner) end
+
 local function clearCarRequests(slots, carIndex, resource)
   local slot = slots[carIndex]
   if not slot then return end
@@ -446,18 +536,24 @@ function CarOperations.clearOwnedControlsForCar(carIndex)
   clearCarRequests(CarOperations._topSpeedRequests, carIndex, 'setAITopSpeed')
   clearCarRequests(CarOperations._throttleRequests, carIndex, 'setAIThrottleLimit')
   clearCarRequests(CarOperations._cautionRequests, carIndex, 'setAICaution')
+  clearCarRequests(CarOperations._lateralRequests, carIndex, 'lateralOffsets')
+  CarOperations._lateralAvoidance[carIndex] = nil
   local topWinner = CarOperations._topSpeedWinner[carIndex]
   local throttleWinner = CarOperations._throttleWinner[carIndex]
   local cautionWinner = CarOperations._cautionWinner[carIndex]
+  local lateralWinner = CarOperations._lateralWinner[carIndex]
   local topApplied = CarOperations._topSpeedApplied[carIndex]
   local throttleApplied = CarOperations._throttleApplied[carIndex]
   local cautionApplied = CarOperations._cautionApplied[carIndex]
+  local lateralApplied = CarOperations._lateralApplied[carIndex]
   if topWinner then topWinner.active = false end
   if throttleWinner then throttleWinner.active = false end
   if cautionWinner then cautionWinner.active = false end
+  if lateralWinner then lateralWinner.active = false end
   if topApplied then topApplied.active = false end
   if throttleApplied then throttleApplied.active = false end
   if cautionApplied then cautionApplied.active = false end
+  if lateralApplied then lateralApplied.active = false end
 end
 
 -- A referenced car can disappear without changing this owner's identity. Cancel only
@@ -484,6 +580,11 @@ function CarOperations.clearDependentReferenceControlsForCar(carIndex)
   clearNonIncidentRequests(CarOperations._topSpeedRequests, 'setAITopSpeed')
   clearNonIncidentRequests(CarOperations._throttleRequests, 'setAIThrottleLimit')
   clearNonIncidentRequests(CarOperations._cautionRequests, 'setAICaution')
+  clearNonIncidentRequests(CarOperations._lateralRequests, 'lateralOffsets')
+  CarOperations._lateralAvoidance[carIndex] = nil
+  local lateralWinner = CarOperations._lateralWinner[carIndex]
+  if lateralWinner then lateralWinner.active = false end
+  -- Leave _lateralApplied active: the next resolution pass hands the offset back to 0.
   if not preserveIncident then
     local topWinner, throttleWinner = CarOperations._topSpeedWinner[carIndex], CarOperations._throttleWinner[carIndex]
     local cautionWinner = CarOperations._cautionWinner[carIndex]
@@ -508,6 +609,9 @@ function CarOperations.clearAllOwnedControls()
   for carIndex in pairs(CarOperations._topSpeedApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._throttleApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
   for carIndex in pairs(CarOperations._cautionApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._lateralRequests) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._lateralApplied) do CarOperations.clearOwnedControlsForCar(carIndex) end
+  for carIndex in pairs(CarOperations._lateralAvoidance) do CarOperations.clearOwnedControlsForCar(carIndex) end
 end
 
 local function resolveControl(carIndex, slots, winners, applied, attempted, setterName, neutral, cap, now, resolutionId)
@@ -653,6 +757,89 @@ function CarOperations.getOwnedControlState(carIndex)
     cautionRequests, cautionWinner, cautionApplied
 end
 
+local function resolveLateralControl(carIndex, now, resolutionId)
+  local requestSlot = CarOperations._lateralRequests[carIndex]
+  local winner, winnerName
+  if requestSlot then
+    for i = 1, #OWNER_ORDER do
+      local item = requestSlot.byOwner[OWNER_ORDER[i]]
+      if item.active and (item.carGeneration ~= CarManager.getCarGeneration(carIndex)
+        or item.sessionGeneration ~= CarManager.sessionGeneration or now >= item.expiresAt) then
+        observeControl('control-request-expired', carIndex, item.owner, item.value, 'lateralOffsets')
+        item.active = false
+        requestSlot.activeCount = requestSlot.activeCount - 1
+      end
+      if item.active and (not winner or item.priority > winner.priority
+        or (item.priority == winner.priority and item.owner < winnerName)) then
+        winner, winnerName = item, item.owner
+      end
+    end
+  end
+  local winnerSlot = CarOperations._lateralWinner[carIndex]
+  if not winnerSlot then winnerSlot = {}; CarOperations._lateralWinner[carIndex] = winnerSlot end
+  local winnerChanged = winnerSlot.active ~= (winner ~= nil)
+    or (winner and (winnerSlot.owner ~= winnerName or winnerSlot.value ~= winner.value))
+  winnerSlot.active = winner ~= nil
+  if winner then
+    winnerSlot.value, winnerSlot.owner, winnerSlot.priority = winner.value, winnerName, winner.priority
+  end
+  if winnerChanged then
+    resetControlTrace(carIndex, 'lateralOffsets')
+    observeControl('control-winner', carIndex, winnerName or 'none', winner and winner.value or 'none', 'lateralOffsets')
+  end
+
+  local writable = CarManager.isWritableAICar(carIndex) == true
+  local applied = CarOperations._lateralApplied[carIndex]
+  local attempted = CarOperations._lateralAttempted
+  if winner then
+    if not writable then return end
+    local useAbsolute = winner.unit == 'absolute' and isCallable(physics_setAISplineAbsoluteOffset)
+    local api = useAbsolute and physics_setAISplineAbsoluteOffset or physics_setAISplineOffset
+    if not isCallable(api) then return end
+    local value = useAbsolute and winner.value or winner.normalized
+    if attempted[carIndex] == resolutionId then return end
+    attempted[carIndex] = resolutionId
+    if not useAbsolute and applied and applied.active and applied.unit == 'absolute'
+      and isCallable(physics_setAISplineAbsoluteOffset) then
+      -- Leaving avoidance for a normalized traffic owner: zero the absolute offset first so the two
+      -- CSP offsets never stack.
+      pcall(physics_setAISplineAbsoluteOffset, carIndex, 0, false)
+    end
+    observeControl('control-setter-attempt', carIndex, winnerName, value, 'lateralOffsets')
+    local ok = pcall(api, carIndex, value, useAbsolute and false or winner.override)
+    observeControl(ok and 'control-setter-returned' or 'control-setter-threw-uncertain', carIndex, winnerName, value, 'lateralOffsets')
+    if ok then
+      local slot = applied or {}
+      CarOperations._lateralApplied[carIndex] = slot
+      slot.active, slot.value, slot.owner, slot.priority = true, value, winnerName, winner.priority
+      slot.unit = useAbsolute and 'absolute' or 'normalized'
+      slot.carGeneration, slot.sessionGeneration = CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
+      CarManager_setCalculatedTrackLateralOffset(carIndex, winner.normalized)
+      CarManager.cars_targetSplineOffset[carIndex] = winner.target
+    end
+  elseif applied and applied.active then
+    if applied.carGeneration ~= CarManager.getCarGeneration(carIndex)
+      or applied.sessionGeneration ~= CarManager.sessionGeneration then
+      applied.active = false
+      return
+    end
+    if not writable then return end
+    local useAbsolute = applied.unit == 'absolute' and isCallable(physics_setAISplineAbsoluteOffset)
+    local api = useAbsolute and physics_setAISplineAbsoluteOffset or physics_setAISplineOffset
+    if not isCallable(api) then return end
+    if attempted[carIndex] == resolutionId then return end
+    attempted[carIndex] = resolutionId
+    observeControl('control-handback-attempt', carIndex, applied.owner or 'UNKNOWN', 0, 'lateralOffsets')
+    local ok = pcall(api, carIndex, 0, false)
+    observeControl(ok and 'control-handback-returned' or 'control-handback-threw-uncertain', carIndex, applied.owner or 'UNKNOWN', 0, 'lateralOffsets')
+    if ok then
+      applied.active = false
+      CarManager_setCalculatedTrackLateralOffset(carIndex, 0)
+      CarManager.cars_targetSplineOffset[carIndex] = 0
+    end
+  end
+end
+
 function CarOperations.resolveOwnedAIControls(topSpeedCapKmh)
   if type(topSpeedCapKmh) ~= 'number' or topSpeedCapKmh ~= topSpeedCapKmh or topSpeedCapKmh < 0 or topSpeedCapKmh > 1000 then return false end
   local now = getActiveGameTime()
@@ -679,6 +866,12 @@ function CarOperations.resolveOwnedAIControls(topSpeedCapKmh)
       or (CarOperations._cautionWinner[carIndex] and CarOperations._cautionWinner[carIndex].active) then
       resolveControl(carIndex, CarOperations._cautionRequests, CarOperations._cautionWinner, CarOperations._cautionApplied,
         CarOperations._cautionAttempted, 'setAICaution', cautionNeutral, 16, now, resolutionId)
+    end
+  end
+  for carIndex, slot in pairs(CarOperations._lateralRequests) do
+    if slot.activeCount > 0 or (CarOperations._lateralApplied[carIndex] and CarOperations._lateralApplied[carIndex].active)
+      or (CarOperations._lateralWinner[carIndex] and CarOperations._lateralWinner[carIndex].active) then
+      resolveLateralControl(carIndex, now, resolutionId)
     end
   end
   return true
@@ -861,18 +1054,12 @@ function CarOperations.releaseTrafficYieldControls(carIndex)
   end
   local lateral = trafficLateralOwnership[carIndex]
   if lateral and lateral.generation == generation and lateral.session == session and isAppLateralOwner(lateral.owner) then
-    if type(physics_setAISplineOffset) == 'function' then
-      local ok = pcall(physics_setAISplineOffset, carIndex, 0, false)
-      if ok then
-        trafficLateralOwnership[carIndex] = nil
-        CarManager_setCalculatedTrackLateralOffset(carIndex, 0)
-      else
-        lateral.uncertain = true
-        success = false
-      end
-    else
-      success = false
-    end
+    -- Releasing the request schedules the handback through the lateral arbitration,
+    -- which writes the app's own zero offset once on the next resolution pass.
+    CarOperations.releaseLateralOffset(carIndex, 'NORMAL_TRAFFIC')
+    CarOperations.releaseLateralOffset(carIndex, 'TRAFFIC_YIELD')
+    CarOperations.releaseLateralOffset(carIndex, 'TRAFFIC_OVERTAKE')
+    trafficLateralOwnership[carIndex] = nil
   end
   return success
 end
@@ -1308,16 +1495,20 @@ function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset,
       local step = splineOffsetTransitionSpeed * dt
       currentSplineOffset = MathHelpers_approach(currentSplineOffset, targetSplineOffset, step)
 
-      -- set the spline offset on the ai car
-      -- local overrideAiAwareness = storage.overrideAiAwareness -- TODO: check what this does
+      -- Request the offset through the lateral arbitration. The single writer resolves
+      -- all owners once per frame and performs the physics write.
       if type(physics_setAISplineOffset) ~= 'function' then return false end
-      local setOK = pcall(physics_setAISplineOffset, carIndex, currentSplineOffset, overrideAiAwareness)
+      local accepted = CarOperations.requestLateralOffset(carIndex, currentSplineOffset,
+        controlOwner or 'COMPAT', 'normalized', currentSplineOffset, nil, overrideAiAwareness, targetSplineOffset)
       local ownership = trafficLateralOwnership[carIndex]
       if not ownership then ownership = {}; trafficLateralOwnership[carIndex] = ownership end
       ownership.owner, ownership.generation, ownership.session = controlOwner or 'COMPAT',
         CarManager.getCarGeneration(carIndex), CarManager.sessionGeneration
-      ownership.confirmed, ownership.uncertain = setOK, not setOK
-      if not setOK then return false end
+      ownership.confirmed, ownership.uncertain = accepted, not accepted
+      if not accepted then return false end
+      -- Preserve the previous same-frame decision shadow: the writer applies the same
+      -- normalized value later in the frame.
+      CarManager_setCalculatedTrackLateralOffset(carIndex, currentSplineOffset)
 
       -- keep the turning lights on while driving to the side
       if useIndicatorLights then
@@ -1326,7 +1517,8 @@ function CarOperations.driveSafelyToSide(carIndex, dt, car, targetLateralOffset,
         CarOperations.toggleTurningLights(carIndex, turningLights)
       end
 
-      CarManager_setCalculatedTrackLateralOffset(carIndex, currentSplineOffset)
+      -- Decision shadow for the arrival checks in the easing states. The applied
+      -- spline offset is written by resolveLateralControl.
       CarManager.cars_targetSplineOffset[carIndex] = targetSplineOffset
 
       return true
@@ -1372,7 +1564,424 @@ function CarOperations.yieldSafelyToSide(carIndex, dt, car, storage, useIndicato
       return CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, rampSpeed_mps, overrideAiAwareness, handleSideCheckingWhenYielding, useIndicatorLights, 'TRAFFIC_YIELD')
 end
 
----Calculated the overtaking car's ai caution value while overtaking another car.
+---Reads `ac.getTrackAISplineSides` into metres from the AI line to each track edge.
+---Returns nil when the API is unavailable or returns non-finite distances.
+local function readSplineSidesComponents(sides) return sides.x, sides.y end
+local function readSplineSides(splinePosition)
+  if not isCallable(ac_getTrackAISplineSides) or not finiteNumber(splinePosition) then return nil end
+  local ok, sides = pcall(ac_getTrackAISplineSides, splinePosition)
+  if not ok or sides == nil then return nil end
+  local componentsOK, left, right = pcall(readSplineSidesComponents, sides)
+  if not componentsOK or not finiteNumber(left) or not finiteNumber(right)
+    or left <= 0.01 or right <= 0.01 then return nil end
+  return left, right
+end
+
+-- Calibration (2026-11-09, CSP 4305, Interlagos, [CAL] log): both setAISplineOffset (normalized) and
+-- setAISplineAbsoluteOffset (metres) are measured from the TRACK MIDDLE, on the same scale as
+-- ac.worldCoordinateToTrack().x: normalized -0.6/0/+0.6 gave x of about -0.6/0/+0.55, and absolute
+-- -3/0/+3 m gave x of about -0.65/-0.1/+0.5. ac.getTrackAISplineSides is relative to the AI line,
+-- which moves across the track, so only its sum (the track width) is used here.
+-- All avoidance geometry is therefore in metres from the track middle.
+
+---Normalized track coordinate to metres from the track middle (half width = (left + right) / 2).
+local function lateralMeters(lateral, leftDistance, rightDistance)
+  return lateral * 0.5 * (leftDistance + rightDistance)
+end
+
+---Metres from the track middle back to the normalized track coordinate used by setAISplineOffset.
+local function metersToNormalized(meters, leftDistance, rightDistance)
+  return meters / (0.5 * (leftDistance + rightDistance))
+end
+
+local function isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstacle, trackLength)
+  if obstacle == nil or obstacle.index == carIndex then return false end
+  if obstacle.isInPit == true or obstacle.isInPitlane == true then return false end
+  local obstacleSpline, obstacleSpeed = obstacle.splinePosition, obstacle.speedKmh
+  if not finiteNumber(obstacleSpline) or obstacleSpline < 0 or obstacleSpline > 1 then return false end
+  if not finiteNumber(obstacleSpeed) then return false end
+  -- No heading filter: a spun car facing backwards is exactly the obstacle to avoid.
+  -- Cheap spline-distance test first, then the cached lateral lookup.
+  local aheadFraction = (obstacleSpline - mySpline) % 1
+  if aheadFraction <= 0 or aheadFraction > 0.5 then return false end
+  local distance = aheadFraction * trackLength
+  if distance <= 0 or distance > LATERAL_OBSTACLE_AHEAD_M then return false end
+  local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
+  if not finiteNumber(obstacleLateral) or math_abs(obstacleLateral) > LATERAL_OBSTACLE_ON_TRACK then return false end
+  if math_abs(obstacleLateral - myLat) >= LATERAL_OBSTACLE_BAND then return false end
+  return true, obstacleLateral, distance
+end
+
+-- Per-car slow timer for every car on track (player included), advanced once per frame for the
+-- whole list. Run 5 timed obstacles only while a follower was within range, so the 2 s started
+-- when a follower arrived and avoidance engaged 1-17 m before the obstacle.
+local obstacleSlowTime = {}
+local obstacleTimersFrame = nil
+local function refreshObstacleSlowTimers(sortedCarsList, dt)
+  local frame = CarManager._currentFrameId or 0
+  if obstacleTimersFrame == frame then return end
+  local gap = obstacleTimersFrame ~= frame - 1
+  obstacleTimersFrame = frame
+  local count = sortedCarsList and #sortedCarsList or 0
+  for i = 1, count do
+    local other = sortedCarsList[i]
+    local otherIndex = other and other.index
+    if otherIndex ~= nil then
+      local speed = other.speedKmh
+      if finiteNumber(speed) and speed < LATERAL_STOPPED_KMH then
+        obstacleSlowTime[otherIndex] = (gap and 0 or (obstacleSlowTime[otherIndex] or 0)) + dt
+      else
+        obstacleSlowTime[otherIndex] = 0
+      end
+    end
+  end
+end
+
+---Finds the nearest valid obstacle ahead, preferring the car the caller is already tracking.
+local function findLateralObstacle(carIndex, car, myLat, mySpline, sortedCarsList, trackLength, preferredIndex)
+  local bestIndex, bestLateral, bestDistance
+  local count = sortedCarsList and #sortedCarsList or 0
+  for i = 1, count do
+    local obstacle = sortedCarsList[i]
+    local valid, obstacleLateral, distance = isLateralObstacleCandidate(carIndex, car, myLat, mySpline, obstacle, trackLength)
+    if valid then
+      if obstacle.index == preferredIndex then return obstacle, obstacleLateral, distance end
+      if bestDistance == nil or distance < bestDistance then
+        bestIndex, bestLateral, bestDistance = obstacle, obstacleLateral, distance
+      end
+    end
+  end
+  return bestIndex, bestLateral, bestDistance
+end
+
+---Chooses the passing side and target offset in metres from the track middle.
+---Returns target metres, half width, side sign (-1 left, +1 right), the two edge distances
+---from the middle (both the half width) and the no-room flag.
+local function computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
+  local aiLeft, aiRight = readSplineSides(obstacle.splinePosition)
+  if not aiLeft then return nil, nil, 0, nil, nil, true end
+  local halfWidth = 0.5 * (aiLeft + aiRight)
+  local leftDistance, rightDistance = halfWidth, halfWidth
+  local obstacleMeters = lateralMeters(obstacleLateral, leftDistance, rightDistance)
+  local roomLeft = leftDistance + obstacleMeters
+  local roomRight = rightDistance - obstacleMeters
+  local leftTarget = obstacleMeters - LATERAL_CLEARANCE_M
+  local rightTarget = obstacleMeters + LATERAL_CLEARANCE_M
+  local leftOK = roomLeft >= LATERAL_CLEARANCE_M and leftTarget >= -(leftDistance - CAR_HALF_WIDTH_M)
+  local rightOK = roomRight >= LATERAL_CLEARANCE_M and rightTarget <= rightDistance - CAR_HALF_WIDTH_M
+  local side = 0
+  local holding = record.engaged and finiteNumber(record.sideHoldUntil) and now < record.sideHoldUntil
+  if holding and record.side == -1 then
+    side = leftOK and -1 or (rightOK and 1 or 0)
+  elseif holding and record.side == 1 then
+    side = rightOK and 1 or (leftOK and -1 or 0)
+  elseif leftOK and rightOK then
+    -- Pass on the side the follower is already on; never cut across in front of the obstacle.
+    -- Run 7 picked the roomier side and asked cars already clear on the left to cross over.
+    local myMeters = finiteNumber(myLat) and lateralMeters(myLat, leftDistance, rightDistance) or nil
+    if myMeters ~= nil then
+      side = myMeters <= obstacleMeters and -1 or 1
+    else
+      side = roomLeft >= roomRight and -1 or 1
+    end
+  elseif leftOK then
+    side = -1
+  elseif rightOK then
+    side = 1
+  else
+    side = 0
+  end
+  if side == 0 then return nil, nil, 0, leftDistance, rightDistance, true end
+  return (side < 0 and leftTarget or rightTarget), (side < 0 and leftDistance or rightDistance),
+    side, leftDistance, rightDistance, false
+end
+
+---Quintic with zero acceleration at both ends, copied from experimental/FrenetAvoid.lua so
+---the runtime does not depend on the experimental module. Coefficients are stored on the
+---per-car record; no closure is created in the per-frame path.
+local function startLateralQuintic(record, now, startMeters, targetMeters, rampMps)
+  local delta = targetMeters - startMeters
+  local duration = 1.0
+  if rampMps > 0.01 then
+    local needed = 1.875 * math_abs(delta) / rampMps
+    if needed > duration then duration = needed end
+  end
+  local t2, t3, t4, t5 = duration * duration, duration * duration * duration,
+    duration * duration * duration * duration, duration * duration * duration * duration * duration
+  record.a0, record.a1, record.a2 = startMeters, 0, 0
+  record.a3 = (10 * delta) / t3
+  record.a4 = (-15 * delta) / t4
+  record.a5 = (6 * delta) / t5
+  record.quinticDuration, record.quinticStart, record.targetMeters = duration, now, targetMeters
+  record.rampMps, record.lastMeters = rampMps, startMeters
+end
+
+local function evaluateLateralQuintic(record, now)
+  local t = now - record.quinticStart
+  if t <= 0 then return record.a0 end
+  if t >= record.quinticDuration then return record.targetMeters end
+  local t2 = t * t
+  return record.a0 + record.a1 * t + record.a2 * t2 + record.a3 * t2 * t
+    + record.a4 * t2 * t2 + record.a5 * t2 * t2 * t
+end
+
+---Lightweight obstacle-driven lateral avoidance (F1-3). Reads other cars but only writes
+---its own car; the player car (index 0) can be an obstacle and is never written.
+---@param carIndex integer
+---@param dt number
+---@param car ac.StateCar
+---@param sortedCarsList table<integer,ac.StateCar>
+---@param storage StorageTable
+---@param preferredObstacleIndex integer|nil
+---@return boolean engaged
+CarOperations.updateLateralAvoidance = function(carIndex, dt, car, sortedCarsList, storage, preferredObstacleIndex)
+  local enabled = storage ~= nil and storage.lateralAvoidanceEnabled == true
+  if Logger ~= nil and type(Logger.setF1_3Enabled) == 'function' then Logger.setF1_3Enabled(enabled) end
+  local record = CarOperations._lateralAvoidance[carIndex]
+  if not enabled then
+    if record and record.engaged then
+      CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
+      Logger_observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex),
+        nil, nil, '[F1-3] released reason=disabled', nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      record.engaged, record.obstacleIndex, record.side = nil, nil, nil
+    end
+    return false
+  end
+  if not canWriteCar(carIndex) or car == nil or not finiteNumber(dt) or dt <= 0 or dt == math_huge then return false end
+  if car.isInPit == true or car.isInPitlane == true then
+    local pitRecord = CarOperations._lateralAvoidance[carIndex]
+    if pitRecord and pitRecord.engaged then
+      CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
+      Logger_observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex),
+        nil, nil, '[F1-3] released reason=pit', nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      pitRecord.engaged, pitRecord.obstacleIndex, pitRecord.side = nil, nil, nil
+    end
+    return false
+  end
+  local trackLength = RaceTrackManager_getTrackLengthMeters()
+  if not finiteNumber(trackLength) or trackLength <= 0 then return false end
+  local now = getActiveGameTime()
+  if now == nil then return false end
+  local myLat = CarManager_getActualTrackLateralOffset(carIndex, car.position)
+  local mySpline = car.splinePosition
+  if not finiteNumber(myLat) or not finiteNumber(mySpline) then return false end
+  if not record then record = {}; CarOperations._lateralAvoidance[carIndex] = record end
+
+  if record.engaged then
+    local obstacle = record.obstacleIndex and ac_getCar(record.obstacleIndex)
+    local keep, releaseReason = false, 'no-obstacle'
+    if obstacle and obstacle.index ~= carIndex
+      and obstacle.isInPit ~= true and obstacle.isInPitlane ~= true then
+      local obstacleSpline = obstacle.splinePosition
+      if finiteNumber(obstacleSpline) then
+        local behindFraction = (mySpline - obstacleSpline) % 1
+        local aheadFraction = (obstacleSpline - mySpline) % 1
+        if behindFraction > 0 and behindFraction < 0.5 then
+          if behindFraction * trackLength > LATERAL_RELEASE_BEHIND_M then
+            releaseReason = 'passed'
+          else
+            keep = true
+          end
+        elseif aheadFraction >= 0 and aheadFraction <= 0.5 then
+          if aheadFraction * trackLength <= LATERAL_OBSTACLE_AHEAD_M then
+            -- No heading test: a spun car facing backwards is still the obstacle.
+            local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
+            if finiteNumber(obstacleLateral)
+              and math_abs(obstacleLateral) <= LATERAL_OBSTACLE_ON_TRACK then
+              keep = true
+            else
+              releaseReason = 'obstacle-gone'
+            end
+          else
+            releaseReason = 'obstacle-gone'
+          end
+        end
+      end
+    end
+    if not keep then
+      CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
+      Logger_observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex),
+        nil, nil, string_format('[F1-3] released reason=%s obstacle=%s', releaseReason,
+          tostring(record.obstacleIndex or 'none')), nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      record.engaged, record.obstacleIndex, record.side = nil, nil, nil
+      record.confirmTime, record.slowTime, record.slowCandidate = 0, 0, nil
+      return false
+    end
+    local obstacleLateral = CarManager_getActualTrackLateralOffset(obstacle.index, obstacle.position)
+    local targetMeters, edgeMeters, side, keepLeft, keepRight = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
+    if keepLeft then record.sideLeft, record.sideRight = keepLeft, keepRight end
+    if not targetMeters then
+      CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
+      Logger_observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex),
+        nil, nil, string_format('[F1-3] released reason=no-room obstacle=%d', obstacle.index),
+        nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      record.engaged, record.obstacleIndex, record.side = nil, nil, nil
+      return false
+    end
+    if side ~= record.side then
+      startLateralQuintic(record, now, record.lastMeters or 0, targetMeters, LATERAL_RAMP_MPS)
+      record.side = side
+    end
+    local currentMeters = evaluateLateralQuintic(record, now)
+    local maxStep = record.rampMps * dt
+    local previousMeters = record.lastMeters or currentMeters
+    if currentMeters > previousMeters + maxStep then currentMeters = previousMeters + maxStep end
+    if currentMeters < previousMeters - maxStep then currentMeters = previousMeters - maxStep end
+    record.lastMeters = currentMeters
+    -- Diagnostic: once, about 1.5 s after engaging, compare the requested offset with where the car
+    -- actually is (metres from the AI line), to tell a late/too-small request from an ignored one.
+    if record.progressLogged ~= true and record.engagedAt ~= nil and now - record.engagedAt >= 1.5 then
+      record.progressLogged = true
+      local myLeft, myRight = readSplineSides(mySpline)
+      if myLeft then
+        Logger_observe('f1-3-avoid-progress', carIndex, CarManager.getCarGeneration(carIndex), nil, nil,
+          string_format('[F1-3] chk req=%.1f act=%.1f o=%d', currentMeters,
+            lateralMeters(myLat, myLeft, myRight), obstacle.index),
+          nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+      end
+    end
+    local currentNormalized = metersToNormalized(currentMeters, record.sideLeft, record.sideRight)
+    local targetNormalized = metersToNormalized(targetMeters, record.sideLeft, record.sideRight)
+    CarOperations.requestLateralOffset(carIndex, currentNormalized, 'ACCIDENT_NAVIGATION', 'normalized',
+      currentNormalized, edgeMeters, false, targetNormalized)
+    return true
+  end
+
+  refreshObstacleSlowTimers(sortedCarsList, dt)
+  local obstacle, obstacleLateral, distance = findLateralObstacle(carIndex, car, myLat, mySpline,
+    sortedCarsList, trackLength, preferredObstacleIndex)
+  if not obstacle then
+    record.confirmTime, record.slowTime, record.slowCandidate, record.candidateIndex = 0, 0, nil, nil
+    return false
+  end
+
+  -- Only a car that has itself been slow for LATERAL_STOPPED_SECONDS is an obstacle. The timer
+  -- belongs to the obstacle (shared by all followers), not to the follower: a fast follower crosses
+  -- the 80 m window in about 1.5 s. The closing-speed rule was removed after run 3: it fired in
+  -- every braking zone and pushed AI into the walls.
+  local closeEnough = (obstacleSlowTime[obstacle.index] or 0) >= LATERAL_STOPPED_SECONDS
+  if not closeEnough then
+    record.confirmTime, record.candidateIndex = 0, nil
+    return false
+  end
+  if record.candidateIndex == obstacle.index then
+    record.confirmTime = record.confirmTime + dt
+  else
+    record.candidateIndex, record.confirmTime = obstacle.index, dt
+  end
+  if record.confirmTime < LATERAL_ENGAGE_SECONDS then return false end
+
+  local targetMeters, edgeMeters, side, leftDistance, rightDistance = computeLateralAvoidanceTarget(obstacle, obstacleLateral, record, now, myLat)
+  if not targetMeters then
+    if record.noRoomLogged ~= obstacle.index then
+      record.noRoomLogged = obstacle.index
+      Logger_observe('f1-3-avoid-no-room', carIndex, CarManager.getCarGeneration(carIndex),
+        nil, nil, string_format('[F1-3] no room obstacle=%d spline=%.4f lateral=%.2f left=%.1f right=%.1f',
+          obstacle.index, obstacle.splinePosition, obstacleLateral, leftDistance or -1, rightDistance or -1),
+        nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+    end
+    record.confirmTime = 0
+    return false
+  end
+
+  record.engaged = true
+  record.obstacleIndex = obstacle.index
+  record.side = side
+  record.sideHoldUntil = now + LATERAL_SIDE_HOLD_SECONDS
+  record.engagedAt, record.progressLogged = now, false
+  record.sideLeft, record.sideRight = leftDistance, rightDistance
+  record.noRoomLogged = nil
+  record.confirmTime, record.slowTime, record.slowCandidate, record.candidateIndex = 0, 0, nil, nil
+  local startMeters = lateralMeters(myLat, leftDistance, rightDistance)
+  startLateralQuintic(record, now, startMeters, targetMeters, LATERAL_RAMP_MPS)
+  Logger_observe('f1-3-avoid-engaged', carIndex, CarManager.getCarGeneration(carIndex),
+    nil, nil, -- Logger keeps 48 characters per field: keep the numbers inside that budget.
+    string_format('[F1-3] eng o=%d %s %.1fm d=%.0f e=%.1f',
+      obstacle.index, side < 0 and 'L' or 'R', targetMeters, distance or -1, edgeMeters or -1),
+    nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+  local currentMeters = record.lastMeters
+  local currentNormalized = metersToNormalized(currentMeters, leftDistance, rightDistance)
+  local targetNormalized = metersToNormalized(targetMeters, leftDistance, rightDistance)
+  CarOperations.requestLateralOffset(carIndex, currentNormalized, 'ACCIDENT_NAVIGATION', 'normalized',
+    currentNormalized, edgeMeters, false, targetNormalized)
+  return true
+end
+
+
+-- D1 (defaults audit): normalized track x of the AI racing line at a spline position. The spline
+-- sides are distances from the AI line to each edge, so the line sits at (L - R) / (L + R) on the
+-- track-middle scale that setAISplineOffset uses. Returns nil when the sides are unavailable.
+local AI_LINE_LOOKAHEAD_M = 15
+function CarOperations.getAILineNormalized(splinePosition)
+  if not finiteNumber(splinePosition) then return nil end
+  local trackLength = RaceTrackManager_getTrackLengthMeters()
+  local lookAhead = (finiteNumber(trackLength) and trackLength > 0) and (AI_LINE_LOOKAHEAD_M / trackLength) or 0
+  local left, right = readSplineSides((splinePosition + lookAhead) % 1)
+  if not left then return nil end
+  return (left - right) / (left + right)
+end
+
+-- Development-only line log (Constants.ENABLE_LINE_LOG): every 2 s for the camera-focused AI car,
+-- the actual track x, the AI line x and the requested target, tag [LINE].
+local lineLogLast = -1
+function CarOperations.logNormalDrivingLine(carIndex, car, target, mode)
+  local sim = ac.getSim()
+  if sim == nil or sim.focusedCar ~= carIndex then return end
+  local now = getActiveGameTime()
+  if now == nil or now - lineLogLast < 2 then return end
+  lineLogLast = now
+  local x = CarManager_getActualTrackLateralOffset(carIndex, car.position)
+  local aiLine = CarOperations.getAILineNormalized(car.splinePosition)
+  Logger.log(string_format('[LINE] car=%d mode=%s x=%s ai=%s target=%s s=%.4f v=%.0f', carIndex, mode,
+    finiteNumber(x) and string_format('%.3f', x) or 'na', aiLine and string_format('%.3f', aiLine) or 'na',
+    finiteNumber(target) and string_format('%.3f', target) or 'na', car.splinePosition or -1, car.speedKmh or -1))
+end
+
+-- Development-only offset calibration (Constants.ENABLE_OFFSET_CALIBRATION). Holds ONE AI car (the
+-- camera-focused AI, or the first writable AI) at a fixed sequence of requests, 6 s each, and logs
+-- the requested value next to the measured track x and metres from the AI line every 2 s. Used to
+-- learn the scale of setAISplineOffset/setAISplineAbsoluteOffset; it never runs in a release.
+local CALIBRATION_STEP_SECONDS = 6
+local CALIBRATION_LOG_SECONDS = 2
+local CALIBRATION_UNITS = { 'normalized', 'normalized', 'normalized', 'absolute', 'absolute', 'absolute' }
+local CALIBRATION_VALUES = { -0.6, 0, 0.6, -3, 0, 3 }
+local calibrationTime, calibrationLastLog, calibrationCar = 0, -1, nil
+
+function CarOperations.updateOffsetCalibration(dt)
+  if not finiteNumber(dt) or dt <= 0 or dt > 0.25 then return end
+  local sim = ac.getSim()
+  local candidate = sim and sim.focusedCar
+  if not (finiteNumber(candidate) and candidate > 0 and CarManager.isWritableAICar(candidate) == true) then
+    candidate = nil
+    for i = 1, (sim and sim.carsCount or 0) - 1 do
+      if CarManager.isWritableAICar(i) == true then candidate = i; break end
+    end
+  end
+  if candidate == nil then return end
+  if candidate ~= calibrationCar then
+    if calibrationCar ~= nil then CarOperations.releaseLateralOffset(calibrationCar, 'ACCIDENT_NAVIGATION') end
+    calibrationCar, calibrationTime, calibrationLastLog = candidate, 0, -1
+    Logger.log(string_format('[CAL] start car=%d', candidate))
+  end
+  calibrationTime = calibrationTime + dt
+  local step = math.floor(calibrationTime / CALIBRATION_STEP_SECONDS) % #CALIBRATION_VALUES + 1
+  local unit, value = CALIBRATION_UNITS[step], CALIBRATION_VALUES[step]
+  CarOperations.requestLateralOffset(candidate, value, 'ACCIDENT_NAVIGATION', unit,
+    unit == 'normalized' and value or 0, 1, false, unit == 'normalized' and value or 0)
+
+  if calibrationTime - calibrationLastLog < CALIBRATION_LOG_SECONDS then return end
+  calibrationLastLog = calibrationTime
+  local car = ac.getCar(candidate)
+  if car == nil then return end
+  local x = CarManager_getActualTrackLateralOffset(candidate, car.position)
+  local left, right = readSplineSides(car.splinePosition)
+  local metres = (finiteNumber(x) and left) and lateralMeters(x, left, right) or nil
+  Logger.log(string_format('[CAL] car=%d step=%d %s req=%.2f x=%s m=%s L=%s R=%s s=%.4f v=%.0f',
+    candidate, step, unit, value, finiteNumber(x) and string_format('%.3f', x) or 'na',
+    metres and string_format('%.2f', metres) or 'na', left and string_format('%.2f', left) or 'na',
+    right and string_format('%.2f', right) or 'na', car.splinePosition or -1, car.speedKmh or -1))
+end
+
 ---@param overtakingCar ac.StateCar
 ---@param yieldingCar ac.StateCar?
 ---@return number aiCaution

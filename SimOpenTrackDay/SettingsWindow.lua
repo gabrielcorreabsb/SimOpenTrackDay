@@ -441,6 +441,10 @@ local drawOperationalContent = function(tab)
         if ui_checkbox('Local zones for stopped or spun cars (experimental)', storage.singleCarZonesEnabled) then storage.singleCarZonesEnabled = not storage.singleCarZonesEnabled end
         if ui_itemHovered() then ui_setTooltip('If enabled, creates a local yellow zone only for a car that is stopped or spun on the racing line. Cars that are off track or in the gravel do not create a zone. Requires incident perception.') end
 
+        ui_newLine(1)
+        if ui_checkbox('Lateral avoidance for stopped or slow cars (experimental)', storage.lateralAvoidanceEnabled) then storage.lateralAvoidanceEnabled = not storage.lateralAvoidanceEnabled end
+        if ui_itemHovered() then ui_setTooltip('If enabled, an AI car steers around a stopped or very slow car ahead on the racing line when there is room on one side. Requires incident perception.') end
+
         local handleAccidents = storage.handleAccidents
         UIOperations_createDisabledSection(not handleAccidents, function()
             storage.distanceFromAccidentToSeeYellowFlag_meters =  UIOperations_renderSlider('Distance from accident to see yellow flag (m)', 'Distance from accident at which AI will see the yellow flag and start slowing down.', storage.distanceFromAccidentToSeeYellowFlag_meters, 50, 500, DEFAULT_SLIDER_WIDTH, '%.2f m', StorageManager_options_default[StorageManager_Options.DistanceFromAccidentToSeeYellowFlag_meters])
@@ -478,7 +482,9 @@ local drawOperationalContent = function(tab)
     ui_newLine(1)
 
     if ui_checkbox('Override AI awareness', storage.overrideAiAwareness) then storage.overrideAiAwareness = not storage.overrideAiAwareness end
-    if ui_itemHovered() then ui_setTooltip('If enabled, our computed lateral offset will override the value from Kunos, otherwise our computed lateral offset adds to it. (EXPERIMENTAL)') end
+    if ui_itemHovered() then ui_setTooltip('If enabled, the lane offset replaces the own awareness of the AI about nearby cars. Off is the CSP default and is safer.') end
+    if ui_checkbox('Keep a fixed lane in normal driving', storage.keepLaneInNormalDriving) then storage.keepLaneInNormalDriving = not storage.keepLaneInNormalDriving end
+    if ui_itemHovered() then ui_setTooltip('Off: AI follow their racing line in normal driving. On: AI hold the default lateral offset (0 is the track middle).') end
 
     storage.globalTopSpeedLimitKmh = UIOperations_renderSlider('Global top speed limit', 'A global top speed limit applied to all AI cars.\n0  = no global top speed limit.', storage.globalTopSpeedLimitKmh, StorageManager_options_min[StorageManager_Options.GlobalTopSpeedLimitKmh], StorageManager_options_max[StorageManager_Options.GlobalTopSpeedLimitKmh], DEFAULT_SLIDER_WIDTH, '%.2f km/h', StorageManager_options_default[StorageManager_Options.GlobalTopSpeedLimitKmh])
 

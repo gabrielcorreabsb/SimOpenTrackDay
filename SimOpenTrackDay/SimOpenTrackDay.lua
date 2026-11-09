@@ -813,6 +813,8 @@ function script.MANIFEST__UPDATE(dt)
     end
   end
 
+  if Constants.ENABLE_OFFSET_CALIBRATION == true then CarOperations.updateOffsetCalibration(dt) end
+
   local globalTopSpeedLimitKmh = storage.globalTopSpeedLimitKmh
   if type(globalTopSpeedLimitKmh) == 'number' and globalTopSpeedLimitKmh == globalTopSpeedLimitKmh
     and globalTopSpeedLimitKmh >= 0 and globalTopSpeedLimitKmh <= 1000 then

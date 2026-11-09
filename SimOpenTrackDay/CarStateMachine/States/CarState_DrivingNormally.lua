@@ -84,6 +84,8 @@ end
 ---@param storage StorageTable
 CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
       local car = sortedCarsList[sortedCarsListIndex]
+      -- F1-3 lightweight check: detect a stopped/limping car ahead even without an accident record.
+      CarOperations.updateLateralAvoidance(carIndex, dt, car, sortedCarsList, storage)
       if car and (car.isInPitlane == true or car.isInPit == true) then
         CarOperations.releaseTrafficYieldControls(carIndex)
         CarOperations.resetAIThrottleLimit(carIndex, 'TRAFFIC_YIELD')
@@ -96,6 +98,17 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
       local targetOffset = storage.defaultLateralOffset
 
       car = sortedCarsList[sortedCarsListIndex]
+
+      -- D1 (defaults audit): 0 is the track middle, not "no offset", and CSP has no way to clear an
+      -- offset. Unless the player opts into a fixed lane, follow the AI racing line itself.
+      local lineMode = 'lane'
+      if storage.keepLaneInNormalDriving ~= true and car ~= nil then
+        local aiLine = CarOperations.getAILineNormalized(car.splinePosition)
+        if aiLine ~= nil then targetOffset, lineMode = aiLine, 'racing-line' end
+      end
+      if Constants.ENABLE_LINE_LOG == true and car ~= nil then
+        CarOperations.logNormalDrivingLine(carIndex, car, targetOffset, lineMode)
+      end
 
       -- local driveToDefaultLateralOffset = true
       -- if carIndex == 0 and Constants.FRENET_DEBUGGING then

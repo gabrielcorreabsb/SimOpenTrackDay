@@ -55,6 +55,9 @@ StorageManager.Options ={
     IncidentPerceptionEnabled = 15,
 
     SingleCarZonesEnabled = 16,
+
+    LateralAvoidanceEnabled = 17,
+    KeepLaneInNormalDriving = 18,
 }
 
 ---@enum StorageManager.Options_AICarValues
@@ -270,7 +273,8 @@ local optionsCollection_beforeDoD = {
     { name = StorageManager.Options.Enabled, default=false, min=nil, max=nil },
     -- { name = StorageManager.Options.HandleSideCheckingWhenYielding, default=true, min=nil, max=nil },
     -- { name = StorageManager.Options.HandleSideCheckingWhenOvertaking, default=true, min=nil, max=nil },
-    { name = StorageManager.Options.OverrideAiAwareness, default=true, min=nil, max=nil },
+    -- D3 (defaults audit): CSP's default is false; true lets lane changes ignore cars alongside.
+    { name = StorageManager.Options.OverrideAiAwareness, default=false, min=nil, max=nil },
 
     { name = StorageManager.Options.GlobalTopSpeedLimitKmh, default=0, min=0, max=500 },
     { name = StorageManager.Options.DeferTimeAfterSessionStart, default=0, min=0, max=300 },
@@ -294,6 +298,14 @@ local optionsCollection_beforeDoD = {
 
     -- F1-2 local zones: off by default. Only marks local zones for stopped/spun cars; requires incident perception.
     { name = StorageManager.Options.SingleCarZonesEnabled, default=false, min=nil, max=nil },
+
+    -- F1-3 real lateral avoidance: off by default. Requests absolute spline offsets around
+    -- stopped/limping cars ahead; requires incident perception for the on-track classification.
+    { name = StorageManager.Options.LateralAvoidanceEnabled, default=false, min=nil, max=nil },
+
+    -- D1 (defaults audit): false = follow the AI racing line in normal driving; true = the old
+    -- behavior that holds cars on defaultLateralOffset (0 is the track middle).
+    { name = StorageManager.Options.KeepLaneInNormalDriving, default=false, min=nil, max=nil },
 }
 
 local optionsCollection_PathFinding_beforeDoD = {
@@ -428,6 +440,8 @@ optionsCollection_Behavior_beforeDoD = nil  -- free memory
 ---@field distanceToStartNavigatingAroundCarInAccident_meters number
 ---@field incidentPerceptionEnabled boolean
 ---@field singleCarZonesEnabled boolean
+---@field lateralAvoidanceEnabled boolean
+---@field keepLaneInNormalDriving boolean
 
 ---@type StorageTable
 local storageTable = {
@@ -452,6 +466,8 @@ local storageTable = {
     distanceToStartNavigatingAroundCarInAccident_meters = StorageManager.options_default[StorageManager.Options.DistanceToStartNavigatingAroundCarInAccident_meters],
     incidentPerceptionEnabled = StorageManager.options_default[StorageManager.Options.IncidentPerceptionEnabled],
     singleCarZonesEnabled = StorageManager.options_default[StorageManager.Options.SingleCarZonesEnabled],
+    lateralAvoidanceEnabled = StorageManager.options_default[StorageManager.Options.LateralAvoidanceEnabled],
+    keepLaneInNormalDriving = StorageManager.options_default[StorageManager.Options.KeepLaneInNormalDriving],
 }
 
 ---@class StorageTable_Debugging
@@ -702,6 +718,11 @@ end
 ---@return boolean
 function StorageManager.getSingleCarZonesEnabled()
     return storage_PerTrackPerMode.singleCarZonesEnabled == true
+end
+
+---@return boolean
+function StorageManager.getLateralAvoidanceEnabled()
+    return storage_PerTrackPerMode.lateralAvoidanceEnabled == true
 end
 
 ---@return StorageTable_Global storage_Global

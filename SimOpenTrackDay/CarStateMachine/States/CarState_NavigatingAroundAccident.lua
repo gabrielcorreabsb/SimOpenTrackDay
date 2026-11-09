@@ -100,58 +100,9 @@ CarStateMachine.states_updateFunctions[STATE] = function (carIndex, dt, sortedCa
     -- local distanceToAccident = car.position:distance(accidentWorldPosition)
 
 
-    --[=====[
-    local targetOffset = 0
-    local carToNavigateAround = closestAccidentClosestCar
-    local carToNavigateAroundLateralOffset = CarManager.getActualTrackLateralOffset(carToNavigateAround.position)
-    -- local signOfLateralOffset = carToNavigateAroundLateralOffset < 0 and -1 or 1
-    -- now we need to calculate our own offset to use to go around the car to navigating around
-    if (math.abs(carToNavigateAroundLateralOffset) < 0.1) then
-        -- the car to navigate around is in the middle of the track, so we can pick a side to go around it
-        targetOffset = -2 -- todo: need to decide the corect side
-    else
-        -- the car to navigate around is already to one side, so we need to go to the other side
-        -- targetOffset = (carToNavigateAroundLateralOffset * signOfLateralOffset) + (2.0 * signOfLateralOffset)
-        targetOffset = carToNavigateAroundLateralOffset * -1
-    end
-    --]=====]
-
-
-    --[=====[
-    -- OLD SIMPLE NAVIGATION
-    local carToNavigateAround = closestAccidentClosestCar
-    local carToNavigateAroundLateralOffset = CarManager.getActualTrackLateralOffset(carToNavigateAround.position)
-    local carToNavigateAroundSide = RaceTrackManager.getSideFromLateralOffset(carToNavigateAroundLateralOffset)
-    local carToNavigateAroundOppositeSide = RaceTrackManager.getOppositeSide(carToNavigateAroundSide)
-    local targetOffset = carToNavigateAroundOppositeSide == RaceTrackManager.TrackSide.LEFT and -2 or 2
-    local sideToDriveTo = carToNavigateAroundOppositeSide
-    --]=====]
-
-    ----------------------------------
-    --[=====[
-    local carsInAccident = {AccidentManager.accidents_carIndex[accidentIndex], AccidentManager.accidents_collidedWithCarIndex[accidentIndex]}
-    local targetOffset, influencingCarIndex = CollisionAvoidanceManager.computeDesiredLateralOffset(carIndex, carsInAccident, dt
-    -- ,{
-            -- horizon_meters = 30,
-            -- steps = 5,
-            -- d_samples = {targetOffset - 1.5, targetOffset, targetOffset + 1.5},
-            -- track_half = 10,
-            -- edge_margin = 0.5,
-            -- max_d_rate = 10,
-            -- bias_from_obs = 0.6,
-    -- }
-    )
-    local sideToDriveTo = RaceTrackManager.getSideFromLateralOffset(targetOffset)
-    -- TODO: THE CLOSESTACCIDENTINDEX HERE IS NOT CORRECT BECAUSE IT MAY BE DIFFERENT THAT FROM FROM COMPUTEDESIREDLATERALOFFSET GIVES US
-    AccidentManager.setCarNavigatingAroundAccident(carIndex, closestAccidentIndex, influencingCarIndex)
-    --]=====]
-    ----------------------------------
-
-    --[=====[
-    CarOperations.driveSafelyToSide(carIndex, dt, car, targetOffset, 5, true, false)
-    --]=====]
-
-    -- AccidentManager.setCarNavigatingAroundAccident(carIndex, closestAccidentIndex, influencingCarIndex)
+    -- F1-3: real lateral avoidance around the stopped/slow car ahead. Detection
+    -- re-validates the obstacle; the accident manager's car is only a preference.
+    CarOperations.updateLateralAvoidance(carIndex, dt, car, sortedCarsList, storage, closestAccidentClosestCarIndex)
 
     -- Prevent the car from retiring while navigating around an accident because otherwise when the ai cars are moving very slow, the game tends to teleports them back to the pits
     CarOperations.preventAIFromRetiring(carIndex)
@@ -277,6 +228,15 @@ end
 CarStateMachine.states_exitFunctions[STATE] = function (carIndex, dt, sortedCarsList, sortedCarsListIndex, storage)
     CarOperations.releaseAICaution(carIndex, 'ACCIDENT_NAVIGATION')
     CarOperations.releaseAITopSpeed(carIndex, 'ACCIDENT_NAVIGATION')
+    local avoidanceRecord = CarOperations._lateralAvoidance[carIndex]
+    if avoidanceRecord and avoidanceRecord.engaged then
+        Logger.observe('f1-3-avoid-released', carIndex, CarManager.getCarGeneration(carIndex), nil, nil,
+            string.format('[F1-3] released reason=state-exit obstacle=%s',
+                tostring(avoidanceRecord.obstacleIndex or 'none')),
+            nil, CarManager.sessionGeneration, nil, 'lateralAvoidance')
+    end
+    CarOperations.releaseLateralOffset(carIndex, 'ACCIDENT_NAVIGATION')
+    CarOperations._lateralAvoidance[carIndex] = nil
     CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Gas)
     CarOperations.resetPedalPosition(carIndex, CarOperations.CarPedals.Brake)
 
