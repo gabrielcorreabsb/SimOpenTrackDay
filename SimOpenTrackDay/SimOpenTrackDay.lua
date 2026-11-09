@@ -228,6 +228,7 @@ Pathfinding = require("Pathfinding")
 
 BehaviorPolish = require("BehaviorPolish")
 HumanErrorManager = require("HumanErrorManager")
+IncidentPerception = require("IncidentPerception")
 
 SettingsWindow = require("SettingsWindow")
 
@@ -786,6 +787,8 @@ function script.MANIFEST__UPDATE(dt)
 
   -- save a reference to the current sorted cars list for other parts of the app to use
   CarManager.currentSortedCarsList = sortedCars
+
+  IncidentPerception.update(dt, sortedCars)
 
   -- handle any queued accidents before updating the car state machines
   OnCarEventManager.processQueuedEvents()
